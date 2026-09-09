@@ -1,0 +1,44 @@
+<section id="registro-actividades" class="view">
+  <div class="section-head">
+    <div>
+      <h2>Registrar actividad</h2>
+      <p>Cree una nueva actividad de capacitación (curso, taller, programa o charla).</p>
+    </div>
+    <button class="btn secondary" type="button" onclick="irAVista('actividades')">Ver listado de actividades</button>
+  </div>
+  <div class="card panel">
+    <h3>Nueva actividad de capacitación</h3>
+    <form id="formActividad" class="form-grid">
+      <div class="field full"><label>Nombre actividad *</label><input name="NOMBRE_ACTIVIDAD" required></div>
+      <div class="field"><label>Tipo *</label><select name="TIPO_ACTIVIDAD" required><option>Curso</option><option>Programa</option><option>Taller</option><option>Charla</option><option>Jornada</option></select></div>
+      <div class="field"><label>Programa *</label><input name="PROGRAMA" value="Capacitación" required></div>
+      <div class="field">
+        <label>Escuela / línea</label>
+        <select id="escuelaLineaActividad" name="ESCUELA_LINEA" onchange="actualizarAreasActividad()">
+          <option value="">Seleccione una escuela o línea...</option>
+          <option value="Empleo">Empleo</option>
+          <option value="Emprendimiento">Emprendimiento</option>
+          <option value="Transversal">Transversal</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Área temática</label>
+        <select id="areaTematicaActividad" name="AREA_TEMATICA" disabled>
+          <option value="">Primero seleccione una escuela o línea...</option>
+        </select>
+      </div>
+      <div class="field"><label>Año</label><input name="ANO" type="number" value="2026"></div>
+      <div class="field"><label>Sesiones totales</label><input name="SESIONES_TOTALES" type="number" min="1" value="1"></div>
+      <div class="field"><label>Regla de resultado</label><select name="REGLA_RESULTADO"><option>Asistencia</option><option>Porcentaje</option></select></div>
+      <div class="field"><label>Porcentaje de aprobación</label><input name="PORCENTAJE_APROBACION" type="number" min="0" max="100" step="0.1" placeholder="Ej.: 80"></div>
+      <div class="field"><label>Requiere selección</label><select name="REQUIERE_SELECCION"><option>Sí</option><option>No</option></select></div>
+      <div class="field"><label>Fecha inicio</label><input name="FECHA_INICIO" type="date"></div>
+      <div class="field"><label>Fecha término</label><input name="FECHA_TERMINO" type="date"></div>
+      <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Online</option><option>Híbrida</option></select></div>
+      <div class="field"><label>Estado</label><select name="ESTADO_ACTIVIDAD"><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Suspendida</option><option>Cerrada</option></select></div>
+      <div class="field"><label>Institución asociada</label><input name="INSTITUCION_ASOCIADA"></div>
+      <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
+      <div class="form-actions"><button class="btn" type="submit">Guardar actividad</button></div>
+    </form>
+  </div>
+</section>

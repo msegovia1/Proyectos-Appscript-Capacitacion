@@ -1,5 +1,8 @@
 <section id="actividades" class="view">
-        <div class="section-head"><div><h2>Actividades</h2><p>Programas, cursos, jornadas y charlas.</p></div></div>
+        <div class="section-head">
+          <div><h2>Actividades</h2><p>Programas, cursos, jornadas y charlas.</p></div>
+          <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
+        </div>
         <div class="table-tools"><input id="buscarActividades" placeholder="Buscar actividad..." oninput="renderConPausa('actividades')"><select id="filtroEstado" onchange="reiniciarYRenderizar('actividades')"><option value="">Todos los estados</option></select><label class="checkline"><input id="mostrarActividadesArchivadas" type="checkbox" onchange="reiniciarYRenderizar('actividades')"> Mostrar archivadas</label></div>
         <div class="table-container"><table><thead><tr><th>ID</th><th>Actividad</th><th>Tipo</th><th>Programa</th><th>Área</th><th>Año</th><th>Sesiones</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaActividades"></tbody></table></div>
         <div class="pager"><span id="paginaActividadesInfo"></span><button class="btn secondary" type="button" onclick="cambiarPagina('actividades',-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPagina('actividades',1)">Siguiente</button></div>

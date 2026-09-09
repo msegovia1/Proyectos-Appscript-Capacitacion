@@ -31,16 +31,26 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   const GESTION_SELECCIONADOS = new Set();
   const GESTION_MODIFICADOS = new Set();
   const charts = {};
+  function irAVista(nombreVista) {
+    const btn = document.querySelector(`.menu button[data-view="${nombreVista}"]`);
+    document.querySelectorAll('.menu button').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const targetView = document.getElementById(nombreVista);
+    if (targetView) targetView.classList.add('active');
+    const titulo = document.getElementById('tituloVista');
+    if (titulo) {
+      if (btn) titulo.textContent = btn.textContent.replace(/^[^A-Za-zÁÉÍÓÚÑ]+/, '').trim();
+      else if (nombreVista === 'registro-personas') titulo.textContent = 'Registrar persona';
+      else if (nombreVista === 'registro-actividades') titulo.textContent = 'Registrar actividad';
+      else if (nombreVista === 'registro-participaciones') titulo.textContent = 'Registrar participación';
+    }
+    cargarVistaBajoDemanda(nombreVista);
+  }
+
   document.querySelectorAll('.menu button').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.menu button').forEach(x => x.classList.remove('active'));
-      document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
-      btn.classList.add('active');
-      const targetView = document.getElementById(btn.dataset.view);
-      if (targetView) targetView.classList.add('active');
-      const titulo = document.getElementById('tituloVista');
-      if (titulo) titulo.textContent = btn.textContent.replace(/^[^A-Za-zÁÉÍÓÚÑ]+/, '').trim();
-      cargarVistaBajoDemanda(btn.dataset.view);
+      irAVista(btn.dataset.view);
     });
   });
   function cargarDatos(forzar=false) {
@@ -130,8 +140,17 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       asegurarModulo('actividades');
       return;
     }
-    const mapa = {personas:'personas', actividades:'actividades', participaciones:'participaciones',
-      demanda:'demanda', gestion:'actividades', comunicaciones:'actividades', registros:'catalogos'};
+    const mapa = {
+      personas: 'personas',
+      actividades: 'actividades',
+      participaciones: 'participaciones',
+      demanda: 'demanda',
+      gestion: 'actividades',
+      comunicaciones: 'actividades',
+      'registro-personas': 'personas',
+      'registro-actividades': 'actividades',
+      'registro-participaciones': 'catalogos'
+    };
     if (mapa[vista]) asegurarModulo(mapa[vista]);
   }
   function asegurarModulo(modulo, alTerminar) {

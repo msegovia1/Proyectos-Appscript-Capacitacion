@@ -1,0 +1,24 @@
+<section id="registro-participaciones" class="view">
+  <div class="section-head">
+    <div>
+      <h2>Registrar participación</h2>
+      <p>Inscriba directamente a una persona registrada en una actividad de capacitación.</p>
+    </div>
+    <button class="btn secondary" type="button" onclick="irAVista('participaciones')">Ver listado de participaciones</button>
+  </div>
+  <div class="card panel">
+    <h3>Nueva inscripción en actividad</h3>
+    <form id="formParticipacion" class="form-grid">
+      <div class="field"><label>Persona *</label><select id="selectPersona" name="ID_PERSONA" required></select></div>
+      <div class="field"><label>Actividad *</label><select id="selectActividad" name="ID_ACTIVIDAD" required></select></div>
+      <div class="field"><label>Fecha inscripción</label><input name="FECHA_INSCRIPCION" type="date"></div>
+      <div class="field"><label>Cumple requisitos</label><select name="CUMPLE_REQUISITOS"><option>Pendiente</option><option>Sí</option><option>No</option><option>No informado</option></select></div>
+      <div class="field"><label>Estado selección</label><select name="ESTADO_SELECCION"><option>Pendiente</option><option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>No informado</option></select></div>
+      <div class="field"><label>Confirma participación</label><select name="CONFIRMA_PARTICIPACION"><option>No informado</option><option>Sí</option><option>No</option></select></div>
+      <div class="field"><label>Sesiones asistidas</label><input name="SESIONES_ASISTIDAS" type="number" min="0" value="0"></div>
+      <div class="field"><label>Sesiones totales</label><input name="SESIONES_TOTALES" type="number" min="1"></div>
+      <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
+      <div class="form-actions"><button class="btn" type="submit">Guardar participación</button></div>
+    </form>
+  </div>
+</section>

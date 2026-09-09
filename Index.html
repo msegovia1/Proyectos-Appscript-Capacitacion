@@ -41,6 +41,17 @@
         <span class="nav-icon">☑</span> Gestión de participantes
       </button>
 
+      <div class="nav-section-title">Nuevos Registros</div>
+      <button data-view="registro-personas" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar persona
+      </button>
+      <button data-view="registro-actividades" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar actividad
+      </button>
+      <button data-view="registro-participaciones" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar participación
+      </button>
+
       <div class="nav-section-title">Gestión y Datos</div>
       <button data-view="demanda" onclick="toggleMobileSidebar(true)">
         <span class="nav-icon">◎</span> Demanda
@@ -56,9 +67,6 @@
       </button>
       <button data-view="importaciones" onclick="toggleMobileSidebar(true)">
         <span class="nav-icon">⇩</span> Importaciones
-      </button>
-      <button data-view="registros" onclick="toggleMobileSidebar(true)">
-        <span class="nav-icon">＋</span> Registrar datos
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -91,12 +99,14 @@
       <?!= incluir('ViewActividades'); ?>
       <?!= incluir('ViewParticipaciones'); ?>
       <?!= incluir('ViewGestion'); ?>
+      <?!= incluir('ViewRegistroPersonas'); ?>
+      <?!= incluir('ViewRegistroActividades'); ?>
+      <?!= incluir('ViewRegistroParticipaciones'); ?>
       <?!= incluir('ViewDemanda'); ?>
       <?!= incluir('ViewReportes'); ?>
       <?!= incluir('ViewComunicaciones'); ?>
       <?!= incluir('ViewFormularios'); ?>
       <?!= incluir('ViewImportaciones'); ?>
-      <?!= incluir('ViewRegistros'); ?>
     </div>
   </main>
 </div>
