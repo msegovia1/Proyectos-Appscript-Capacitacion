@@ -28,6 +28,9 @@
       <button class="active" data-view="dashboard" onclick="toggleMobileSidebar(true)">
         <span class="nav-icon">▦</span> Dashboard
       </button>
+      <button data-view="calendario" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">📅</span> Calendario
+      </button>
       <button data-view="personas" onclick="toggleMobileSidebar(true)">
         <span class="nav-icon">●</span> Personas
       </button>
@@ -95,6 +98,7 @@
     <div class="content">
       <!-- Vistas Modulares del Sistema -->
       <?!= incluir('ViewDashboard'); ?>
+      <?!= incluir('ViewCalendario'); ?>
       <?!= incluir('ViewPersonas'); ?>
       <?!= incluir('ViewActividades'); ?>
       <?!= incluir('ViewParticipaciones'); ?>

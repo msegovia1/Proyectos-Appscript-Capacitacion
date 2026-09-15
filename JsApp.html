@@ -41,6 +41,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const titulo = document.getElementById('tituloVista');
     if (titulo) {
       if (btn) titulo.textContent = btn.textContent.replace(/^[^A-Za-zÁÉÍÓÚÑ]+/, '').trim();
+      else if (nombreVista === 'calendario') titulo.textContent = 'Calendario de capacitaciones';
       else if (nombreVista === 'registro-personas') titulo.textContent = 'Registrar persona';
       else if (nombreVista === 'registro-actividades') titulo.textContent = 'Registrar actividad';
       else if (nombreVista === 'registro-participaciones') titulo.textContent = 'Registrar participación';
@@ -140,9 +141,14 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       asegurarModulo('actividades');
       return;
     }
+    if (vista === 'calendario') {
+      asegurarModulo('actividades', renderCalendario);
+      return;
+    }
     const mapa = {
       personas: 'personas',
       actividades: 'actividades',
+      calendario: 'actividades',
       participaciones: 'participaciones',
       demanda: 'demanda',
       gestion: 'actividades',
@@ -160,10 +166,13 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       Object.assign(DB, datos || {});
       MODULOS_CARGADOS.add(modulo);
       if (modulo === 'personas') renderPersonas();
-      if (modulo === 'actividades') renderActividades();
+      if (modulo === 'actividades') {
+        renderActividades();
+        renderCalendario();
+        llenarSelectores();
+      }
       if (modulo === 'participaciones') { renderPersonas(); renderActividades(); renderParticipaciones(); llenarSelectores(); MODULOS_CARGADOS.add('personas'); MODULOS_CARGADOS.add('actividades'); }
       if (modulo === 'demanda') renderDemanda();
-      if (modulo === 'actividades') llenarSelectores();
       if (modulo === 'catalogos') {
         MODULOS_CARGADOS.add('personas');
         MODULOS_CARGADOS.add('actividades');
@@ -2130,6 +2139,358 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       <td>${esc(f.PERSONAS_CREADAS || 0)}</td><td>${esc(f.PERSONAS_ACTUALIZADAS || 0)}</td>
       <td>${esc(f.REVISION || 0)}</td><td><span class="badge">${esc(f.ESTADO || '—')}</span></td>
     </tr>`).join('');
+  }
+
+  /* ==========================================================================
+     MÓDULO CALENDARIO DE CAPACITACIONES
+     ========================================================================== */
+  let CAL_FECHA_ACTUAL = new Date();
+  let CAL_MODO = 'mes';
+
+  function cambiarModoCalendario(modo) {
+    CAL_MODO = modo;
+    const btnMes = document.getElementById('btnCalModoMes');
+    const btnLista = document.getElementById('btnCalModoLista');
+    const conMes = document.getElementById('contenedorCalendarioMes');
+    const conLista = document.getElementById('contenedorCalendarioLista');
+
+    if (modo === 'mes') {
+      if (btnMes) btnMes.className = 'btn compact';
+      if (btnLista) btnLista.className = 'btn secondary compact';
+      if (conMes) conMes.hidden = false;
+      if (conLista) conLista.hidden = true;
+    } else {
+      if (btnMes) btnMes.className = 'btn secondary compact';
+      if (btnLista) btnLista.className = 'btn compact';
+      if (conMes) conMes.hidden = true;
+      if (conLista) conLista.hidden = false;
+    }
+    renderCalendario();
+  }
+
+  function cambiarMesCalendario(delta) {
+    CAL_FECHA_ACTUAL = new Date(CAL_FECHA_ACTUAL.getFullYear(), CAL_FECHA_ACTUAL.getMonth() + delta, 1);
+    renderCalendario();
+  }
+
+  function irAHoyCalendario() {
+    CAL_FECHA_ACTUAL = new Date();
+    renderCalendario();
+  }
+
+  function parsearFechaActividad(strFecha) {
+    if (!strFecha) return null;
+    const texto = String(strFecha).trim();
+    let m = texto.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = texto.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    const d = new Date(texto);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function formatoClaveFecha(fecha) {
+    const y = fecha.getFullYear();
+    const m = String(fecha.getMonth() + 1).padStart(2, '0');
+    const d = String(fecha.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function renderCalendario() {
+    const anio = CAL_FECHA_ACTUAL.getFullYear();
+    const mes = CAL_FECHA_ACTUAL.getMonth();
+    const nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    const elTitulo = document.getElementById('calTituloMes');
+    if (elTitulo) elTitulo.textContent = `${nombresMeses[mes]} ${anio}`;
+
+    const escuelaFiltro = document.getElementById('filtroCalEscuela')?.value || '';
+    const estadoFiltro = document.getElementById('filtroCalEstado')?.value || '';
+    const modalidadFiltro = document.getElementById('filtroCalModalidad')?.value || '';
+    const q = normalizar(document.getElementById('buscarCalTexto')?.value || '');
+
+    const todas = DB.actividades || [];
+    const filtradas = todas.filter(a => {
+      if (esActividadArchivada_(a) && estadoFiltro !== 'Cerrada') return false;
+      if (escuelaFiltro && a.ESCUELA_LINEA !== escuelaFiltro) return false;
+      if (estadoFiltro && a.ESTADO_ACTIVIDAD !== estadoFiltro) return false;
+      if (modalidadFiltro && a.MODALIDAD !== modalidadFiltro) return false;
+      if (q && !normalizar([a.NOMBRE_ACTIVIDAD, a.ID_ACTIVIDAD, a.AREA_TEMATICA, a.PROGRAMA, a.INSTITUCION_ASOCIADA].join(' ')).includes(q)) return false;
+      return true;
+    });
+
+    // Calcular KPIs
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    const dentroDe30Dias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    let countProximas = 0;
+    let countInscripcion = 0;
+    let countEnEjecucion = 0;
+    let countTotalMes = 0;
+
+    filtradas.forEach(a => {
+      const fInicio = parsearFechaActividad(a.FECHA_INICIO);
+      const fTermino = parsearFechaActividad(a.FECHA_TERMINO) || fInicio;
+
+      if (fInicio && fInicio >= hoy && fInicio <= dentroDe30Dias) countProximas++;
+      if (a.ESTADO_ACTIVIDAD === 'Inscripción abierta' || a.ESTADO_ACTIVIDAD === 'Difusión') countInscripcion++;
+      if (a.ESTADO_ACTIVIDAD === 'En ejecución') countEnEjecucion++;
+
+      if (fInicio) {
+        if ((fInicio.getFullYear() === anio && fInicio.getMonth() === mes) ||
+            (fTermino && fTermino.getFullYear() === anio && fTermino.getMonth() === mes)) {
+          countTotalMes++;
+        }
+      }
+    });
+
+    texto('calKpiProximas', countProximas);
+    texto('calKpiInscripcion', countInscripcion);
+    texto('calKpiEnEjecucion', countEnEjecucion);
+    texto('calKpiTotalMes', countTotalMes);
+
+    if (CAL_MODO === 'mes') {
+      renderCalendarioMes(filtradas, anio, mes);
+    } else {
+      renderCalendarioLista(filtradas);
+    }
+  }
+
+  function renderCalendarioMes(actividades, anio, mes) {
+    const grid = document.getElementById('gridCalendarioDias');
+    if (!grid) return;
+
+    const primerDiaMes = new Date(anio, mes, 1);
+    const ultimoDiaMes = new Date(anio, mes + 1, 0);
+    const totalDiasMes = ultimoDiaMes.getDate();
+
+    // 0 = Lunes, 6 = Domingo
+    let primerDiaSemana = (primerDiaMes.getDay() + 6) % 7;
+    const diasMesAnterior = new Date(anio, mes, 0).getDate();
+
+    // Mapear actividades por clave YYYY-MM-DD
+    const mapaActividadesPorDia = {};
+    actividades.forEach(a => {
+      const fInicio = parsearFechaActividad(a.FECHA_INICIO);
+      if (fInicio) {
+        const clave = formatoClaveFecha(fInicio);
+        if (!mapaActividadesPorDia[clave]) mapaActividadesPorDia[clave] = [];
+        mapaActividadesPorDia[clave].push(a);
+      }
+    });
+
+    const hoyClave = formatoClaveFecha(new Date());
+    let html = '';
+
+    // Días del mes anterior
+    for (let i = primerDiaSemana - 1; i >= 0; i--) {
+      const numDia = diasMesAnterior - i;
+      const fechaObj = new Date(anio, mes - 1, numDia);
+      const clave = formatoClaveFecha(fechaObj);
+      const evts = mapaActividadesPorDia[clave] || [];
+      html += generarCeldaDiaCalendario(numDia, clave, evts, true, clave === hoyClave);
+    }
+
+    // Días del mes actual
+    for (let d = 1; d <= totalDiasMes; d++) {
+      const fechaObj = new Date(anio, mes, d);
+      const clave = formatoClaveFecha(fechaObj);
+      const evts = mapaActividadesPorDia[clave] || [];
+      html += generarCeldaDiaCalendario(d, clave, evts, false, clave === hoyClave);
+    }
+
+    // Días del mes siguiente para completar la cuadrícula (múltiplo de 7)
+    const celdasGeneradas = primerDiaSemana + totalDiasMes;
+    const celdasRestantes = (7 - (celdasGeneradas % 7)) % 7;
+    for (let s = 1; s <= celdasRestantes; s++) {
+      const fechaObj = new Date(anio, mes + 1, s);
+      const clave = formatoClaveFecha(fechaObj);
+      const evts = mapaActividadesPorDia[clave] || [];
+      html += generarCeldaDiaCalendario(s, clave, evts, true, clave === hoyClave);
+    }
+
+    grid.innerHTML = html;
+  }
+
+  function generarCeldaDiaCalendario(numDia, claveFecha, eventos, esOtroMes, esHoy) {
+    const clases = ['cal-day-cell'];
+    if (esOtroMes) clases.push('cal-day-other-month');
+    if (esHoy) clases.push('cal-day-today');
+
+    let chipsHtml = '';
+    const maxVisibles = 3;
+    const visibles = eventos.slice(0, maxVisibles);
+    const extras = eventos.length - maxVisibles;
+
+    visibles.forEach(a => {
+      let claseEscuela = 'chip-empleo';
+      if (a.ESCUELA_LINEA === 'Emprendimiento') claseEscuela = 'chip-emprendimiento';
+      else if (a.ESCUELA_LINEA === 'Transversal') claseEscuela = 'chip-transversal';
+
+      chipsHtml += `
+        <div class="cal-event-chip ${claseEscuela}" onclick="event.stopPropagation(); abrirDetalleActividadCalendario('${esc(a.ID_ACTIVIDAD)}')" title="${esc(a.NOMBRE_ACTIVIDAD)} (${esc(a.ESTADO_ACTIVIDAD || 'Planificada')})">
+          <strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong>
+          <small>${esc(a.ESTADO_ACTIVIDAD || 'Planificada')} · ${esc(a.MODALIDAD || 'Presencial')}</small>
+        </div>
+      `;
+    });
+
+    if (extras > 0) {
+      chipsHtml += `<button class="cal-more-btn" onclick="event.stopPropagation(); cambiarModoCalendario('lista')">+${extras} más</button>`;
+    }
+
+    return `
+      <div class="${clases.join(' ')}" data-fecha="${claveFecha}">
+        <div class="cal-day-header">
+          <span class="cal-day-num">${numDia}</span>
+          ${eventos.length > 0 ? `<span class="badge neutral" style="font-size:9.5px;padding:1px 5px">${eventos.length}</span>` : ''}
+        </div>
+        <div class="cal-events-list">
+          ${chipsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCalendarioLista(actividades) {
+    const contenedor = document.getElementById('listaCalendarioProximas');
+    if (!contenedor) return;
+
+    if (!actividades.length) {
+      contenedor.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No hay capacitaciones que coincidan con los filtros seleccionados.</div>';
+      return;
+    }
+
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+
+    // Ordenar cronológicamente por fecha de inicio
+    const ordenadas = [...actividades].sort((a, b) => {
+      const fA = parsearFechaActividad(a.FECHA_INICIO)?.getTime() || 0;
+      const fB = parsearFechaActividad(b.FECHA_INICIO)?.getTime() || 0;
+      return fA - fB;
+    });
+
+    contenedor.innerHTML = ordenadas.map(a => {
+      const fInicio = parsearFechaActividad(a.FECHA_INICIO);
+      const fTermino = parsearFechaActividad(a.FECHA_TERMINO);
+
+      let badgeCountdown = '';
+      if (fInicio) {
+        const diffDias = Math.ceil((fInicio.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDias === 0) {
+          badgeCountdown = '<span class="cal-countdown-badge countdown-hoy">🔥 Inicia hoy</span>';
+        } else if (diffDias > 0 && diffDias <= 7) {
+          badgeCountdown = `<span class="cal-countdown-badge countdown-pronto">⏳ Inicia en ${diffDias} ${diffDias === 1 ? 'día' : 'días'}</span>`;
+        } else if (diffDias > 7) {
+          badgeCountdown = `<span class="cal-countdown-badge countdown-futuro">📅 Inicia en ${diffDias} días</span>`;
+        } else if (fTermino && fTermino >= hoy) {
+          badgeCountdown = '<span class="cal-countdown-badge countdown-curso">⚡ En curso</span>';
+        } else {
+          badgeCountdown = '<span class="cal-countdown-badge countdown-futuro">Concluida</span>';
+        }
+      } else {
+        badgeCountdown = '<span class="cal-countdown-badge countdown-futuro">Por programar</span>';
+      }
+
+      let claseBorde = 'border-empleo';
+      if (a.ESCUELA_LINEA === 'Emprendimiento') claseBorde = 'border-emprendimiento';
+      else if (a.ESCUELA_LINEA === 'Transversal') claseBorde = 'border-transversal';
+
+      return `
+        <div class="cal-list-card ${claseBorde}">
+          <div>
+            <div class="cal-list-card-head">
+              <h4>${esc(a.NOMBRE_ACTIVIDAD)}</h4>
+              ${badgeCountdown}
+            </div>
+            <div class="cal-list-meta" style="margin-top:10px">
+              <div class="cal-list-meta-row">
+                <span>Escuela:</span>
+                <strong>${esc(a.ESCUELA_LINEA || 'General')}</strong>
+                ${a.AREA_TEMATICA ? `<span style="color:var(--borde)">|</span> <span>${esc(a.AREA_TEMATICA)}</span>` : ''}
+              </div>
+              <div class="cal-list-meta-row">
+                <span>Fechas:</span>
+                <strong>${esc(fechaActividadVisible(a.FECHA_INICIO) || 'Por definir')} ${a.FECHA_TERMINO ? 'al ' + esc(fechaActividadVisible(a.FECHA_TERMINO)) : ''}</strong>
+              </div>
+              <div class="cal-list-meta-row">
+                <span>Modalidad:</span>
+                <strong>${esc(a.MODALIDAD || 'Presencial')}</strong>
+                <span style="color:var(--borde)">|</span>
+                <span>Estado:</span>
+                <span class="badge ${a.ESTADO_ACTIVIDAD === 'En ejecución' ? 'success' : (a.ESTADO_ACTIVIDAD === 'Inscripción abierta' ? 'info' : 'neutral')}">${esc(a.ESTADO_ACTIVIDAD || 'Planificada')}</span>
+              </div>
+              ${a.CUPOS ? `<div class="cal-list-meta-row"><span>Cupos:</span> <strong>${esc(a.CUPOS)}</strong></div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn secondary compact" type="button" onclick="abrirDetalleActividadCalendario('${esc(a.ID_ACTIVIDAD)}')">Ver detalle</button>
+            <button class="btn compact" type="button" onclick="irAGestionDesdeCalendario('${esc(a.ID_ACTIVIDAD)}')">Participantes</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function abrirDetalleActividadCalendario(idActividad) {
+    const a = (DB.actividades || []).find(x => x.ID_ACTIVIDAD === idActividad);
+    if (!a) return;
+
+    texto('calDetalleId', a.ID_ACTIVIDAD || '—');
+    texto('calDetalleNombre', a.NOMBRE_ACTIVIDAD || '—');
+    texto('calDetalleTipo', a.TIPO_ACTIVIDAD || '—');
+    texto('calDetalleEscuela', a.ESCUELA_LINEA || '—');
+    texto('calDetalleArea', a.AREA_TEMATICA || '—');
+    texto('calDetalleInicio', fechaActividadVisible(a.FECHA_INICIO) || 'Por definir');
+    texto('calDetalleTermino', fechaActividadVisible(a.FECHA_TERMINO) || 'Por definir');
+    texto('calDetalleModalidad', a.MODALIDAD || '—');
+    texto('calDetalleSesiones', a.SESIONES_TOTALES || '1');
+    texto('calDetalleCupos', a.CUPOS || 'Sin límite');
+    texto('calDetalleInstitucion', a.INSTITUCION_ASOCIADA || 'Municipalidad de Santiago');
+    texto('calDetalleResponsable', a.RESPONSABLE || '—');
+    texto('calDetalleObs', a.OBSERVACIONES || 'Sin observaciones.');
+
+    const elBadge = document.getElementById('calDetalleBadge');
+    if (elBadge) {
+      elBadge.textContent = a.ESTADO_ACTIVIDAD || 'Planificada';
+      elBadge.className = 'badge ' + (a.ESTADO_ACTIVIDAD === 'En ejecución' ? 'success' : (a.ESTADO_ACTIVIDAD === 'Inscripción abierta' ? 'info' : 'neutral'));
+    }
+
+    const btnGestion = document.getElementById('btnCalIrGestion');
+    if (btnGestion) {
+      btnGestion.onclick = () => {
+        cerrarDetalleActividadCalendario();
+        irAGestionDesdeCalendario(idActividad);
+      };
+    }
+
+    const btnEditar = document.getElementById('btnCalIrEditar');
+    if (btnEditar) {
+      btnEditar.onclick = () => {
+        cerrarDetalleActividadCalendario();
+        irAVista('actividades');
+        abrirEdicionActividad(idActividad);
+      };
+    }
+
+    const modal = document.getElementById('modalDetalleActividadCalendario');
+    if (modal) modal.hidden = false;
+  }
+
+  function cerrarDetalleActividadCalendario() {
+    const modal = document.getElementById('modalDetalleActividadCalendario');
+    if (modal) modal.hidden = true;
+  }
+
+  function irAGestionDesdeCalendario(idActividad) {
+    irAVista('gestion');
+    const selector = document.getElementById('gestionActividad');
+    if (selector) {
+      selector.value = idActividad;
+      cargarGestionActividad();
+    }
   }
 
   actualizarAreasReporte();

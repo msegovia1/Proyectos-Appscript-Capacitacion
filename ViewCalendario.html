@@ -1,0 +1,130 @@
+<section id="calendario" class="view">
+  <div class="section-head">
+    <div>
+      <h2>Calendario de capacitaciones</h2>
+      <p>Cronograma mensual y próximas actividades programadas en la Municipalidad de Santiago.</p>
+    </div>
+    <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
+  </div>
+
+  <!-- KPIs de Resumen del Calendario -->
+  <div class="module-kpis">
+    <div class="card module-kpi accent-blue"><span>Próximas (30 días)</span><strong id="calKpiProximas">0</strong></div>
+    <div class="card module-kpi accent-emerald"><span>Inscripción abierta / Difusión</span><strong id="calKpiInscripcion">0</strong></div>
+    <div class="card module-kpi accent-amber"><span>En ejecución</span><strong id="calKpiEnEjecucion">0</strong></div>
+    <div class="card module-kpi accent-purple"><span>Total del mes</span><strong id="calKpiTotalMes">0</strong></div>
+  </div>
+
+  <!-- Barra de Controles y Filtros del Calendario -->
+  <div class="card panel calendar-panel">
+    <div class="calendar-toolbar">
+      <div class="calendar-nav-group">
+        <button class="btn secondary compact" type="button" onclick="cambiarMesCalendario(-1)" title="Mes anterior">‹ Anterior</button>
+        <button class="btn secondary compact" type="button" onclick="irAHoyCalendario()" title="Ir al mes actual">Hoy</button>
+        <button class="btn secondary compact" type="button" onclick="cambiarMesCalendario(1)" title="Mes siguiente">Siguiente ›</button>
+        <h3 id="calTituloMes" class="calendar-month-title">Septiembre 2026</h3>
+      </div>
+
+      <div class="calendar-view-toggle">
+        <button id="btnCalModoMes" class="btn compact" type="button" onclick="cambiarModoCalendario('mes')">📅 Vista mensual</button>
+        <button id="btnCalModoLista" class="btn secondary compact" type="button" onclick="cambiarModoCalendario('lista')">📋 Próximas</button>
+      </div>
+    </div>
+
+    <!-- Filtros del Calendario -->
+    <div class="calendar-filters">
+      <div class="field">
+        <label>Escuela / línea</label>
+        <select id="filtroCalEscuela" onchange="renderCalendario()">
+          <option value="">Todas las escuelas</option>
+          <option value="Empleo">Empleo</option>
+          <option value="Emprendimiento">Emprendimiento</option>
+          <option value="Transversal">Transversal</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Estado</label>
+        <select id="filtroCalEstado" onchange="renderCalendario()">
+          <option value="">Todos los estados</option>
+          <option value="Planificada">Planificada</option>
+          <option value="Difusión">Difusión</option>
+          <option value="Inscripción abierta">Inscripción abierta</option>
+          <option value="En ejecución">En ejecución</option>
+          <option value="Ejecutada">Ejecutada</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Modalidad</label>
+        <select id="filtroCalModalidad" onchange="renderCalendario()">
+          <option value="">Todas las modalidades</option>
+          <option value="Presencial">Presencial</option>
+          <option value="Online">Online</option>
+          <option value="Híbrida">Híbrida</option>
+        </select>
+      </div>
+      <div class="field search-field">
+        <label>Buscar actividad</label>
+        <input id="buscarCalTexto" placeholder="Nombre, área o institución..." oninput="renderCalendario()">
+      </div>
+    </div>
+
+    <!-- Leyenda de Colores por Escuela -->
+    <div class="calendar-legend">
+      <span class="legend-title">Escuelas:</span>
+      <span class="legend-item"><span class="legend-dot dot-empleo"></span> Empleo</span>
+      <span class="legend-item"><span class="legend-dot dot-emprendimiento"></span> Emprendimiento</span>
+      <span class="legend-item"><span class="legend-dot dot-transversal"></span> Transversal</span>
+    </div>
+
+    <!-- Vista Mensual (Cuadrícula) -->
+    <div id="contenedorCalendarioMes" class="calendar-grid-container">
+      <div class="calendar-weekdays-header">
+        <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
+      </div>
+      <div id="gridCalendarioDias" class="calendar-days-grid">
+        <!-- Generado dinámicamente -->
+      </div>
+    </div>
+
+    <!-- Vista de Lista Cronológica de Próximas -->
+    <div id="contenedorCalendarioLista" class="calendar-list-container" hidden>
+      <div id="listaCalendarioProximas" class="calendar-list-grid">
+        <!-- Generado dinámicamente -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Detalle de Actividad Seleccionada -->
+  <div id="modalDetalleActividadCalendario" class="modal-overlay" hidden>
+    <div class="modal-box modal-detalle-actividad">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span id="calDetalleBadge" class="badge">Estado</span>
+          <h3 id="calDetalleNombre">Nombre de la Actividad</h3>
+        </div>
+        <button class="modal-close" type="button" onclick="cerrarDetalleActividadCalendario()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detalle-grid">
+          <div class="detalle-item"><label>ID Actividad:</label><strong id="calDetalleId">—</strong></div>
+          <div class="detalle-item"><label>Tipo:</label><span id="calDetalleTipo">—</span></div>
+          <div class="detalle-item"><label>Escuela / Línea:</label><span id="calDetalleEscuela">—</span></div>
+          <div class="detalle-item"><label>Área Temática:</label><span id="calDetalleArea">—</span></div>
+          <div class="detalle-item"><label>Fecha Inicio:</label><strong id="calDetalleInicio">—</strong></div>
+          <div class="detalle-item"><label>Fecha Término:</label><strong id="calDetalleTermino">—</strong></div>
+          <div class="detalle-item"><label>Modalidad:</label><span id="calDetalleModalidad">—</span></div>
+          <div class="detalle-item"><label>Sesiones Totales:</label><span id="calDetalleSesiones">—</span></div>
+          <div class="detalle-item"><label>Cupos:</label><span id="calDetalleCupos">—</span></div>
+          <div class="detalle-item"><label>Institución:</label><span id="calDetalleInstitucion">—</span></div>
+          <div class="detalle-item"><label>Responsable:</label><span id="calDetalleResponsable">—</span></div>
+          <div class="detalle-item full"><label>Observaciones:</label><p id="calDetalleObs">—</p></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn secondary" type="button" onclick="cerrarDetalleActividadCalendario()">Cerrar</button>
+        <button id="btnCalIrGestion" class="btn" type="button">Gestionar participantes</button>
+        <button id="btnCalIrEditar" class="btn secondary" type="button">Editar actividad</button>
+      </div>
+    </div>
+  </div>
+</section>
