@@ -2458,6 +2458,18 @@ function webNumeroNoNegativo_(valor, defecto) {
   return numero;
 }
 
+function webEnteroVacioOPositivo_(valor, defecto) {
+  if (valor === '' || valor === null || valor === undefined) {
+    if (defecto === '' || defecto === null || defecto === undefined) return '';
+    valor = defecto;
+  }
+  const texto = String(valor).trim();
+  if (texto === '') return '';
+  const num = parseInt(texto, 10);
+  if (isNaN(num) || num < 0) return '';
+  return num;
+}
+
 function webNormalizarCertificado_(valor) {
   const clave = sigcNormalizarClave(valor);
   if (clave === 'no aplica') return 'No aplica';
