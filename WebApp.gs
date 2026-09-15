@@ -4,15 +4,33 @@
  */
 function doGet(e) {
   try {
-    actualizarEstadosActividadesVencidas();
+    verificarActividadesVencidasConThrottle_();
   } catch (error) {
-    console.error('No se pudieron actualizar actividades vencidas: ' + error.message);
+    console.error('No se pudieron verificar actividades vencidas: ' + error.message);
   }
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Sistema de Gestión de Capacitaciones — SIGC')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Ejecuta la verificación de actividades vencidas con control de frecuencia
+ * para que no ralentice la carga inicial de la interfaz web.
+ */
+function verificarActividadesVencidasConThrottle_() {
+  const cache = CacheService.getScriptCache();
+  const claveThrottle = 'SIGC_THROTTLE_VENCIDAS';
+  if (cache.get(claveThrottle)) {
+    return;
+  }
+  try {
+    actualizarEstadosActividadesVencidas();
+    cache.put(claveThrottle, '1', 21600); // 6 horas
+  } catch (e) {
+    console.warn('Verificación de actividades vencidas omitida: ' + e.message);
+  }
 }
 /* Compatibilidad con implementaciones antiguas. */
 function doGetV1(e) {
@@ -36,12 +54,12 @@ function probarConexionSIGC() {
  */
 function obtenerDatosDashboard() {
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
-  const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
   const intereses = hojaIntereses
-    ? webLeerTabla_(ss, hojaIntereses.getName())
+    ? webLeerTablaConCache_(ss, hojaIntereses.getName())
     : [];
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
   const actividadesPorId = webIndexar_(actividades, 'ID_ACTIVIDAD');
@@ -143,11 +161,11 @@ function obtenerDashboardLiviano(forzarActualizacion) {
     }
   }
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
-  const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
   const interesesHoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = interesesHoja ? webLeerTabla_(ss, interesesHoja.getName()) : [];
+  const intereses = interesesHoja ? webLeerTablaConCache_(ss, interesesHoja.getName()) : [];
   const personasNormalizadas = personas.map(webNormalizarPersonaSalida_);
   const personasPorId = webIndexar_(personasNormalizadas, 'ID_PERSONA');
   const actividadesPorId = webIndexar_(actividades, 'ID_ACTIVIDAD');
@@ -181,32 +199,32 @@ function obtenerDashboardLiviano(forzarActualizacion) {
 function obtenerDatosModulo(nombreModulo) {
   const modulo = String(nombreModulo || '').toLowerCase();
   const ss = sigcSpreadsheetCentral_();
-  if (modulo === 'actividades') return {actividades: webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)};
+  if (modulo === 'actividades') return {actividades: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)};
   if (modulo === 'personas') {
-    const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
+    const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
     return {personas: personas};
   }
   if (modulo === 'catalogos') {
     return {
-      personas: webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_),
-      actividades: webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)
+      personas: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_),
+      actividades: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)
     };
   }
   if (modulo === 'participaciones') {
-    const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
-    const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
+    const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
     return {personas: personas, actividades: actividades, participaciones: webEnriquecerParticipaciones_(
-      webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
+      webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
     )};
   }
   if (modulo === 'demanda') {
-    const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
-    const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
+    const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
     const participaciones = webEnriquecerParticipaciones_(
-      webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
+      webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
     );
     const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-    const intereses = hoja ? webLeerTabla_(ss, hoja.getName()) : [];
+    const intereses = hoja ? webLeerTablaConCache_(ss, hoja.getName()) : [];
     return {demanda: webConstruirAnalisisDemanda_(personas, intereses, actividades, participaciones)};
   }
   throw new Error('Módulo no reconocido: ' + nombreModulo);
@@ -250,8 +268,8 @@ function webEnriquecerParticipaciones_(participaciones, personas, actividades) {
 function obtenerReporteEstadistico(filtros) {
   filtros = filtros || {};
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
-  let actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
+  let actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
   const coincide = function(valor, filtro) {
     return !filtro || sigcNormalizarClave(valor) === sigcNormalizarClave(filtro);
   };
@@ -266,7 +284,7 @@ function obtenerReporteEstadistico(filtros) {
   });
   const idsActividad = new Set(actividades.map(function(a) { return String(a.ID_ACTIVIDAD || ''); }));
   const participaciones = webEnriquecerParticipaciones_(
-    webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
+    webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
   ).filter(function(p) { return idsActividad.has(String(p.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(p); });
   const seleccionadas = participaciones.filter(sigcEsSeleccionado);
   const asistentes = seleccionadas.filter(function(p) {
@@ -277,7 +295,7 @@ function obtenerReporteEstadistico(filtros) {
   const cupos = actividades.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
   const unicas = new Set(participaciones.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = hojaIntereses ? webLeerTabla_(ss, hojaIntereses.getName()) : [];
+  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
   const interesesFiltrados = intereses.filter(function(i) {
     return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo' &&
       coincide(i.ESCUELA_LINEA, filtros.escuelaLinea) &&
@@ -331,10 +349,10 @@ function obtenerReporteAsistencias(filtros) {
     throw new Error('Seleccione una capacitación para generar el listado de asistencias.');
   }
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS)
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS)
     .map(webNormalizarPersonaSalida_);
-  const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
   return webConstruirReporteAsistencias_(personas, actividades, participaciones, filtros);
 }
 
@@ -447,6 +465,7 @@ function guardarInteresCapacitacion(datos) {
         }
       );
       sigcRegistrarLog('ACTUALIZAR', 'INTERES', existente.datos.ID_INTERES, 'Interés reactivado o actualizado.');
+      sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
       return {
         ok: true,
         id: existente.datos.ID_INTERES,
@@ -466,6 +485,7 @@ function guardarInteresCapacitacion(datos) {
       OBSERVACIONES: sigcNormalizarTexto(datos.OBSERVACIONES)
     });
     sigcRegistrarLog('CREAR', 'INTERES', id, datos.ID_PERSONA + ' | ' + linea + ' | ' + area);
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
     return {ok: true, id: id, mensaje: 'Interés de capacitación registrado.'};
   } finally {
     lock.releaseLock();
@@ -490,6 +510,7 @@ function actualizarEstadoInteres(idInteres, estado) {
       ULTIMA_ACTUALIZACION: new Date()
     });
     sigcRegistrarLog('ACTUALIZAR', 'INTERES', idInteres, 'Estado: ' + nuevoEstado);
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
     return {ok: true, mensaje: 'Interés marcado como ' + nuevoEstado.toLowerCase() + '.'};
   } finally {
     lock.releaseLock();
@@ -499,11 +520,11 @@ function actualizarEstadoInteres(idInteres, estado) {
 /** Devuelve la matriz Demanda -> Capacitación efectiva. */
 function obtenerAnalisisDemanda() {
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
-  const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = hojaIntereses ? webLeerTabla_(ss, hojaIntereses.getName()) : [];
+  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
   return webConstruirAnalisisDemanda_(personas, intereses, actividades, participaciones);
 }
 
@@ -514,12 +535,12 @@ function obtenerAnalisisDemanda() {
 function obtenerDestinatariosComunicacion(filtros) {
   filtros = filtros || {};
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
-  const actividades = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES)
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES)
     .filter(webEsRegistroActivo_);
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = hojaIntereses ? webLeerTabla_(ss, hojaIntereses.getName()) : [];
+  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
   const actividadesPorId = webIndexar_(actividades, 'ID_ACTIVIDAD');
   const fuente = String(filtros.fuente || 'actividad');
@@ -714,6 +735,8 @@ function guardarPersona(datos) {
         idExistente,
         'Ficha completada desde la aplicación web.'
       );
+      sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PERSONAS);
+      if (interesesGuardados) sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
       const personaActualizada = Object.assign({}, existente.datos, cambios, { ID_PERSONA: idExistente });
       return {
         ok: true,
@@ -741,6 +764,8 @@ function guardarPersona(datos) {
       id,
       'Registro desde la aplicación web.'
     );
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PERSONAS);
+    if (interesesGuardados) sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
     return {
       ok: true,
       mensaje: 'La persona fue registrada.' +
@@ -881,6 +906,7 @@ function actualizarPersona(datos) {
     webActualizarFilaPorEncabezados_(hoja, tabla.encabezados, existente.numeroFila, cambios);
     SpreadsheetApp.flush();
     sigcRegistrarLog('ACTUALIZAR', 'PERSONA', idPersona, 'Ficha editada desde la aplicación web.');
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PERSONAS);
     const personaActualizada = Object.assign({}, existente.datos, cambios, { ID_PERSONA: idPersona });
     return {
       ok: true,
@@ -959,6 +985,7 @@ function guardarActividad(datos) {
       id,
       sigcNormalizarTexto(datos.NOMBRE_ACTIVIDAD)
     );
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
     return {
       ok: true,
       mensaje: 'La actividad fue registrada.',
@@ -1164,6 +1191,8 @@ function actualizarActividad(datos) {
         ' → ' + estado + '. Participaciones sincronizadas: ' + sincronizadas +
         '. Resultados recalculados: ' + resultadosRecalculados + '.'
     );
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    if (sincronizadas > 0) sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
     return {
       ok: true,
       id: idActividad,
@@ -1217,7 +1246,7 @@ function quitarActividad(payload) {
     if (!tieneVinculos) {
       impacto.hojaActividades.deleteRow(impacto.filaActividad.numeroFila);
       SpreadsheetApp.flush();
-      webInvalidarDashboard_();
+      sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
       sigcRegistrarLog(
         'ELIMINAR',
         'ACTIVIDAD',
@@ -1260,7 +1289,8 @@ function quitarActividad(payload) {
         advertenciasActivadores++;
       }
     });
-    webInvalidarDashboard_();
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
     sigcRegistrarLog(
       'ARCHIVAR',
       'ACTIVIDAD',
@@ -1388,6 +1418,7 @@ function guardarParticipacion(datos) {
       id,
       datos.ID_PERSONA + ' | ' + datos.ID_ACTIVIDAD
     );
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
     const participacionEnriquecida = Object.assign({}, nuevaParticipacion, {
       NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
       RUT: persona.RUT || '',
@@ -1424,9 +1455,9 @@ function obtenerGestionActividad(idActividad) {
     idActividad
   );
   if (!actividad) throw new Error('No se encontró la actividad seleccionada.');
-  const personas = webLeerTabla_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
-  const participaciones = webLeerTabla_(
+  const participaciones = webLeerTablaConCache_(
     ss,
     WEBAPP_CONFIG.HOJAS.PARTICIPACIONES
   )
@@ -1631,6 +1662,7 @@ function guardarGestionMasiva(payload) {
       payload.idActividad,
       filasActualizadas.length + ' registros modificados mediante guardado selectivo.'
     );
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
     return {
       ok: true,
       actualizados: filasActualizadas.length,
@@ -1849,6 +1881,110 @@ function webCeldaAString_(valor) {
     return `${anio}-${mes}-${dia}`;
   }
   return String(valor).trim();
+}
+
+/**
+ * Almacenamiento seguro en CacheService con segmentación para tablas de cualquier tamaño.
+ */
+function sigcGuardarEnCache_(clave, datos, ttlSegundos) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const ttl = Math.min(ttlSegundos || 21600, 21600);
+    const json = typeof datos === 'string' ? datos : JSON.stringify(datos);
+    const chunkSize = 85000;
+    if (json.length <= chunkSize) {
+      cache.put(clave, json, ttl);
+      cache.put(clave + '_chunks', '1', ttl);
+    } else {
+      const totalChunks = Math.ceil(json.length / chunkSize);
+      const chunksMap = {};
+      chunksMap[clave + '_chunks'] = String(totalChunks);
+      for (let i = 0; i < totalChunks; i++) {
+        chunksMap[clave + '_chunk_' + i] = json.substring(i * chunkSize, (i + 1) * chunkSize);
+      }
+      cache.putAll(chunksMap, ttl);
+    }
+  } catch (e) {
+    console.warn('Error al guardar en CacheService (' + clave + '): ' + e.message);
+  }
+}
+
+/**
+ * Recupera datos de CacheService reconstruyendo los segmentos si fuera necesario.
+ */
+function sigcObtenerDeCache_(clave) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const chunksVal = cache.get(clave + '_chunks');
+    if (!chunksVal) {
+      const raw = cache.get(clave);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    }
+    const totalChunks = parseInt(chunksVal, 10);
+    if (isNaN(totalChunks) || totalChunks < 1) return null;
+    if (totalChunks === 1) {
+      const single = cache.get(clave);
+      return single ? JSON.parse(single) : null;
+    }
+    const chunkKeys = [];
+    for (let i = 0; i < totalChunks; i++) {
+      chunkKeys.push(clave + '_chunk_' + i);
+    }
+    const chunks = cache.getAll(chunkKeys);
+    let fullJson = '';
+    for (let i = 0; i < totalChunks; i++) {
+      const piece = chunks[clave + '_chunk_' + i];
+      if (piece === undefined || piece === null) return null;
+      fullJson += piece;
+    }
+    return JSON.parse(fullJson);
+  } catch (e) {
+    console.warn('Error al leer de CacheService (' + clave + '): ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Invalida selectivamente la caché de una tabla específica y del resumen.
+ */
+function sigcInvalidarCacheTabla_(nombreHoja) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const clave = 'SIGC_TABLA_' + String(nombreHoja || '').toUpperCase().trim();
+    const chunksVal = cache.get(clave + '_chunks');
+    const keysToRemove = [clave, clave + '_chunks'];
+    if (chunksVal) {
+      const total = parseInt(chunksVal, 10) || 0;
+      for (let i = 0; i < total; i++) {
+        keysToRemove.push(clave + '_chunk_' + i);
+      }
+    }
+    cache.removeAll(keysToRemove);
+  } catch (e) {
+    console.warn('Error al invalidar caché de tabla ' + nombreHoja + ': ' + e.message);
+  }
+  if (typeof webInvalidarDashboard_ === 'function') {
+    webInvalidarDashboard_();
+  }
+}
+
+/**
+ * Lee una tabla desde la caché compartida de alto rendimiento o desde la hoja si no existe.
+ */
+function webLeerTablaConCache_(ss, nombreHoja, forzar) {
+  const clave = 'SIGC_TABLA_' + String(nombreHoja || '').toUpperCase().trim();
+  if (!forzar) {
+    const cached = sigcObtenerDeCache_(clave);
+    if (cached && Array.isArray(cached)) {
+      return cached;
+    }
+  }
+  const datos = webLeerTabla_(ss, nombreHoja);
+  if (datos && Array.isArray(datos)) {
+    sigcGuardarEnCache_(clave, datos, 21600);
+  }
+  return datos;
 }
 
 function webLeerTabla_(ss, nombreHoja) {
@@ -2271,7 +2407,7 @@ function webActualizarPersonaSinBorrar_(
   rango.setValues([actual]);
 }
 function webBuscarRegistro_(ss, nombreHoja, campo, valor) {
-  return webLeerTabla_(ss, nombreHoja).find(function(registro) {
+  return webLeerTablaConCache_(ss, nombreHoja).find(function(registro) {
     return String(registro[campo]) === String(valor);
   }) || null;
 }

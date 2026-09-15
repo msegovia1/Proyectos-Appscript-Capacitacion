@@ -1223,6 +1223,7 @@ function actualizarEstadosActividadesVencidas() {
           try { cerrarFormulariosYActivadoresActividad_(idAct, 'Ejecutada'); } catch (e) {}
         }
       });
+      if (typeof sigcInvalidarCacheTabla_ === 'function') sigcInvalidarCacheTabla_(SISTEMA.HOJAS.ACTIVIDADES);
       if (typeof webInvalidarDashboard_ === 'function') webInvalidarDashboard_();
       sigcRegistrarLog(
         'ACTUALIZACION AUTOMATICA',
@@ -1929,6 +1930,7 @@ function guardarAsistenciaRapida() {
       actualizadas++;
     });
     SpreadsheetApp.flush();
+    if (typeof sigcInvalidarCacheTabla_ === 'function') sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PARTICIPACIONES);
   } finally {
     lock.releaseLock();
   }

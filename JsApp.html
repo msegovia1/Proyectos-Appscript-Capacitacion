@@ -76,6 +76,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         renderDashboard();
         guardarDashboardLocal_(datos);
         mostrarCarga(false);
+        precargarModulosSilencioso_();
       })
       .withFailureHandler(error => {
         mostrarCarga(false);
@@ -83,6 +84,30 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         notificar(msg, true);
       })
       .obtenerDashboardLiviano(forzar === true);
+  }
+  function precargarModulosSilencioso_() {
+    setTimeout(() => {
+      if (!MODULOS_CARGADOS.has('actividades')) {
+        google.script.run.withSuccessHandler(datos => {
+          if (datos && datos.actividades) {
+            DB.actividades = datos.actividades;
+            MODULOS_CARGADOS.add('actividades');
+            llenarSelectores();
+            setTimeout(() => {
+              if (!MODULOS_CARGADOS.has('personas')) {
+                google.script.run.withSuccessHandler(dPersonas => {
+                  if (dPersonas && dPersonas.personas) {
+                    DB.personas = dPersonas.personas;
+                    MODULOS_CARGADOS.add('personas');
+                    llenarSelectores();
+                  }
+                }).obtenerDatosModulo('personas');
+              }
+            }, 1200);
+          }
+        }).obtenerDatosModulo('actividades');
+      }
+    }, 800);
   }
   function cargarDashboardLocal_() {
     try {
@@ -95,6 +120,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       document.getElementById('ultimaActualizacion').textContent =
         'Resumen local: ' + (datos.fechaActualizacion || 'sin fecha');
       renderDashboard();
+      precargarModulosSilencioso_();
       return true;
     } catch (error) {
       return false;
