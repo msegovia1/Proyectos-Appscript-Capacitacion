@@ -32,6 +32,7 @@
       <div class="field"><label>Regla de resultado</label><select name="REGLA_RESULTADO"><option>Asistencia</option><option>Porcentaje</option></select></div>
       <div class="field"><label>Porcentaje de aprobación</label><input name="PORCENTAJE_APROBACION" type="number" min="0" max="100" step="0.1" placeholder="Ej.: 80"></div>
       <div class="field"><label>Requiere selección</label><select name="REQUIERE_SELECCION"><option>Sí</option><option>No</option></select></div>
+      <div class="field"><label>Cupos</label><input name="CUPOS" type="number" min="0" placeholder="Ej.: 25"></div>
       <div class="field"><label>Fecha inicio</label><input id="regFechaInicio" name="FECHA_INICIO" type="date"></div>
       <div class="field"><label>Fecha término</label><input id="regFechaTermino" name="FECHA_TERMINO" type="date"></div>
       <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Online</option><option>Híbrida</option></select></div>
@@ -93,6 +94,8 @@
 
       <div class="field"><label>Estado</label><select name="ESTADO_ACTIVIDAD"><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Suspendida</option><option>Cerrada</option></select></div>
       <div class="field"><label>Institución asociada</label><input name="INSTITUCION_ASOCIADA"></div>
+      <div class="field"><label>Responsable</label><input name="RESPONSABLE" placeholder="Ej.: Nombre encargado"></div>
+      <div class="field full"><label>Carpeta Drive</label><input name="CARPETA_DRIVE" placeholder="https://drive.google.com/..."></div>
       <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
       <div class="form-actions"><button class="btn" type="submit">Guardar actividad</button></div>
     </form>
