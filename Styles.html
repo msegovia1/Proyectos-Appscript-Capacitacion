@@ -1598,10 +1598,211 @@
     color: var(--texto);
   }
 
-  .detalle-item p {
+  /* ==========================================================================
+     PLANIFICADOR DE SESIONES Y HORARIOS (CRONOGRAMA)
+     ========================================================================== */
+  .schedule-builder-card {
+    grid-column: 1 / -1;
+    background: #f8fafc;
+    border: 1px solid var(--borde);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin: 8px 0 16px;
+  }
+
+  .schedule-builder-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .schedule-builder-head h4 {
     margin: 0;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--azul-1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .schedule-builder-head p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--gris);
+  }
+
+  .days-picker-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .days-picker-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--gris);
+  }
+
+  .days-toggles-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .day-toggle-btn {
+    width: 42px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--borde);
+    background: var(--blanco);
     color: var(--texto);
-    line-height: 1.4;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .day-toggle-btn:hover {
+    border-color: var(--azul-2);
+  }
+
+  .day-toggle-btn.active {
+    background: var(--azul-2);
+    color: #ffffff;
+    border-color: var(--azul-2);
+    box-shadow: 0 2px 4px rgba(30, 58, 138, 0.2);
+  }
+
+  .schedule-inputs-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 12px;
+  }
+
+  .schedule-inputs-row .field {
+    margin: 0;
+  }
+
+  .sessions-container {
+    margin-top: 14px;
+    background: var(--blanco);
+    border: 1px solid var(--borde);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .sessions-table-header {
+    display: grid;
+    grid-template-columns: 80px 1.4fr 1fr 1fr 44px;
+    background: #f1f5f9;
+    border-bottom: 1px solid var(--borde);
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gris);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .sessions-list-body {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .session-item-row {
+    display: grid;
+    grid-template-columns: 80px 1.4fr 1fr 1fr 44px;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--borde-subtle);
+  }
+
+  .session-item-row:last-child {
+    border-bottom: none;
+  }
+
+  .session-badge {
+    font-size: 11px;
+    font-weight: 700;
+    background: #e2e8f0;
+    color: #334155;
+    padding: 3px 6px;
+    border-radius: 4px;
+    text-align: center;
+    display: inline-block;
+  }
+
+  .session-item-row input[type="date"],
+  .session-item-row input[type="time"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 12px;
+    height: 32px;
+    border-radius: 4px;
+  }
+
+  .btn-remove-session {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 15px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-remove-session:hover {
+    background: #fee2e2;
+  }
+
+  /* Detalle de Sesiones en Modal Calendario */
+  .detalle-sesiones-box {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--borde);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    background: #f8fafc;
+    margin-top: 4px;
+  }
+
+  .detalle-sesion-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--borde);
+    font-size: 12.5px;
+  }
+
+  .detalle-sesion-item:last-child {
+    border-bottom: none;
+  }
+
+  .cal-chip-time {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 10px;
+    background: rgba(0, 0, 0, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-right: 4px;
   }
 
   @media (max-width: 900px) {

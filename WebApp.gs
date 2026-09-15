@@ -905,6 +905,7 @@ function guardarActividad(datos) {
     const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
     if (!hoja) throw new Error('No se encontró la hoja ACTIVIDADES.');
     const tabla = webLeerTablaConFilas_(hoja);
+    webAsegurarEncabezadosActividades_(hoja, tabla.encabezados);
     const anio = String(datos.ANO || new Date().getFullYear());
     const id = webCalcularSiguienteIdDesdeFilas_(
       tabla.filas,
@@ -917,6 +918,9 @@ function guardarActividad(datos) {
     ) === 'PORCENTAJE'
       ? 'Porcentaje'
       : 'Asistencia';
+    const detalleSesiones = typeof datos.DETALLE_SESIONES === 'string'
+      ? datos.DETALLE_SESIONES
+      : JSON.stringify(datos.DETALLE_SESIONES || []);
     const nuevaActividad = {
       ID_ACTIVIDAD: id,
       NOMBRE_ACTIVIDAD: sigcNormalizarTexto(datos.NOMBRE_ACTIVIDAD),
@@ -929,6 +933,8 @@ function guardarActividad(datos) {
       MES_TERMINO: sigcNormalizarTexto(datos.MES_TERMINO),
       FECHA_INICIO: datos.FECHA_INICIO || '',
       FECHA_TERMINO: datos.FECHA_TERMINO || '',
+      HORARIO: sigcNormalizarTexto(datos.HORARIO),
+      DETALLE_SESIONES: detalleSesiones === '[]' ? '' : detalleSesiones,
       SESIONES_TOTALES: Math.max(1, Number(datos.SESIONES_TOTALES || 1)),
       PORCENTAJE_APROBACION: regla === 'Porcentaje'
         ? sigcConvertirPorcentaje(datos.PORCENTAJE_APROBACION || 0.8)
@@ -987,6 +993,7 @@ function actualizarActividad(datos) {
     if (!hojaParticipaciones) throw new Error('No se encontró la hoja PARTICIPACIONES.');
 
     const tablaActividades = webLeerTablaConFilas_(hojaActividades);
+    webAsegurarEncabezadosActividades_(hojaActividades, tablaActividades.encabezados);
     const idActividad = String(datos.ID_ACTIVIDAD || '').trim();
     const filaActividad = tablaActividades.filas.find(function(fila) {
       return String(fila.datos.ID_ACTIVIDAD || '').trim() === idActividad;
@@ -1009,34 +1016,33 @@ function actualizarActividad(datos) {
     );
     if (sesionesTotales < 1) throw new Error('Las sesiones totales deben ser al menos 1.');
 
-    const cupos = String(datos.CUPOS ?? '').trim() === ''
-      ? ''
-      : Math.trunc(webNumeroNoNegativo_(datos.CUPOS, 0));
+    const porcentajeAprobacion = sigcConvertirPorcentaje(
+      datos.PORCENTAJE_APROBACION !== undefined &&
+        datos.PORCENTAJE_APROBACION !== ''
+        ? datos.PORCENTAJE_APROBACION
+        : filaActividad.datos.PORCENTAJE_APROBACION || 0.8
+    );
     const regla = sigcNormalizarEncabezado(
-      datos.REGLA_RESULTADO ||
-      filaActividad.datos.REGLA_RESULTADO ||
-      'Asistencia'
+      datos.REGLA_RESULTADO || filaActividad.datos.REGLA_RESULTADO || 'Asistencia'
     ) === 'PORCENTAJE'
       ? 'Porcentaje'
       : 'Asistencia';
-    let porcentajeAprobacion = '';
-    if (regla === 'Porcentaje') {
-      porcentajeAprobacion = sigcConvertirPorcentaje(
-        String(datos.PORCENTAJE_APROBACION ?? '').trim() === ''
-          ? 80
-          : datos.PORCENTAJE_APROBACION
-      );
-      if (porcentajeAprobacion <= 0 || porcentajeAprobacion > 1) {
-        throw new Error('El porcentaje de aprobación debe ser mayor que 0 y menor o igual a 100.');
-      }
-    }
-    const estadosPermitidos = [
-      'Planificada', 'Difusión', 'Inscripción abierta', 'En ejecución',
-      'Ejecutada', 'Suspendida', 'Cerrada', 'Archivada'
-    ];
-    const estado = sigcNormalizarTexto(
-      datos.ESTADO_ACTIVIDAD || filaActividad.datos.ESTADO_ACTIVIDAD
+    const cupos = webEnteroVacioOPositivo_(
+      datos.CUPOS,
+      filaActividad.datos.CUPOS
     );
+    const estado = sigcNormalizarTexto(
+      datos.ESTADO_ACTIVIDAD || filaActividad.datos.ESTADO_ACTIVIDAD || 'Planificada'
+    );
+    const estadosPermitidos = [
+      'Planificada',
+      'Difusión',
+      'Inscripción abierta',
+      'En ejecución',
+      'Ejecutada',
+      'Suspendida',
+      'Cerrada'
+    ];
     if (estadosPermitidos.indexOf(estado) < 0) {
       throw new Error('El estado de la actividad no es válido.');
     }
@@ -1069,6 +1075,10 @@ function actualizarActividad(datos) {
         ' registra una asistencia superior. Corrija primero esa asistencia.'
       );
     }
+    const detalleSesiones = typeof datos.DETALLE_SESIONES === 'string'
+      ? datos.DETALLE_SESIONES
+      : JSON.stringify(datos.DETALLE_SESIONES || []);
+
     const cambios = {
       NOMBRE_ACTIVIDAD: sigcNormalizarTexto(datos.NOMBRE_ACTIVIDAD),
       TIPO_ACTIVIDAD: sigcNormalizarTexto(datos.TIPO_ACTIVIDAD),
@@ -1080,6 +1090,8 @@ function actualizarActividad(datos) {
       MES_TERMINO: webMesDesdeFecha_(fechaTermino),
       FECHA_INICIO: fechaInicio,
       FECHA_TERMINO: fechaTermino,
+      HORARIO: sigcNormalizarTexto(datos.HORARIO),
+      DETALLE_SESIONES: detalleSesiones === '[]' ? '' : detalleSesiones,
       SESIONES_TOTALES: sesionesTotales,
       PORCENTAJE_APROBACION: porcentajeAprobacion,
       REGLA_RESULTADO: regla,
@@ -2433,6 +2445,16 @@ function webAsegurarColumna_(hoja, encabezado) {
   const colIndex = hoja.getLastColumn() + 1;
   hoja.getRange(1, colIndex).setValue(encabezado);
   encabezados.push(norm);
+}
+
+function webAsegurarEncabezadosActividades_(hoja, tablaEncabezados) {
+  ['HORARIO', 'DETALLE_SESIONES'].forEach(function(col) {
+    webAsegurarColumna_(hoja, col);
+    const norm = sigcNormalizarEncabezado(col);
+    if (!tablaEncabezados.some(function(enc) { return sigcNormalizarEncabezado(enc) === norm; })) {
+      tablaEncabezados.push(col);
+    }
+  });
 }
 
 function webGuardarSpreadsheetId(nuevoId) {

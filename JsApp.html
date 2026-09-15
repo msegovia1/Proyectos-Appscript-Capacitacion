@@ -737,6 +737,222 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     selectorArea.disabled = opciones.length === 0;
     selectorArea.value = actual && opciones.includes(actual) ? actual : '';
   }
+
+  // --- GESTIÓN DE CRONOGRAMA Y SESIONES ---
+  const SESIONES_CRONOGRAMA = {
+    reg: [],
+    edit: []
+  };
+
+  function alternarDiaSemana(prefijo, diaNum) {
+    const contenedor = document.getElementById(`${prefijo}DiasSemana`);
+    if (!contenedor) return;
+    const btn = contenedor.querySelector(`[data-dia="${diaNum}"]`);
+    if (!btn) return;
+    btn.classList.toggle('active');
+    sincronizarHorarioTexto(prefijo);
+  }
+
+  function obtenerDiasSeleccionados(prefijo) {
+    const contenedor = document.getElementById(`${prefijo}DiasSemana`);
+    if (!contenedor) return [];
+    const btns = contenedor.querySelectorAll('.day-toggle-btn.active');
+    return Array.from(btns).map(b => Number(b.dataset.dia)).sort((a, b) => a - b);
+  }
+
+  function sincronizarHorarioTexto(prefijo) {
+    const inputHorario = document.getElementById(`${prefijo}HorarioTexto`);
+    if (!inputHorario) return;
+    const dias = obtenerDiasSeleccionados(prefijo);
+    const hInicio = document.getElementById(`${prefijo}HoraInicio`)?.value || '';
+    const hFin = document.getElementById(`${prefijo}HoraFin`)?.value || '';
+
+    if (!dias.length && !hInicio) return;
+
+    const nombresDias = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 0: 'Domingo' };
+    let textoDias = '';
+    if (dias.length === 1) {
+      textoDias = nombresDias[dias[0]];
+    } else if (dias.length > 1) {
+      const arr = dias.map(d => nombresDias[d]);
+      const ultimo = arr.pop();
+      textoDias = arr.join(', ') + ' y ' + ultimo;
+    }
+
+    let textoHoras = '';
+    if (hInicio && hFin) textoHoras = `${hInicio} a ${hFin}`;
+    else if (hInicio) textoHoras = `desde ${hInicio}`;
+
+    const resumen = [textoDias, textoHoras].filter(Boolean).join(' ');
+    if (resumen) inputHorario.value = resumen;
+  }
+
+  function sincronizarContadorSesiones(prefijo) {
+    // Si cambia el input de sesiones totales y ya hay sesiones generadas
+    const totalSes = parseInt(document.getElementById(`${prefijo}SesionesTotales`)?.value || '1', 10);
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (sesiones.length > 0 && sesiones.length !== totalSes) {
+      // Si el usuario incrementó o redujo, podemos avisarle o invocar generar
+    }
+  }
+
+  function generarCronogramaAutomatico(prefijo) {
+    const fInicioVal = document.getElementById(`${prefijo}FechaInicio`)?.value;
+    if (!fInicioVal) {
+      notificar('Por favor seleccione una Fecha de Inicio antes de generar el cronograma.', true);
+      document.getElementById(`${prefijo}FechaInicio`)?.focus();
+      return;
+    }
+    const totalSesiones = Math.max(1, parseInt(document.getElementById(`${prefijo}SesionesTotales`)?.value || '1', 10));
+    let diasSeleccionados = obtenerDiasSeleccionados(prefijo);
+
+    const partes = fInicioVal.split('-');
+    let cursorFecha = new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]), 12, 0, 0);
+
+    if (diasSeleccionados.length === 0) {
+      const diaInicio = cursorFecha.getDay();
+      diasSeleccionados = [diaInicio];
+      const btn = document.getElementById(`${prefijo}DiasSemana`)?.querySelector(`[data-dia="${diaInicio}"]`);
+      if (btn) btn.classList.add('active');
+    }
+
+    const hInicio = document.getElementById(`${prefijo}HoraInicio`)?.value || '10:00';
+    const hFin = document.getElementById(`${prefijo}HoraFin`)?.value || '12:00';
+
+    const sesiones = [];
+    let intentos = 0;
+    while (sesiones.length < totalSesiones && intentos < 500) {
+      const diaSemana = cursorFecha.getDay();
+      if (diasSeleccionados.includes(diaSemana)) {
+        sesiones.push({
+          numero: sesiones.length + 1,
+          fecha: formatoClaveFecha(cursorFecha),
+          horaInicio: hInicio,
+          horaFin: hFin
+        });
+      }
+      cursorFecha.setDate(cursorFecha.getDate() + 1);
+      intentos++;
+    }
+
+    SESIONES_CRONOGRAMA[prefijo] = sesiones;
+
+    if (sesiones.length > 0) {
+      const inputTermino = document.getElementById(`${prefijo}FechaTermino`);
+      if (inputTermino) {
+        inputTermino.value = sesiones[sesiones.length - 1].fecha;
+      }
+    }
+
+    renderSesionesProgramadas(prefijo);
+    sincronizarHorarioTexto(prefijo);
+    sincronizarSesionesEnFormulario(prefijo);
+    notificar(`Se programaron ${sesiones.length} sesiones.`);
+  }
+
+  function agregarSesionFila(prefijo) {
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    let fechaSugerida = '';
+    const hInicio = document.getElementById(`${prefijo}HoraInicio`)?.value || '10:00';
+    const hFin = document.getElementById(`${prefijo}HoraFin`)?.value || '12:00';
+
+    if (sesiones.length > 0) {
+      const ult = sesiones[sesiones.length - 1];
+      const partes = (ult.fecha || '').split('-');
+      if (partes.length === 3) {
+        const d = new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]), 12, 0, 0);
+        d.setDate(d.getDate() + 7);
+        fechaSugerida = formatoClaveFecha(d);
+      }
+    } else {
+      fechaSugerida = document.getElementById(`${prefijo}FechaInicio`)?.value || formatoClaveFecha(new Date());
+    }
+
+    sesiones.push({
+      numero: sesiones.length + 1,
+      fecha: fechaSugerida,
+      horaInicio: hInicio,
+      horaFin: hFin
+    });
+
+    SESIONES_CRONOGRAMA[prefijo] = sesiones;
+
+    const inputTotales = document.getElementById(`${prefijo}SesionesTotales`);
+    if (inputTotales) inputTotales.value = sesiones.length;
+
+    renderSesionesProgramadas(prefijo);
+    sincronizarSesionesEnFormulario(prefijo);
+  }
+
+  function quitarSesionFila(prefijo, index) {
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (index >= 0 && index < sesiones.length) {
+      sesiones.splice(index, 1);
+      sesiones.forEach((s, i) => { s.numero = i + 1; });
+      SESIONES_CRONOGRAMA[prefijo] = sesiones;
+
+      const inputTotales = document.getElementById(`${prefijo}SesionesTotales`);
+      if (inputTotales && sesiones.length > 0) inputTotales.value = sesiones.length;
+
+      renderSesionesProgramadas(prefijo);
+      sincronizarSesionesEnFormulario(prefijo);
+    }
+  }
+
+  function cambiarFechaSesion(prefijo, index, nuevaFecha) {
+    if (SESIONES_CRONOGRAMA[prefijo] && SESIONES_CRONOGRAMA[prefijo][index]) {
+      SESIONES_CRONOGRAMA[prefijo][index].fecha = nuevaFecha;
+      sincronizarSesionesEnFormulario(prefijo);
+    }
+  }
+
+  function cambiarHoraSesion(prefijo, index, campo, nuevoValor) {
+    if (SESIONES_CRONOGRAMA[prefijo] && SESIONES_CRONOGRAMA[prefijo][index]) {
+      SESIONES_CRONOGRAMA[prefijo][index][campo] = nuevoValor;
+      sincronizarSesionesEnFormulario(prefijo);
+    }
+  }
+
+  function sincronizarSesionesEnFormulario(prefijo) {
+    const jsonInput = document.getElementById(`${prefijo}DetalleSesionesJson`);
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (jsonInput) {
+      jsonInput.value = sesiones.length > 0 ? JSON.stringify(sesiones) : '';
+    }
+  }
+
+  function renderSesionesProgramadas(prefijo) {
+    const contenedor = document.getElementById(`${prefijo}ContenedorSesiones`);
+    const lista = document.getElementById(`${prefijo}ListaSesiones`);
+    if (!contenedor || !lista) return;
+
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (sesiones.length === 0) {
+      contenedor.style.display = 'none';
+      lista.innerHTML = '';
+      return;
+    }
+
+    contenedor.style.display = 'block';
+    lista.innerHTML = sesiones.map((s, idx) => `
+      <div class="session-item-row">
+        <div style="font-weight:600;color:var(--primario);font-size:12px">Sesión ${s.numero}</div>
+        <div>
+          <input type="date" value="${esc(s.fecha || '')}" onchange="cambiarFechaSesion('${prefijo}', ${idx}, this.value)" style="width:100%;font-size:12px;padding:4px 6px">
+        </div>
+        <div>
+          <input type="time" value="${esc(s.horaInicio || '10:00')}" onchange="cambiarHoraSesion('${prefijo}', ${idx}, 'horaInicio', this.value)" style="width:100%;font-size:12px;padding:4px 6px">
+        </div>
+        <div>
+          <input type="time" value="${esc(s.horaFin || '12:00')}" onchange="cambiarHoraSesion('${prefijo}', ${idx}, 'horaFin', this.value)" style="width:100%;font-size:12px;padding:4px 6px">
+        </div>
+        <div style="text-align:center">
+          <button type="button" class="btn-remove-session" onclick="quitarSesionFila('${prefijo}', ${idx})" title="Eliminar sesión">&times;</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
   function abrirEdicionActividad(idActividad) {
     const actividad = DB.actividades.find(a =>
       String(a.ID_ACTIVIDAD || '') === String(idActividad || '')
@@ -781,7 +997,50 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     asignarCampoFormulario(form, 'INSTITUCION_ASOCIADA', actividad.INSTITUCION_ASOCIADA);
     asignarCampoFormulario(form, 'RESPONSABLE', actividad.RESPONSABLE);
     asignarCampoFormulario(form, 'CARPETA_DRIVE', actividad.CARPETA_DRIVE);
+    asignarCampoFormulario(form, 'HORARIO', actividad.HORARIO || '');
     asignarCampoFormulario(form, 'OBSERVACIONES', actividad.OBSERVACIONES);
+
+    let sesiones = [];
+    if (actividad.DETALLE_SESIONES) {
+      try {
+        sesiones = typeof actividad.DETALLE_SESIONES === 'string'
+          ? JSON.parse(actividad.DETALLE_SESIONES)
+          : actividad.DETALLE_SESIONES;
+      } catch (e) { sesiones = []; }
+    }
+    SESIONES_CRONOGRAMA['edit'] = Array.isArray(sesiones) ? [...sesiones] : [];
+
+    // Cargar horas de la primera sesión si existen
+    if (SESIONES_CRONOGRAMA['edit'].length > 0) {
+      const s1 = SESIONES_CRONOGRAMA['edit'][0];
+      if (s1.horaInicio) {
+        const inpHi = document.getElementById('editHoraInicio');
+        if (inpHi) inpHi.value = s1.horaInicio;
+      }
+      if (s1.horaFin) {
+        const inpHf = document.getElementById('editHoraFin');
+        if (inpHf) inpHf.value = s1.horaFin;
+      }
+      const contenedorDias = document.getElementById('editDiasSemana');
+      if (contenedorDias) {
+        contenedorDias.querySelectorAll('.day-toggle-btn').forEach(btn => btn.classList.remove('active'));
+        SESIONES_CRONOGRAMA['edit'].forEach(s => {
+          if (s.fecha) {
+            const p = s.fecha.split('-');
+            if (p.length === 3) {
+              const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0);
+              const diaNum = d.getDay();
+              const btn = contenedorDias.querySelector(`[data-dia="${diaNum}"]`);
+              if (btn) btn.classList.add('active');
+            }
+          }
+        });
+      }
+    }
+
+    renderSesionesProgramadas('edit');
+    sincronizarSesionesEnFormulario('edit');
+
     panel.hidden = false;
     panel.scrollIntoView({behavior:'smooth', block:'start'});
   }
@@ -789,6 +1048,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const panel = document.getElementById('panelEditarActividad');
     const form = document.getElementById('formEditarActividad');
     if (form) form.reset();
+    SESIONES_CRONOGRAMA['edit'] = [];
+    renderSesionesProgramadas('edit');
+    sincronizarSesionesEnFormulario('edit');
     if (panel) panel.hidden = true;
   }
   function solicitarQuitarActividad(idActividad) {
@@ -853,6 +1115,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   }
   function enviarEdicionActividad(evento) {
     evento.preventDefault();
+    sincronizarSesionesEnFormulario('edit');
     const form = evento.target;
     const datos = Object.fromEntries(new FormData(form).entries());
     const estado = String(datos.ESTADO_ACTIVIDAD || '');
@@ -1047,6 +1310,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   function enviarFormulario(evento, funcion) {
     evento.preventDefault();
     const form = evento.target;
+    if (form.id === 'formActividad') {
+      sincronizarSesionesEnFormulario('reg');
+    }
     const datos = Object.fromEntries(new FormData(form).entries());
     if (form.id === 'formPersona') datos.INTERESES = NUEVOS_INTERESES.map(x => ({...x}));
     mostrarCarga(true);
@@ -1071,6 +1337,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         }
         if (form.id === 'formActividad') {
           actualizarAreasActividad();
+          SESIONES_CRONOGRAMA['reg'] = [];
+          renderSesionesProgramadas('reg');
+          sincronizarSesionesEnFormulario('reg');
           if (r.actividad) {
             const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === r.id);
             if (idx >= 0) DB.actividades[idx] = Object.assign({}, DB.actividades[idx], r.actividad);
@@ -2269,14 +2538,45 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     let primerDiaSemana = (primerDiaMes.getDay() + 6) % 7;
     const diasMesAnterior = new Date(anio, mes, 0).getDate();
 
-    // Mapear actividades por clave YYYY-MM-DD
+    // Mapear actividades por clave YYYY-MM-DD considerando detalle de sesiones
     const mapaActividadesPorDia = {};
     actividades.forEach(a => {
-      const fInicio = parsearFechaActividad(a.FECHA_INICIO);
-      if (fInicio) {
-        const clave = formatoClaveFecha(fInicio);
-        if (!mapaActividadesPorDia[clave]) mapaActividadesPorDia[clave] = [];
-        mapaActividadesPorDia[clave].push(a);
+      let sesiones = [];
+      if (a.DETALLE_SESIONES) {
+        try {
+          sesiones = typeof a.DETALLE_SESIONES === 'string' ? JSON.parse(a.DETALLE_SESIONES) : a.DETALLE_SESIONES;
+        } catch (e) { sesiones = []; }
+      }
+
+      if (Array.isArray(sesiones) && sesiones.length > 0) {
+        sesiones.forEach(s => {
+          if (s.fecha) {
+            const clave = s.fecha;
+            if (!mapaActividadesPorDia[clave]) mapaActividadesPorDia[clave] = [];
+            mapaActividadesPorDia[clave].push({
+              actividad: a,
+              numeroSesion: s.numero,
+              totalSesiones: sesiones.length,
+              horaInicio: s.horaInicio || '',
+              horaFin: s.horaFin || '',
+              fecha: s.fecha
+            });
+          }
+        });
+      } else {
+        const fInicio = parsearFechaActividad(a.FECHA_INICIO);
+        if (fInicio) {
+          const clave = formatoClaveFecha(fInicio);
+          if (!mapaActividadesPorDia[clave]) mapaActividadesPorDia[clave] = [];
+          mapaActividadesPorDia[clave].push({
+            actividad: a,
+            numeroSesion: null,
+            totalSesiones: a.SESIONES_TOTALES || 1,
+            horaInicio: a.HORARIO ? (a.HORARIO.match(/\b\d{1,2}:\d{2}\b/) ? a.HORARIO.match(/\b\d{1,2}:\d{2}\b/)[0] : '') : '',
+            horaFin: '',
+            fecha: clave
+          });
+        }
       }
     });
 
@@ -2318,20 +2618,31 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     if (esOtroMes) clases.push('cal-day-other-month');
     if (esHoy) clases.push('cal-day-today');
 
+    // Ordenar eventos por hora de inicio
+    const ordenados = [...eventos].sort((x, y) => (x.horaInicio || '99:99').localeCompare(y.horaInicio || '99:99'));
+
     let chipsHtml = '';
     const maxVisibles = 3;
-    const visibles = eventos.slice(0, maxVisibles);
-    const extras = eventos.length - maxVisibles;
+    const visibles = ordenados.slice(0, maxVisibles);
+    const extras = ordenados.length - maxVisibles;
 
-    visibles.forEach(a => {
+    visibles.forEach(item => {
+      const a = item.actividad || item;
       let claseEscuela = 'chip-empleo';
       if (a.ESCUELA_LINEA === 'Emprendimiento') claseEscuela = 'chip-emprendimiento';
       else if (a.ESCUELA_LINEA === 'Transversal') claseEscuela = 'chip-transversal';
 
+      const horaBadge = item.horaInicio ? `<span class="cal-chip-time">${esc(item.horaInicio)}</span>` : '';
+      const sesionBadge = item.numeroSesion ? `<span style="opacity:0.85;font-size:10px;margin-left:3px">(S${item.numeroSesion}/${item.totalSesiones})</span>` : '';
+
       chipsHtml += `
-        <div class="cal-event-chip ${claseEscuela}" onclick="event.stopPropagation(); abrirDetalleActividadCalendario('${esc(a.ID_ACTIVIDAD)}')" title="${esc(a.NOMBRE_ACTIVIDAD)} (${esc(a.ESTADO_ACTIVIDAD || 'Planificada')})">
-          <strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong>
-          <small>${esc(a.ESTADO_ACTIVIDAD || 'Planificada')} · ${esc(a.MODALIDAD || 'Presencial')}</small>
+        <div class="cal-event-chip ${claseEscuela}" onclick="event.stopPropagation(); abrirDetalleActividadCalendario('${esc(a.ID_ACTIVIDAD)}')" title="${esc(a.NOMBRE_ACTIVIDAD)}${item.numeroSesion ? ' - Sesión ' + item.numeroSesion + '/' + item.totalSesiones : ''} (${esc(a.ESTADO_ACTIVIDAD || 'Planificada')})">
+          <div style="display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+            ${horaBadge}
+            <strong style="overflow:hidden;text-overflow:ellipsis">${esc(a.NOMBRE_ACTIVIDAD)}</strong>
+            ${sesionBadge}
+          </div>
+          <small>${esc(a.ESTADO_ACTIVIDAD || 'Planificada')} · ${esc(a.MODALIDAD || 'Presencial')}${item.horaFin ? ' · hasta ' + esc(item.horaFin) : ''}</small>
         </div>
       `;
     });
@@ -2415,6 +2726,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
                 <span>Fechas:</span>
                 <strong>${esc(fechaActividadVisible(a.FECHA_INICIO) || 'Por definir')} ${a.FECHA_TERMINO ? 'al ' + esc(fechaActividadVisible(a.FECHA_TERMINO)) : ''}</strong>
               </div>
+              ${a.HORARIO ? `<div class="cal-list-meta-row"><span>Horario:</span> <strong>${esc(a.HORARIO)}</strong></div>` : ''}
               <div class="cal-list-meta-row">
                 <span>Modalidad:</span>
                 <strong>${esc(a.MODALIDAD || 'Presencial')}</strong>
@@ -2450,7 +2762,37 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     texto('calDetalleCupos', a.CUPOS || 'Sin límite');
     texto('calDetalleInstitucion', a.INSTITUCION_ASOCIADA || 'Municipalidad de Santiago');
     texto('calDetalleResponsable', a.RESPONSABLE || '—');
+    texto('calDetalleHorario', a.HORARIO || 'No especificado');
     texto('calDetalleObs', a.OBSERVACIONES || 'Sin observaciones.');
+
+    // Parsear y mostrar detalle de sesiones
+    let sesiones = [];
+    if (a.DETALLE_SESIONES) {
+      try {
+        sesiones = typeof a.DETALLE_SESIONES === 'string' ? JSON.parse(a.DETALLE_SESIONES) : a.DETALLE_SESIONES;
+      } catch (e) { sesiones = []; }
+    }
+    const contenedorSesiones = document.getElementById('calDetalleSesionesContenedor');
+    const listaSesiones = document.getElementById('calDetalleSesionesLista');
+    if (contenedorSesiones && listaSesiones) {
+      if (Array.isArray(sesiones) && sesiones.length > 0) {
+        contenedorSesiones.style.display = 'block';
+        listaSesiones.innerHTML = sesiones.map(s => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;background:var(--fondo-card);border:1px solid var(--borde);border-radius:6px;font-size:12.5px;margin-bottom:4px">
+            <div>
+              <span style="font-weight:700;color:var(--primario);margin-right:6px">Sesión ${s.numero}:</span>
+              <span>${fechaActividadVisible(s.fecha)}</span>
+            </div>
+            <div style="font-weight:600;color:var(--texto-secundario)">
+              ${s.horaInicio || '--:--'}${s.horaFin ? ' a ' + s.horaFin : ''}
+            </div>
+          </div>
+        `).join('');
+      } else {
+        contenedorSesiones.style.display = 'none';
+        listaSesiones.innerHTML = '';
+      }
+    }
 
     const elBadge = document.getElementById('calDetalleBadge');
     if (elBadge) {

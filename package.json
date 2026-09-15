@@ -1,0 +1,20 @@
+{
+  "name": "sigc-sistema-capacitaciones",
+  "version": "3.7.0",
+  "description": "Sistema Integrado de Gestión de Capacitaciones y Emprendimiento (SIGC) en Google Apps Script",
+  "scripts": {
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "open": "clasp open",
+    "deploy": "clasp deploy"
+  },
+  "keywords": [
+    "google-apps-script",
+    "clasp",
+    "training-management",
+    "google-sheets",
+    "web-app"
+  ],
+  "author": "Municipalidad de Santiago",
+  "license": "MIT"
+}

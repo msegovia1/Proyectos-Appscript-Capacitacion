@@ -38,14 +38,70 @@
               </select>
             </div>
             <div class="field"><label>Año</label><input name="ANO" type="number" min="2000" max="2100"></div>
-            <div class="field"><label>Sesiones</label><input name="SESIONES_TOTALES" type="number" min="1" required></div>
+            <div class="field"><label>Sesiones</label><input id="editSesionesTotales" name="SESIONES_TOTALES" type="number" min="1" required onchange="sincronizarContadorSesiones('edit')"></div>
             <div class="field"><label>Regla de resultado</label><select name="REGLA_RESULTADO"><option>Asistencia</option><option>Porcentaje</option></select></div>
             <div class="field"><label>Porcentaje de aprobación</label><input name="PORCENTAJE_APROBACION" type="number" min="0" max="100" step="0.1" placeholder="Ej.: 80"></div>
             <div class="field"><label>Requiere selección</label><select name="REQUIERE_SELECCION"><option>Sí</option><option>No</option></select></div>
             <div class="field"><label>Cupos</label><input name="CUPOS" type="number" min="0"></div>
-            <div class="field"><label>Fecha inicio</label><input name="FECHA_INICIO" type="date"></div>
-            <div class="field"><label>Fecha término</label><input name="FECHA_TERMINO" type="date"></div>
+            <div class="field"><label>Fecha inicio</label><input id="editFechaInicio" name="FECHA_INICIO" type="date"></div>
+            <div class="field"><label>Fecha término</label><input id="editFechaTermino" name="FECHA_TERMINO" type="date"></div>
             <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Online</option><option>Híbrida</option></select></div>
+
+            <!-- PLANIFICADOR DE CRONOGRAMA Y SESIONES EN EDICION -->
+            <div class="schedule-builder-card">
+              <div class="schedule-builder-head">
+                <div>
+                  <h4>🗓️ Cronograma y horario de sesiones</h4>
+                  <p>Ajuste los días y horarios o modifique las fechas específicas de cada sesión.</p>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn secondary compact" type="button" onclick="generarCronogramaAutomatico('edit')">🪄 Regenerar</button>
+                  <button class="btn secondary compact" type="button" onclick="agregarSesionFila('edit')">＋ Sesión manual</button>
+                </div>
+              </div>
+
+              <div class="days-picker-group">
+                <label>Días de clase en la semana:</label>
+                <div class="days-toggles-row" id="editDiasSemana">
+                  <button type="button" class="day-toggle-btn active" data-dia="1" onclick="alternarDiaSemana('edit', 1)">Lun</button>
+                  <button type="button" class="day-toggle-btn" data-dia="2" onclick="alternarDiaSemana('edit', 2)">Mar</button>
+                  <button type="button" class="day-toggle-btn" data-dia="3" onclick="alternarDiaSemana('edit', 3)">Mié</button>
+                  <button type="button" class="day-toggle-btn" data-dia="4" onclick="alternarDiaSemana('edit', 4)">Jue</button>
+                  <button type="button" class="day-toggle-btn" data-dia="5" onclick="alternarDiaSemana('edit', 5)">Vie</button>
+                  <button type="button" class="day-toggle-btn" data-dia="6" onclick="alternarDiaSemana('edit', 6)">Sáb</button>
+                </div>
+              </div>
+
+              <div class="schedule-inputs-row">
+                <div class="field">
+                  <label>Hora inicio</label>
+                  <input id="editHoraInicio" type="time" value="10:00" onchange="sincronizarHorarioTexto('edit')">
+                </div>
+                <div class="field">
+                  <label>Hora término</label>
+                  <input id="editHoraFin" type="time" value="12:00" onchange="sincronizarHorarioTexto('edit')">
+                </div>
+                <div class="field" style="flex:2">
+                  <label>Resumen de horario</label>
+                  <input id="editHorarioTexto" name="HORARIO" placeholder="Ej.: Lunes 10:00 a 12:00">
+                </div>
+              </div>
+
+              <div class="sessions-container" id="editContenedorSesiones" style="display:none">
+                <div class="sessions-table-header">
+                  <div>Sesión</div>
+                  <div>Fecha</div>
+                  <div>Inicio</div>
+                  <div>Término</div>
+                  <div></div>
+                </div>
+                <div class="sessions-list-body" id="editListaSesiones">
+                  <!-- Filas generadas dinámicamente -->
+                </div>
+              </div>
+              <input type="hidden" id="editDetalleSesionesJson" name="DETALLE_SESIONES" value="">
+            </div>
+
             <div class="field"><label>Estado</label><select name="ESTADO_ACTIVIDAD"><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Suspendida</option><option>Cerrada</option></select></div>
             <div class="field"><label>Institución asociada</label><input name="INSTITUCION_ASOCIADA"></div>
             <div class="field"><label>Responsable</label><input name="RESPONSABLE"></div>
