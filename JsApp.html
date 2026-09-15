@@ -258,27 +258,70 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       <td><button class="btn secondary compact" type="button" data-id="${esc(p.ID_PERSONA)}" onclick="abrirEdicionPersona(this.dataset.id)">Editar</button></td>
     </tr>`).join('') : '<tr><td colspan="12" class="empty-state">No se encontraron personas.</td></tr>';
   }
+  const ESTADOS_ACTIVIDAD_CATALOGO = [
+    'Planificada',
+    'Difusión',
+    'Inscripción abierta',
+    'En ejecución',
+    'Ejecutada',
+    'Suspendida',
+    'Cerrada',
+    'Archivada'
+  ];
+
+  function poblarFiltroEstadosActividad_() {
+    const filtro = document.getElementById('filtroEstado');
+    if (!filtro) return;
+    const valorSeleccionado = filtro.value;
+    const estadosEnDb = (DB.actividades || []).map(a => a.ESTADO_ACTIVIDAD).filter(Boolean);
+    const todosLosEstados = [...new Set([...ESTADOS_ACTIVIDAD_CATALOGO, ...estadosEnDb])];
+    if (filtro.options.length === todosLosEstados.length + 1) return;
+
+    filtro.innerHTML = '<option value="">Todos los estados</option>' +
+      todosLosEstados.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
+
+    if (valorSeleccionado) {
+      filtro.value = valorSeleccionado;
+    }
+  }
+
+  function obtenerBadgeClaseEstadoActividad(estado) {
+    const e = String(estado || '').trim();
+    if (e === 'En ejecución') return 'success';
+    if (e === 'Inscripción abierta' || e === 'Difusión') return 'info';
+    if (e === 'Ejecutada' || e === 'Cerrada') return 'neutral';
+    if (e === 'Suspendida' || e === 'Archivada') return 'danger';
+    return 'warning';
+  }
+
   function renderActividades() {
+    poblarFiltroEstadosActividad_();
     const q = normalizar(document.getElementById('buscarActividades')?.value || '');
     const estado = document.getElementById('filtroEstado')?.value || '';
     const mostrarArchivadas = document.getElementById('mostrarActividadesArchivadas')?.checked === true;
-    const filas = DB.actividades.filter(a =>
-      normalizar([a.NOMBRE_ACTIVIDAD,a.TIPO_ACTIVIDAD,a.PROGRAMA,a.AREA_TEMATICA].join(' ')).includes(q) &&
-      (!estado || a.ESTADO_ACTIVIDAD === estado) &&
-      (mostrarArchivadas || normalizar(estado) === 'archivada' || !esActividadArchivada_(a))
-    );
+    const filas = DB.actividades
+      .filter(a =>
+        normalizar([a.NOMBRE_ACTIVIDAD,a.TIPO_ACTIVIDAD,a.PROGRAMA,a.AREA_TEMATICA,a.ID_ACTIVIDAD].join(' ')).includes(q) &&
+        (!estado || a.ESTADO_ACTIVIDAD === estado) &&
+        (mostrarArchivadas || normalizar(estado) === 'archivada' || !esActividadArchivada_(a))
+      )
+      .sort(compararActividadesRecientes);
+
     const visibles = paginarFilas_('actividades', filas);
     document.getElementById('tablaActividades').innerHTML = visibles.length ? visibles.map(a => `<tr>
-      <td>${esc(a.ID_ACTIVIDAD)}</td><td><strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong></td><td>${esc(a.TIPO_ACTIVIDAD)}</td>
-      <td>${esc(a.PROGRAMA)}</td><td>${esc(a.AREA_TEMATICA)}</td><td>${esc(a.ANO)}</td><td>${esc(a.SESIONES_TOTALES)}</td>
-      <td><span class="badge">${esc(a.ESTADO_ACTIVIDAD)}</span></td>
+      <td>${esc(a.ID_ACTIVIDAD)}</td>
+      <td>
+        <strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong>
+        ${a.FECHA_INICIO ? `<br><small class="muted" style="font-size:11.5px">📅 ${esc(fechaActividadVisible(a.FECHA_INICIO))}${a.FECHA_TERMINO ? ' al ' + esc(fechaActividadVisible(a.FECHA_TERMINO)) : ''}</small>` : ''}
+      </td>
+      <td>${esc(a.TIPO_ACTIVIDAD)}</td>
+      <td>${esc(a.PROGRAMA)}</td>
+      <td>${esc(a.AREA_TEMATICA)}</td>
+      <td>${esc(a.ANO)}</td>
+      <td>${esc(a.SESIONES_TOTALES)}</td>
+      <td><span class="badge ${obtenerBadgeClaseEstadoActividad(a.ESTADO_ACTIVIDAD)}">${esc(a.ESTADO_ACTIVIDAD || 'Planificada')}</span></td>
       <td><div class="bulkbar"><button class="btn secondary compact" type="button" data-id="${esc(a.ID_ACTIVIDAD)}" onclick="abrirEdicionActividad(this.dataset.id)">Editar</button>${esActividadArchivada_(a) ? '' : `<button class="btn danger compact" type="button" data-id="${esc(a.ID_ACTIVIDAD)}" onclick="solicitarQuitarActividad(this.dataset.id)">Quitar</button>`}</div></td>
     </tr>`).join('') : '<tr><td colspan="9" class="empty-state">No se encontraron actividades.</td></tr>';
-    const filtro = document.getElementById('filtroEstado');
-    if (filtro && filtro.options.length === 1) {
-      [...new Set(DB.actividades.map(a => a.ESTADO_ACTIVIDAD).filter(Boolean))].sort()
-        .forEach(e => filtro.insertAdjacentHTML('beforeend', `<option>${esc(e)}</option>`));
-    }
   }
   function renderParticipaciones() {
     const q = normalizar(document.getElementById('buscarParticipaciones')?.value || '');
@@ -365,15 +408,20 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     return normalizar(actividad?.ESTADO_ACTIVIDAD) === 'archivada';
   }
   function compararActividadesRecientes(a, b) {
+    const fechaA = fechaActividadNumero(a.FECHA_INICIO);
+    const fechaB = fechaActividadNumero(b.FECHA_INICIO);
+    if (fechaA && fechaB && fechaA !== fechaB) {
+      return fechaB - fechaA;
+    }
+    if (fechaA && !fechaB) return -1;
+    if (!fechaA && fechaB) return 1;
+
     const claveA = claveCorrelativaActividad(a.ID_ACTIVIDAD);
     const claveB = claveCorrelativaActividad(b.ID_ACTIVIDAD);
     const anioA = Number(a.ANO || claveA.anio || 0);
     const anioB = Number(b.ANO || claveB.anio || 0);
     if (anioA !== anioB) return anioB - anioA;
     if (claveA.numero !== claveB.numero) return claveB.numero - claveA.numero;
-    const fechaA = fechaActividadNumero(a.FECHA_INICIO);
-    const fechaB = fechaActividadNumero(b.FECHA_INICIO);
-    if (fechaA !== fechaB) return fechaB - fechaA;
     return Number(b._ordenIngreso || 0) - Number(a._ordenIngreso || 0);
   }
   function claveCorrelativaActividad(idActividad) {
