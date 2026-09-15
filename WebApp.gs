@@ -46,6 +46,7 @@ function probarConexionSIGC() {
     version: SIGC_CONFIG.VERSION,
     id: ss.getId(),
     archivo: ss.getName(),
+    url: ss.getUrl(),
     zonaHoraria: ss.getSpreadsheetTimeZone()
   };
 }

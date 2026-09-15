@@ -71,10 +71,13 @@
       <button data-view="importaciones" onclick="toggleMobileSidebar(true)">
         <span class="nav-icon">⇩</span> Importaciones
       </button>
+      <a id="linkSidebarPlanilla" href="https://docs.google.com/spreadsheets/d/1gT0135EeC1MTzLSfcfJOHuJl5yODFyDtL7eXRfTRmuo/edit" target="_blank" rel="noopener noreferrer" style="display:flex; align-items:center; gap:8px; padding:7px 12px; margin:8px 10px; border-radius:6px; background:rgba(30,58,138,0.08); color:var(--azul,#1e3a8a); text-decoration:none; font-size:12px; font-weight:600;" title="Abrir planilla en Google Sheets">
+        <span>📊</span> Abrir Google Sheet ↗
+      </a>
     </nav>
     <div class="sidebar-footer">
       <span>Versión</span>
-      <span class="badge-version">v3.8.0</span>
+      <span class="badge-version">v3.8.1</span>
     </div>
   </aside>
 
@@ -90,6 +93,7 @@
           <span class="status-dot"></span>
           <span id="ultimaActualizacion">Sin actualizar</span>
         </div>
+        <a id="btnAbrirPlanilla" class="btn secondary compact" href="https://docs.google.com/spreadsheets/d/1gT0135EeC1MTzLSfcfJOHuJl5yODFyDtL7eXRfTRmuo/edit" target="_blank" rel="noopener noreferrer" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Abrir la planilla activa en Google Sheets">📊 Planilla ↗</a>
         <button class="btn secondary compact" onclick="abrirModalConfiguracion()">⚙️ Configurar</button>
         <button class="btn compact" onclick="cargarDatos(true)">↻ Actualizar</button>
       </div>

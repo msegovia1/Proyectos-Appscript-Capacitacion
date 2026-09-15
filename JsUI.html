@@ -54,14 +54,59 @@ function toggleMobileSidebar(forzarCierre) {
   }
 }
 
+function sincronizarEnlacesPlanilla_(url, id) {
+  if (!url && id) url = 'https://docs.google.com/spreadsheets/d/' + id + '/edit';
+  if (!url) return;
+  const btn = document.getElementById('btnAbrirPlanilla');
+  if (btn) btn.href = url;
+  const sidebarLink = document.getElementById('linkSidebarPlanilla');
+  if (sidebarLink) sidebarLink.href = url;
+}
+
+function consultarPlanillaActiva_() {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler((res) => {
+      if (res && res.url) {
+        sincronizarEnlacesPlanilla_(res.url, res.id);
+      }
+    })
+    .probarConexionSIGC();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(consultarPlanillaActiva_, 1500);
+});
+
 function abrirModalConfiguracion() {
   const modal = document.getElementById('modalConfiguracion');
   if (modal) {
     modal.style.display = 'flex';
     const input = document.getElementById('cfgSpreadsheetId');
-    if (input && window.SIGC_SPREADSHEET_ID) {
-      input.value = window.SIGC_SPREADSHEET_ID;
+    const msg = document.getElementById('cfgStatusMsg');
+    if (msg) {
+      msg.style.display = 'block';
+      msg.innerHTML = 'Verificando planilla conectada actualmente...';
+      msg.style.color = 'var(--azul)';
     }
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (input && res.id) input.value = res.id;
+        if (msg) {
+          msg.innerHTML = `✓ <strong>Conectado a:</strong> ${res.archivo || 'Planilla de Capacitaciones'}<br>` +
+            `<small style="color:var(--gris); display:inline-block; margin-top:3px;">ID: ${res.id}</small><br>` +
+            `<a href="${res.url}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-top:6px; color:var(--azul); font-weight:bold; text-decoration:underline;">Abrir esta planilla en Google Sheets ↗</a>`;
+          msg.style.color = 'var(--verde)';
+        }
+        if (res.url) sincronizarEnlacesPlanilla_(res.url, res.id);
+      })
+      .withFailureHandler((err) => {
+        if (msg) {
+          msg.textContent = '✕ Error al verificar conexión: ' + err.message;
+          msg.style.color = 'var(--rojo)';
+        }
+      })
+      .probarConexionSIGC();
   }
 }
 
@@ -87,7 +132,8 @@ function probarConexionModal() {
 
   google.script.run
     .withSuccessHandler((res) => {
-      msg.textContent = '✓ Conexión exitosa: ' + (res.archivo || 'Planilla conectada');
+      msg.innerHTML = `✓ <strong>Conexión exitosa:</strong> ${res.archivo || 'Planilla conectada'}<br>` +
+        `<a href="${res.url || 'https://docs.google.com/spreadsheets/d/' + id + '/edit'}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-top:4px; color:var(--azul); text-decoration:underline;">Abrir planilla verificada ↗</a>`;
       msg.style.color = 'var(--verde)';
       mostrarToast('success', 'Planilla verificada correctamente.');
     })
@@ -112,6 +158,7 @@ function guardarConfiguracionModal() {
   google.script.run
     .withSuccessHandler((res) => {
       mostrarToast('success', res.mensaje || 'Configuración guardada.');
+      sincronizarEnlacesPlanilla_(null, nuevoId);
       cerrarModalConfiguracion();
       setTimeout(() => cargarDatos(true), 1000);
     })
