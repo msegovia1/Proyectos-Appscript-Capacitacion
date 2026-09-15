@@ -1383,6 +1383,303 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       })
       .obtenerGestionActividad(idActividad);
   }
+  let GESTION_MODO_VISTA = 'sesiones';
+  let MODAL_ASIS_PARTICIPACION_ID = null;
+  let MODAL_ASIS_SESIONES_TEMP = [];
+
+  function fechaActividadCorta(fechaStr) {
+    if (!fechaStr) return '';
+    const partes = String(fechaStr).split('-');
+    if (partes.length === 3) return `${partes[2]}/${partes[1]}`;
+    return String(fechaStr);
+  }
+
+  function obtenerSesionesActividadGestion() {
+    if (!GESTION || !GESTION.actividad) return [];
+    const act = GESTION.actividad;
+    let sesiones = [];
+    if (act.DETALLE_SESIONES) {
+      try {
+        sesiones = typeof act.DETALLE_SESIONES === 'string' ? JSON.parse(act.DETALLE_SESIONES) : act.DETALLE_SESIONES;
+      } catch (e) { sesiones = []; }
+    }
+    if (Array.isArray(sesiones) && sesiones.length > 0) {
+      return sesiones;
+    }
+    const total = Math.max(1, Number(act.SESIONES_TOTALES || 1));
+    const fInicio = act.FECHA_INICIO || '';
+    for (let i = 1; i <= total; i++) {
+      sesiones.push({
+        numero: i,
+        fecha: i === 1 ? fInicio : '',
+        horaInicio: '',
+        horaFin: ''
+      });
+    }
+    return sesiones;
+  }
+
+  function obtenerSesionesAsistidasParticipacion(p) {
+    if (!p) return [];
+    if (p.ASISTENCIA_SESIONES) {
+      try {
+        const parsed = typeof p.ASISTENCIA_SESIONES === 'string' ? JSON.parse(p.ASISTENCIA_SESIONES) : p.ASISTENCIA_SESIONES;
+        if (Array.isArray(parsed)) {
+          return parsed.map(Number);
+        }
+      } catch (e) {}
+    }
+    const num = Math.max(0, Number(p.SESIONES_ASISTIDAS || 0));
+    const arr = [];
+    for (let i = 1; i <= num; i++) arr.push(i);
+    return arr;
+  }
+
+  function cambiarModoVistaGestion(modo) {
+    GESTION_MODO_VISTA = modo;
+    const btnCompacto = document.getElementById('btnAsisModoCompacto');
+    const btnSesiones = document.getElementById('btnAsisModoSesiones');
+    if (btnCompacto && btnSesiones) {
+      if (modo === 'compacta') {
+        btnCompacto.classList.add('active');
+        btnSesiones.classList.remove('active');
+      } else {
+        btnCompacto.classList.remove('active');
+        btnSesiones.classList.add('active');
+      }
+    }
+    renderGestion(true);
+  }
+
+  function recalcularResultadoParticipante_(p) {
+    if (p.ESTADO_SELECCION !== 'Seleccionado') {
+      p.RESULTADO_FINAL = 'Pendiente';
+      return;
+    }
+    const act = GESTION.actividad || {};
+    const regla = act.REGLA_RESULTADO || 'Asistencia';
+    const exigencia = Number(act.PORCENTAJE_APROBACION || 0.8);
+    const total = Number(p.SESIONES_TOTALES || act.SESIONES_TOTALES || 1);
+    const asistidas = Number(p.SESIONES_ASISTIDAS || 0);
+    const pct = total > 0 ? asistidas / total : 0;
+    p.PORCENTAJE_ASISTENCIA = pct;
+
+    if (regla === 'Porcentaje') {
+      p.RESULTADO_FINAL = pct >= exigencia ? 'Aprobado' : 'Desaprobado';
+    } else {
+      p.RESULTADO_FINAL = asistidas > 0 ? 'Participó' : 'No participó';
+    }
+  }
+
+  function alternarAsistenciaSesion(idParticipacion, numSesion) {
+    const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(idParticipacion));
+    if (!p) return;
+    if (p.ESTADO_SELECCION !== 'Seleccionado') {
+      return notificar('Solo se puede registrar asistencia en personas seleccionadas.', true);
+    }
+    let asistidas = obtenerSesionesAsistidasParticipacion(p);
+    numSesion = Number(numSesion);
+    if (asistidas.includes(numSesion)) {
+      asistidas = asistidas.filter(n => n !== numSesion);
+    } else {
+      asistidas.push(numSesion);
+    }
+    asistidas.sort((a, b) => a - b);
+    p.ASISTENCIA_SESIONES = JSON.stringify(asistidas);
+    p.SESIONES_ASISTIDAS = asistidas.length;
+
+    recalcularResultadoParticipante_(p);
+
+    GESTION_MODIFICADOS.add(String(idParticipacion));
+    actualizarKpisGestion();
+    renderGestion(false);
+  }
+
+  function marcarSesionCompleta(numSesion) {
+    const seleccionados = (GESTION.participaciones || []).filter(p => p.ESTADO_SELECCION === 'Seleccionado');
+    if (!seleccionados.length) return notificar('No hay personas seleccionadas.', true);
+    numSesion = Number(numSesion);
+
+    const todosMarcados = seleccionados.every(p => {
+      const arr = obtenerSesionesAsistidasParticipacion(p);
+      return arr.includes(numSesion);
+    });
+
+    const nuevoEstado = !todosMarcados;
+    seleccionados.forEach(p => {
+      let arr = obtenerSesionesAsistidasParticipacion(p);
+      if (nuevoEstado) {
+        if (!arr.includes(numSesion)) arr.push(numSesion);
+      } else {
+        arr = arr.filter(n => n !== numSesion);
+      }
+      arr.sort((a, b) => a - b);
+      p.ASISTENCIA_SESIONES = JSON.stringify(arr);
+      p.SESIONES_ASISTIDAS = arr.length;
+      recalcularResultadoParticipante_(p);
+      GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
+    });
+
+    actualizarKpisGestion();
+    renderGestion(false);
+    notificar(nuevoEstado ? `Sesión ${numSesion} marcada para todos los seleccionados.` : `Sesión ${numSesion} desmarcada.`);
+  }
+
+  function renderHeaderGestion_(sesionesActividad) {
+    const thead = document.getElementById('headTablaGestion');
+    if (!thead) return;
+    const esModoSesiones = GESTION_MODO_VISTA === 'sesiones' && sesionesActividad.length > 0;
+
+    let columnasSesionesHtml = '';
+    if (esModoSesiones) {
+      columnasSesionesHtml = sesionesActividad.map(s => `
+        <th class="col-sesion">
+          <div class="sesion-header-cell">
+            <span class="sesion-header-num">S${s.numero}</span>
+            <span class="sesion-header-date">${s.fecha ? fechaActividadCorta(s.fecha) : ''}</span>
+            <button type="button" class="btn-mark-sesion-col" onclick="marcarSesionCompleta(${s.numero})" title="Alternar asistencia para todos los seleccionados">☑ Todos</button>
+          </div>
+        </th>
+      `).join('');
+    }
+
+    thead.innerHTML = `
+      <tr>
+        <th class="col-check">
+          <input
+            id="checkTodosGestion"
+            type="checkbox"
+            title="Marcar o desmarcar participantes visibles"
+            onchange="alternarTodosGestion(this)"
+          >
+        </th>
+        <th class="col-persona">Persona</th>
+        <th class="col-doc">Documento</th>
+        <th class="col-edad th-center">Edad</th>
+        <th class="col-pmjh th-center">PMJH</th>
+        <th class="col-requisitos">Cumple requisitos</th>
+        <th class="col-seleccion">Selección</th>
+        <th class="col-confirma">Confirmación</th>
+        ${columnasSesionesHtml}
+        <th class="col-asistidas th-center">Asistidas</th>
+        <th class="col-total th-center">Total</th>
+        <th class="col-resultado th-center">Resultado</th>
+        <th class="col-cert">Certificado</th>
+        <th class="col-obs">Observaciones</th>
+      </tr>
+    `;
+  }
+
+  function abrirModalAsistenciaAlumno(idParticipacion) {
+    const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(idParticipacion));
+    if (!p) return;
+    MODAL_ASIS_PARTICIPACION_ID = idParticipacion;
+    MODAL_ASIS_SESIONES_TEMP = [...obtenerSesionesAsistidasParticipacion(p)];
+
+    texto('modalAsisNombreAlumno', p.NOMBRE_COMPLETO || 'Participante');
+    renderModalAsistenciaContenido_();
+
+    const modal = document.getElementById('modalDetalleAsistenciaAlumno');
+    if (modal) {
+      modal.hidden = false;
+      modal.style.display = 'flex';
+    }
+  }
+
+  function cerrarModalAsistenciaAlumno() {
+    const modal = document.getElementById('modalDetalleAsistenciaAlumno');
+    if (modal) {
+      modal.hidden = true;
+      modal.style.display = 'none';
+    }
+    MODAL_ASIS_PARTICIPACION_ID = null;
+  }
+
+  function renderModalAsistenciaContenido_() {
+    const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(MODAL_ASIS_PARTICIPACION_ID));
+    if (!p) return;
+    const sesionesActividad = obtenerSesionesActividadGestion();
+    const total = Number(p.SESIONES_TOTALES || GESTION.actividad?.SESIONES_TOTALES || 1);
+    const asistidasCount = MODAL_ASIS_SESIONES_TEMP.length;
+    const pct = total > 0 ? (asistidasCount / total) * 100 : 0;
+
+    const regla = GESTION.actividad?.REGLA_RESULTADO || 'Asistencia';
+    const exigenciaPct = Math.round(Number(GESTION.actividad?.PORCENTAJE_APROBACION || 0.8) * 100);
+
+    texto('modalAsisContador', `${asistidasCount} / ${total}`);
+    texto('modalAsisPorcentaje', `${pct.toFixed(0)}%`);
+    texto('modalAsisRegla', regla === 'Porcentaje' ? `${exigenciaPct}% min` : 'Asistencia');
+
+    let resultado = 'Pendiente';
+    let badgeClase = 'neutral';
+    if (p.ESTADO_SELECCION === 'Seleccionado') {
+      if (regla === 'Porcentaje') {
+        resultado = (pct >= exigenciaPct) ? 'Aprobado' : 'Desaprobado';
+        badgeClase = (pct >= exigenciaPct) ? 'success' : 'danger';
+      } else {
+        resultado = asistidasCount > 0 ? 'Participó' : 'No participó';
+        badgeClase = asistidasCount > 0 ? 'success' : 'danger';
+      }
+    }
+    const badge = document.getElementById('modalAsisBadgeResultado');
+    if (badge) {
+      badge.textContent = resultado;
+      badge.className = `badge ${badgeClase}`;
+    }
+
+    const lista = document.getElementById('modalAsisListaSesiones');
+    if (lista) {
+      lista.innerHTML = sesionesActividad.map(s => {
+        const presente = MODAL_ASIS_SESIONES_TEMP.includes(Number(s.numero));
+        return `
+          <div class="modal-asis-row ${presente ? 'is-present' : ''}" onclick="modalAlternarSesion(${s.numero})">
+            <div class="modal-asis-info">
+              <span class="modal-asis-title">Sesión ${s.numero}</span>
+              <span class="modal-asis-subtitle">${s.fecha ? fechaActividadVisible(s.fecha) : 'Fecha por programar'}${s.horaInicio ? ' · ' + s.horaInicio + ' a ' + (s.horaFin || '--:--') : ''}</span>
+            </div>
+            <div class="modal-asis-switch">
+              <span class="badge ${presente ? 'success' : 'neutral'}">${presente ? '✓ Presente' : 'Ausente'}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  function modalAlternarSesion(numSesion) {
+    numSesion = Number(numSesion);
+    if (MODAL_ASIS_SESIONES_TEMP.includes(numSesion)) {
+      MODAL_ASIS_SESIONES_TEMP = MODAL_ASIS_SESIONES_TEMP.filter(n => n !== numSesion);
+    } else {
+      MODAL_ASIS_SESIONES_TEMP.push(numSesion);
+    }
+    MODAL_ASIS_SESIONES_TEMP.sort((a, b) => a - b);
+    renderModalAsistenciaContenido_();
+  }
+
+  function modalMarcarTodasSesiones(estado) {
+    const sesionesActividad = obtenerSesionesActividadGestion();
+    if (estado) {
+      MODAL_ASIS_SESIONES_TEMP = sesionesActividad.map(s => Number(s.numero));
+    } else {
+      MODAL_ASIS_SESIONES_TEMP = [];
+    }
+    renderModalAsistenciaContenido_();
+  }
+
+  function guardarModalAsistenciaAlumno() {
+    const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(MODAL_ASIS_PARTICIPACION_ID));
+    if (!p) return;
+    p.ASISTENCIA_SESIONES = JSON.stringify(MODAL_ASIS_SESIONES_TEMP);
+    p.SESIONES_ASISTIDAS = MODAL_ASIS_SESIONES_TEMP.length;
+    recalcularResultadoParticipante_(p);
+    GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
+    cerrarModalAsistenciaAlumno();
+    actualizarKpisGestion();
+    renderGestion(false);
+    notificar('Asistencia actualizada para ' + (p.NOMBRE_COMPLETO || 'el participante') + '.');
+  }
+
   function actualizarKpisGestion() {
     const r = GESTION.resumen || {};
     texto('gInscritos', r.inscritos || 0);
@@ -1391,10 +1688,14 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     texto('gAsistentes', r.asistentes || 0);
     texto('gAprobados', r.aprobados || 0);
   }
+
   function renderGestion(sincronizarAntes = true) {
     if (sincronizarAntes) {
       sincronizarGestionDesdeTabla();
     }
+    const sesionesActividad = obtenerSesionesActividadGestion();
+    renderHeaderGestion_(sesionesActividad);
+
     const tbody = document.getElementById('tablaGestion');
     const q = normalizar(document.getElementById('buscarGestion')?.value || '');
     const filtro = document.getElementById('filtroGestionSeleccion')?.value || '';
@@ -1402,13 +1703,19 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       normalizar([p.NOMBRE_COMPLETO,p.RUT,p.DOCUMENTO,p.EDAD,p.CORREO,p.PARTICIPA_PMJH].join(' ')).includes(q) &&
       (!filtro || p.ESTADO_SELECCION === filtro)
     );
+
+    const colSpanTotal = 13 + (GESTION_MODO_VISTA === 'sesiones' ? sesionesActividad.length : 0);
+
     if (!filas.length) {
-      tbody.innerHTML = `<tr><td colspan="13" class="empty-state">${
+      tbody.innerHTML = `<tr><td colspan="${colSpanTotal}" class="empty-state">${
         GESTION.actividad ? 'No hay participantes que coincidan con el filtro.' : 'Seleccione una actividad para comenzar.'
       }</td></tr>`;
       actualizarCheckPrincipalGestion();
       return;
     }
+
+    const esModoSesiones = GESTION_MODO_VISTA === 'sesiones' && sesionesActividad.length > 0;
+
     tbody.innerHTML = filas.map(p => {
       const idx = GESTION.participaciones.indexOf(p);
       const id = String(p.ID_PARTICIPACION || '');
@@ -1423,6 +1730,40 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       const pmjh = p.PARTICIPA_PMJH || 'No informado';
       const pmjhBadge = pmjh === 'Sí' ? 'badge success' : (pmjh === 'No' ? 'badge neutral' : 'badge neutral');
 
+      const totalSes = Number(p.SESIONES_TOTALES || GESTION.actividad?.SESIONES_TOTALES || 1);
+      const asistidasNums = obtenerSesionesAsistidasParticipacion(p);
+      const totalAsistidas = asistidasNums.length;
+
+      let celdasSesionesHtml = '';
+      if (esModoSesiones) {
+        celdasSesionesHtml = sesionesActividad.map(s => {
+          const presente = asistidasNums.includes(Number(s.numero));
+          const deshabilitado = p.ESTADO_SELECCION !== 'Seleccionado';
+          return `
+            <td class="col-sesion td-center">
+              <button
+                type="button"
+                class="sesion-toggle-pill ${presente ? 'presente' : ''} ${deshabilitado ? 'disabled' : ''}"
+                onclick="alternarAsistenciaSesion('${esc(id)}', ${s.numero})"
+                title="Sesión ${s.numero}${s.fecha ? ' (' + fechaActividadCorta(s.fecha) + ')' : ''}: ${presente ? 'Presente' : 'Ausente'}"
+              >
+                ${presente ? '✓' : '—'}
+              </button>
+            </td>
+          `;
+        }).join('');
+      }
+
+      const campoAsistidasHtml = esModoSesiones
+        ? `<div style="display:flex;align-items:center;justify-content:center;gap:6px">
+             <strong style="font-size:14px;color:var(--primario)">${totalAsistidas}</strong>
+             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" title="Ver detalle de sesiones">📋</button>
+           </div>`
+        : `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
+             <input data-campo="SESIONES_ASISTIDAS" type="number" min="0" value="${esc(numeroPlano(p.SESIONES_ASISTIDAS,0))}" onchange="registrarCambioGestion(this)" style="width:50px">
+             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" title="Ver desglose por sesión">📋</button>
+           </div>`;
+
       return `<tr data-idx="${idx}" data-id="${esc(id)}">
         <td class="col-check td-center"><input type="checkbox" class="gestion-check" data-id="${esc(id)}" ${marcado} onchange="cambiarSeleccionGestion(this)"></td>
         <td class="col-persona nombre"><strong>${esc(p.NOMBRE_COMPLETO)}</strong><small>${esc(p.CORREO || 'Sin correo')}</small></td>
@@ -1432,7 +1773,8 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         <td class="col-requisitos">${selectGestion('CUMPLE_REQUISITOS', p.CUMPLE_REQUISITOS, ['Pendiente','Sí','No','No informado'])}</td>
         <td class="col-seleccion">${selectGestion('ESTADO_SELECCION', p.ESTADO_SELECCION, ['Pendiente','Seleccionado','Lista de espera','No seleccionado','No informado'])}</td>
         <td class="col-confirma">${selectGestion('CONFIRMA_PARTICIPACION', p.CONFIRMA_PARTICIPACION, ['No informado','Sí','No'])}</td>
-        <td class="col-asistidas td-center"><input data-campo="SESIONES_ASISTIDAS" type="number" min="0" value="${esc(numeroPlano(p.SESIONES_ASISTIDAS,0))}" onchange="registrarCambioGestion(this)"></td>
+        ${celdasSesionesHtml}
+        <td class="col-asistidas td-center">${campoAsistidasHtml}</td>
         <td class="col-total td-center"><input data-campo="SESIONES_TOTALES" type="number" min="1" value="${esc(numeroPlano(p.SESIONES_TOTALES, GESTION.actividad?.SESIONES_TOTALES || 1))}" onchange="registrarCambioGestion(this)"></td>
         <td class="col-resultado td-center"><span class="badge ${badgeClase}">${esc(resultado)}</span></td>
         <td class="col-cert">${selectGestion('CERTIFICADO', p.CERTIFICADO, ['No informado','Sí','No','No aplica'])}</td>
@@ -1441,11 +1783,13 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }).join('');
     actualizarCheckPrincipalGestion();
   }
+
   function selectGestion(campo, actual, opciones) {
     return `<select data-campo="${campo}" onchange="registrarCambioGestion(this)">` + opciones.map(op =>
       `<option value="${esc(op)}" ${String(actual || '') === String(op) ? 'selected' : ''}>${esc(op || 'Automático')}</option>`
     ).join('') + `</select>`;
   }
+
   function cambiarSeleccionGestion(checkbox) {
     const id = String(checkbox.dataset.id || '').trim();
     if (!id) return;
@@ -1456,6 +1800,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
     actualizarCheckPrincipalGestion();
   }
+
   function actualizarCheckPrincipalGestion() {
     const principal = document.getElementById('checkTodosGestion');
     if (!principal) return;
@@ -1475,6 +1820,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       cantidadMarcados > 0 &&
       cantidadMarcados < checksVisibles.length;
   }
+
   function registrarCambioGestion(control) {
     const tr = control.closest('tr[data-idx]');
     if (!tr) return;
@@ -1486,13 +1832,16 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     if (campo === 'ESTADO_SELECCION' &&
         control.value !== 'Seleccionado') {
       registro.SESIONES_ASISTIDAS = 0;
+      registro.ASISTENCIA_SESIONES = '[]';
       const asistencia = tr.querySelector(
         '[data-campo="SESIONES_ASISTIDAS"]'
       );
       if (asistencia) asistencia.value = 0;
     }
+    recalcularResultadoParticipante_(registro);
     GESTION_MODIFICADOS.add(String(registro.ID_PARTICIPACION));
   }
+
   function sincronizarGestionDesdeTabla() {
     document.querySelectorAll('#tablaGestion tr[data-idx]').forEach(tr => {
       const idx = Number(tr.dataset.idx);
@@ -1505,15 +1854,18 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       if (check) cambiarSeleccionGestion(check);
     });
   }
+
   function indicesGestionMarcados() {
     sincronizarGestionDesdeTabla();
     return (GESTION.participaciones || [])
       .map((p, i) => GESTION_SELECCIONADOS.has(String(p.ID_PARTICIPACION)) ? i : -1)
       .filter(i => i >= 0);
   }
+
   function alternarTodosGestion(checkPrincipal) {
     marcarTodosGestion(checkPrincipal.checked);
   }
+
   function marcarTodosGestion(estado) {
     const checksVisibles = [
       ...document.querySelectorAll('#tablaGestion .gestion-check')
@@ -1530,6 +1882,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     });
     actualizarCheckPrincipalGestion();
   }
+
   function aplicarMasivo(campo, idSelector) {
     const valor = document.getElementById(idSelector).value;
     if (!valor) return notificar('Seleccione un valor para aplicar.', true);
@@ -1541,24 +1894,35 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       if (campo === 'ESTADO_SELECCION' &&
           valor !== 'Seleccionado') {
         p.SESIONES_ASISTIDAS = 0;
+        p.ASISTENCIA_SESIONES = '[]';
       }
+      recalcularResultadoParticipante_(p);
       GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
     });
     renderGestion(false);
     notificar('Cambio aplicado a ' + indices.length + ' registros.');
   }
+
   function marcarAsistenciaCompleta() {
     const indices = indicesGestionMarcados();
     if (!indices.length) return notificar('Marque al menos una persona.', true);
     const seleccionados = indices.filter(i => GESTION.participaciones[i].ESTADO_SELECCION === 'Seleccionado');
     if (!seleccionados.length) return notificar('La asistencia solo puede aplicarse a personas seleccionadas.', true);
+    const sesionesActividad = obtenerSesionesActividadGestion();
+    const todasLasSesiones = sesionesActividad.map(s => Number(s.numero));
+
     seleccionados.forEach(i => {
       const p = GESTION.participaciones[i];
-      p.SESIONES_ASISTIDAS = numeroPlano(p.SESIONES_TOTALES, GESTION.actividad?.SESIONES_TOTALES || 1);
+      p.ASISTENCIA_SESIONES = JSON.stringify(todasLasSesiones);
+      p.SESIONES_ASISTIDAS = todasLasSesiones.length;
+      recalcularResultadoParticipante_(p);
       GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
     });
+    actualizarKpisGestion();
     renderGestion(false);
+    notificar('Asistencia al 100% registrada para ' + seleccionados.length + ' participantes.');
   }
+
   function marcarAsistenciaCero() {
     const indices = indicesGestionMarcados();
     if (!indices.length) {
@@ -1566,16 +1930,16 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
     indices.forEach(i => {
       const p = GESTION.participaciones[i];
+      p.ASISTENCIA_SESIONES = '[]';
       p.SESIONES_ASISTIDAS = 0;
+      recalcularResultadoParticipante_(p);
       GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
     });
+    actualizarKpisGestion();
     renderGestion(false);
-    notificar(
-      'Asistencia establecida en 0 para ' +
-      indices.length +
-      ' registros.'
-    );
+    notificar('Asistencia establecida en 0 para ' + indices.length + ' registros.');
   }
+
   function guardarGestion() {
     if (!GESTION.actividad) return notificar('Primero cargue una actividad.', true);
     sincronizarGestionDesdeTabla();
@@ -1587,6 +1951,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         ESTADO_SELECCION: p.ESTADO_SELECCION,
         CONFIRMA_PARTICIPACION: p.CONFIRMA_PARTICIPACION,
         SESIONES_ASISTIDAS: p.SESIONES_ASISTIDAS,
+        ASISTENCIA_SESIONES: p.ASISTENCIA_SESIONES || '',
         SESIONES_TOTALES: p.SESIONES_TOTALES,
         CERTIFICADO: p.CERTIFICADO,
         OBSERVACIONES: p.OBSERVACIONES
@@ -2028,13 +2393,24 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const inicio = (PAGINA_ASISTENCIAS - 1) * TAMANO_PAGINA_ASISTENCIAS;
     const visibles = filas.slice(inicio, inicio + TAMANO_PAGINA_ASISTENCIAS);
     texto('paginaAsistenciasInfo', `${filas.length ? inicio + 1 : 0}–${Math.min(inicio + TAMANO_PAGINA_ASISTENCIAS, filas.length)} de ${filas.length}`);
-    document.getElementById('tablaReporteAsistencias').innerHTML = visibles.length ? visibles.map(f => `<tr>
-      <td><strong>${esc(f.NOMBRE_COMPLETO)}</strong></td><td>${esc(f.DOCUMENTO)}</td><td>${esc(f.CORREO)}</td><td>${esc(f.TELEFONO)}</td>
-      <td>${esc(f.COMUNA)}</td><td><span class="badge">${esc(f.PARTICIPA_PMJH)}</span></td><td><strong>${esc(f.NOMBRE_ACTIVIDAD)}</strong><br><span class="muted">${esc(f.ID_ACTIVIDAD)}</span></td>
-      <td>${esc(f.ANO)}</td><td>${esc(f.ESCUELA_LINEA)}<br><span class="muted">${esc(f.AREA_TEMATICA)}</span></td><td>${esc(f.INSTITUCION_ASOCIADA)}</td>
-      <td>${esc(f.ESTADO_SELECCION)}</td><td>${esc(f.SESIONES_ASISTIDAS)}</td><td>${esc(f.SESIONES_TOTALES)}</td><td>${esc(formatoPorcentaje(f.PORCENTAJE_ASISTENCIA || 0))}</td>
-      <td><span class="badge">${esc(f.RESULTADO_FINAL || f.RESULTADO_ASISTENCIA || 'Pendiente')}</span></td><td>${esc(f.CERTIFICADO)}</td><td>${esc(f.ULTIMA_ACTUALIZACION)}</td>
-    </tr>`).join('') : '<tr><td colspan="17" class="empty-state">No se encontraron registros para los filtros seleccionados.</td></tr>';
+    document.getElementById('tablaReporteAsistencias').innerHTML = visibles.length ? visibles.map(f => {
+      let detalleAsis = esc(f.SESIONES_ASISTIDAS);
+      if (f.ASISTENCIA_SESIONES) {
+        try {
+          const arr = typeof f.ASISTENCIA_SESIONES === 'string' ? JSON.parse(f.ASISTENCIA_SESIONES) : f.ASISTENCIA_SESIONES;
+          if (Array.isArray(arr) && arr.length > 0) {
+            detalleAsis = `<strong>${f.SESIONES_ASISTIDAS}</strong> <small class="muted" style="display:block;font-size:10.5px">(S${arr.join(', S')})</small>`;
+          }
+        } catch(e){}
+      }
+      return `<tr>
+        <td><strong>${esc(f.NOMBRE_COMPLETO)}</strong></td><td>${esc(f.DOCUMENTO)}</td><td>${esc(f.CORREO)}</td><td>${esc(f.TELEFONO)}</td>
+        <td>${esc(f.COMUNA)}</td><td><span class="badge">${esc(f.PARTICIPA_PMJH)}</span></td><td><strong>${esc(f.NOMBRE_ACTIVIDAD)}</strong><br><span class="muted">${esc(f.ID_ACTIVIDAD)}</span></td>
+        <td>${esc(f.ANO)}</td><td>${esc(f.ESCUELA_LINEA)}<br><span class="muted">${esc(f.AREA_TEMATICA)}</span></td><td>${esc(f.INSTITUCION_ASOCIADA)}</td>
+        <td>${esc(f.ESTADO_SELECCION)}</td><td>${detalleAsis}</td><td>${esc(f.SESIONES_TOTALES)}</td><td>${esc(formatoPorcentaje(f.PORCENTAJE_ASISTENCIA || 0))}</td>
+        <td><span class="badge">${esc(f.RESULTADO_FINAL || f.RESULTADO_ASISTENCIA || 'Pendiente')}</span></td><td>${esc(f.CERTIFICADO)}</td><td>${esc(f.ULTIMA_ACTUALIZACION)}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="17" class="empty-state">No se encontraron registros para los filtros seleccionados.</td></tr>';
   }
   function cambiarPaginaAsistencias(delta) {
     PAGINA_ASISTENCIAS += delta;

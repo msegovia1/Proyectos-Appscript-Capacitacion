@@ -67,38 +67,46 @@
               </div>
             </div>
           </div>
-          <div class="table-tools">
-            <input id="buscarGestion" placeholder="🔍 Buscar por nombre o RUT..." oninput="renderGestion()">
-            <select id="filtroGestionSeleccion" onchange="renderGestion()">
-              <option value="">Todos los estados</option>
-              <option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>Pendiente</option>
-            </select>
+          <div class="table-tools" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;gap:10px;flex:1;min-width:280px">
+              <input id="buscarGestion" placeholder="🔍 Buscar por nombre o RUT..." oninput="renderGestion()">
+              <select id="filtroGestionSeleccion" onchange="renderGestion()">
+                <option value="">Todos los estados</option>
+                <option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>Pendiente</option>
+              </select>
+            </div>
+            <div class="asis-view-switcher" id="asisViewSwitcher">
+              <button type="button" class="asis-view-btn" id="btnAsisModoCompacto" onclick="cambiarModoVistaGestion('compacta')">🔢 Total Asistidas</button>
+              <button type="button" class="asis-view-btn active" id="btnAsisModoSesiones" onclick="cambiarModoVistaGestion('sesiones')">📅 Por Sesión</button>
+            </div>
           </div>
           <p class="gestion-scroll-hint">↔ Desplácese horizontalmente dentro de la tabla para consultar resultados, certificación y observaciones.</p>
           <div class="table-container gestion-scroll" tabindex="0" aria-label="Tabla desplazable de gestión de participantes">
             <table class="gestion-table">
-              <thead><tr>
-                <th class="col-check">
-                  <input
-                    id="checkTodosGestion"
-                    type="checkbox"
-                    title="Marcar o desmarcar participantes visibles"
-                    onchange="alternarTodosGestion(this)"
-                  >
-                </th>
-                <th class="col-persona">Persona</th>
-                <th class="col-doc">Documento</th>
-                <th class="col-edad th-center">Edad</th>
-                <th class="col-pmjh th-center">PMJH</th>
-                <th class="col-requisitos">Cumple requisitos</th>
-                <th class="col-seleccion">Selección</th>
-                <th class="col-confirma">Confirmación</th>
-                <th class="col-asistidas th-center">Asistidas</th>
-                <th class="col-total th-center">Total</th>
-                <th class="col-resultado th-center">Resultado</th>
-                <th class="col-cert">Certificado</th>
-                <th class="col-obs">Observaciones</th>
-              </tr></thead>
+              <thead id="headTablaGestion">
+                <tr>
+                  <th class="col-check">
+                    <input
+                      id="checkTodosGestion"
+                      type="checkbox"
+                      title="Marcar o desmarcar participantes visibles"
+                      onchange="alternarTodosGestion(this)"
+                    >
+                  </th>
+                  <th class="col-persona">Persona</th>
+                  <th class="col-doc">Documento</th>
+                  <th class="col-edad th-center">Edad</th>
+                  <th class="col-pmjh th-center">PMJH</th>
+                  <th class="col-requisitos">Cumple requisitos</th>
+                  <th class="col-seleccion">Selección</th>
+                  <th class="col-confirma">Confirmación</th>
+                  <th class="col-asistidas th-center">Asistidas</th>
+                  <th class="col-total th-center">Total</th>
+                  <th class="col-resultado th-center">Resultado</th>
+                  <th class="col-cert">Certificado</th>
+                  <th class="col-obs">Observaciones</th>
+                </tr>
+              </thead>
               <tbody id="tablaGestion">
                 <tr><td colspan="13" class="empty-state">Seleccione una actividad para comenzar.</td></tr>
               </tbody>
@@ -131,4 +139,47 @@
         </div>
         <div class="table-container"><table><thead><tr><th>Persona</th><th>Documento</th><th>Correo</th><th>Teléfono</th><th>Comuna</th><th>PMJH</th><th>Capacitación</th><th>Año</th><th>Escuela / área</th><th>Institución</th><th>Selección</th><th>Sesiones asistidas</th><th>Sesiones totales</th><th>% asistencia</th><th>Resultado</th><th>Certificado</th><th>Actualización</th></tr></thead><tbody id="tablaReporteAsistencias"><tr><td colspan="17" class="empty-state">Seleccione una actividad y genere la nómina.</td></tr></tbody></table></div>
         <div class="pager"><span id="paginaAsistenciasInfo"></span><button class="btn secondary" type="button" onclick="cambiarPaginaAsistencias(-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPaginaAsistencias(1)">Siguiente</button></div>
+
+        <!-- MODAL DE DETALLE DE ASISTENCIA POR ALUMNO -->
+        <div id="modalDetalleAsistenciaAlumno" class="modal-overlay" style="display:none">
+          <div class="modal-card" style="max-width:560px">
+            <div class="modal-header">
+              <div class="modal-title-wrap">
+                <span id="modalAsisBadgeResultado" class="badge">Resultado</span>
+                <h3 id="modalAsisNombreAlumno">Nombre del Participante</h3>
+              </div>
+              <button class="modal-close" type="button" onclick="cerrarModalAsistenciaAlumno()">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-asis-summary-banner">
+                <div class="modal-asis-summary-item">
+                  <span>Sesiones Asistidas</span>
+                  <strong id="modalAsisContador">0 / 0</strong>
+                </div>
+                <div class="modal-asis-summary-item">
+                  <span>Cumplimiento</span>
+                  <strong id="modalAsisPorcentaje">0%</strong>
+                </div>
+                <div class="modal-asis-summary-item">
+                  <span>Exigencia</span>
+                  <strong id="modalAsisRegla">80%</strong>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <label style="margin:0">Presencia por sesión:</label>
+                <div style="display:flex;gap:6px">
+                  <button class="btn secondary compact" type="button" onclick="modalMarcarTodasSesiones(true)">☑ Todas presentes</button>
+                  <button class="btn secondary compact" type="button" onclick="modalMarcarTodasSesiones(false)">☐ Todas ausentes</button>
+                </div>
+              </div>
+              <div class="modal-asis-detail-list" id="modalAsisListaSesiones">
+                <!-- Generado dinámicamente -->
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn secondary" type="button" onclick="cerrarModalAsistenciaAlumno()">Cerrar</button>
+              <button class="btn" type="button" onclick="guardarModalAsistenciaAlumno()">Aplicar a la tabla</button>
+            </div>
+          </div>
+        </div>
       </section>

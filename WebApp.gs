@@ -1520,6 +1520,7 @@ function guardarGestionMasiva(payload) {
     const valores = rango.getValues();
     if (valores.length < 2) throw new Error('La hoja PARTICIPACIONES no contiene registros.');
     const encabezados = valores[0].map(function(valor) { return String(valor).trim(); });
+    webAsegurarEncabezadosParticipaciones_(hoja, encabezados);
     const mapa = {};
     encabezados.forEach(function(encabezado, indice) {
       mapa[sigcNormalizarEncabezado(encabezado)] = indice;
@@ -1547,6 +1548,25 @@ function guardarGestionMasiva(payload) {
         }
         const total = webNumeroNoNegativo_(registro.SESIONES_TOTALES, actividad.SESIONES_TOTALES || 1);
         let asistidas = webNumeroNoNegativo_(registro.SESIONES_ASISTIDAS, 0);
+        let asistSesiones = registro.ASISTENCIA_SESIONES;
+        if (asistSesiones !== undefined && asistSesiones !== null) {
+          if (typeof asistSesiones !== 'string') {
+            asistSesiones = JSON.stringify(asistSesiones);
+          }
+        } else {
+          asistSesiones = '';
+        }
+
+        let parsedSesiones = [];
+        if (asistSesiones) {
+          try {
+            parsedSesiones = typeof asistSesiones === 'string' ? JSON.parse(asistSesiones) : asistSesiones;
+          } catch (e) { parsedSesiones = []; }
+        }
+        if (Array.isArray(parsedSesiones) && parsedSesiones.length > 0) {
+          asistidas = parsedSesiones.length;
+        }
+
         if (total < 1) throw new Error('Las sesiones totales deben ser al menos 1.');
         if (asistidas > total) throw new Error('Las sesiones asistidas no pueden superar las sesiones totales.');
         const cumple = sigcNormalizarCumple(registro.CUMPLE_REQUISITOS);
@@ -1555,9 +1575,9 @@ function guardarGestionMasiva(payload) {
           throw new Error('No se puede seleccionar a una persona que no cumple requisitos.');
         }
         // Las personas no seleccionadas no deben conservar asistencia.
-        // El sistema la ajusta automáticamente a cero.
         if (seleccion !== 'Seleccionado') {
           asistidas = 0;
+          asistSesiones = '';
         }
         const porcentaje = total > 0 ? asistidas / total : 0;
         const resultado = seleccion === 'Seleccionado'
@@ -1568,6 +1588,7 @@ function guardarGestionMasiva(payload) {
           ESTADO_SELECCION: seleccion,
           CONFIRMA_PARTICIPACION: sigcNormalizarSiNo(registro.CONFIRMA_PARTICIPACION, 'No informado'),
           SESIONES_ASISTIDAS: asistidas,
+          ASISTENCIA_SESIONES: seleccion === 'Seleccionado' ? asistSesiones : '',
           SESIONES_TOTALES: total,
           PORCENTAJE_ASISTENCIA: porcentaje,
           RESULTADO_ASISTENCIA: resultado.resultadoAsistencia,
@@ -2457,7 +2478,18 @@ function webAsegurarEncabezadosActividades_(hoja, tablaEncabezados) {
   });
 }
 
+function webAsegurarEncabezadosParticipaciones_(hoja, tablaEncabezados) {
+  ['ASISTENCIA_SESIONES'].forEach(function(col) {
+    webAsegurarColumna_(hoja, col);
+    const norm = sigcNormalizarEncabezado(col);
+    if (!tablaEncabezados.some(function(enc) { return sigcNormalizarEncabezado(enc) === norm; })) {
+      tablaEncabezados.push(col);
+    }
+  });
+}
+
 function webGuardarSpreadsheetId(nuevoId) {
   return sigcGuardarSpreadsheetId(nuevoId);
 }
+
 
