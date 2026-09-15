@@ -1069,6 +1069,11 @@
   .empty-state { text-align: center; padding: 36px; color: var(--gris); }
 
   /* MODALES Y TOASTS */
+  [hidden],
+  .modal-overlay[hidden] {
+    display: none !important;
+  }
+
   .modal-overlay {
     position: fixed;
     inset: 0;

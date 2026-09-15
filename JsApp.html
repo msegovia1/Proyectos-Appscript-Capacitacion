@@ -2476,12 +2476,18 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
 
     const modal = document.getElementById('modalDetalleActividadCalendario');
-    if (modal) modal.hidden = false;
+    if (modal) {
+      modal.hidden = false;
+      modal.style.display = 'flex';
+    }
   }
 
   function cerrarDetalleActividadCalendario() {
     const modal = document.getElementById('modalDetalleActividadCalendario');
-    if (modal) modal.hidden = true;
+    if (modal) {
+      modal.hidden = true;
+      modal.style.display = 'none';
+    }
   }
 
   function irAGestionDesdeCalendario(idActividad) {
