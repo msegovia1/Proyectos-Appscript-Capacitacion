@@ -877,14 +877,16 @@
 
   /* PANEL DE ACCIONES MASIVAS */
   .bulk-panel {
-    background: #f8fafc;
-    border: 1px solid var(--borde);
+    background: #fffdf5;
+    border: 1px solid #fde68a;
+    border-left: 5px solid #d97706;
     border-radius: var(--radius-lg);
     padding: 16px 20px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(217, 119, 6, 0.08);
   }
 
   .bulk-header {
@@ -892,45 +894,97 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 10px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--borde);
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #fef3c7;
+  }
+
+  .bulk-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .bulk-title {
     font-size: 13.5px;
     font-weight: 700;
-    color: var(--azul-1);
+    color: #92400e;
     display: flex;
     align-items: center;
     gap: 6px;
   }
 
+  .bulk-subtitle {
+    font-size: 11.5px;
+    color: #b45309;
+    font-weight: 500;
+  }
+
   .bulk-selection-tools {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .bulk-counter-pill {
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .bulk-counter-pill.empty {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px dashed #fcd34d;
+  }
+
+  .bulk-counter-pill.active {
+    background: #059669;
+    color: #ffffff;
+    border: 1px solid #047857;
+    box-shadow: 0 1px 2px rgba(5, 150, 105, 0.25);
+  }
+
+  .btn-bulk-select {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #ffffff;
+    border: 1px solid #fed7aa;
+    color: #92400e;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-bulk-select:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
   }
 
   .bulk-controls {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px;
+    gap: 14px;
     align-items: end;
   }
 
   .bulk-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
   }
 
   .bulk-group label {
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    color: var(--gris);
+    color: #78350f;
   }
 
   .input-action-group {
@@ -941,16 +995,40 @@
 
   .input-action-group select {
     flex: 1;
-    padding: 7px 10px;
-    font-size: 13px;
-    height: 38px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    height: 36px;
+    border: 1px solid #fcd34d;
+    background: #ffffff;
+    border-radius: var(--radius-sm);
+    color: #1e293b;
+    outline: none;
+    transition: border-color 0.15s ease;
   }
 
-  .input-action-group .btn {
-    height: 38px;
+  .input-action-group select:focus {
+    border-color: #d97706;
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15);
+  }
+
+  .btn-bulk-apply {
+    height: 36px;
     padding: 0 12px;
-    font-size: 12.5px;
+    font-size: 12px;
+    font-weight: 600;
     white-space: nowrap;
+    background: #0f172a;
+    color: #ffffff;
+    border: 1px solid #0f172a;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-bulk-apply:hover {
+    background: #1e293b;
+    border-color: #1e293b;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.15);
   }
 
   .bulk-buttons-group {
@@ -958,12 +1036,125 @@
     gap: 6px;
   }
 
-  .bulk-buttons-group .btn {
+  .btn-bulk-asis {
     flex: 1;
-    height: 38px;
+    height: 36px;
     padding: 0 10px;
     font-size: 12px;
+    font-weight: 600;
     white-space: nowrap;
+    background: #ffffff;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-bulk-asis:hover {
+    background: #fef3c7;
+    border-color: #d97706;
+  }
+
+  /* PANEL DE FILTROS Y BÚSQUEDA */
+  .gestion-filtros-panel {
+    background: #ffffff;
+    border: 1px solid var(--borde);
+    border-left: 5px solid #0284c7;
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: var(--sombra-sm);
+  }
+
+  .gestion-filtros-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--borde-subtle);
+  }
+
+  .filtros-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .filtros-panel-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0369a1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .filtros-panel-subtitle {
+    font-size: 11.5px;
+    color: var(--gris);
+    font-weight: 500;
+  }
+
+  .gestion-busqueda-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .busqueda-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 280px;
+  }
+
+  .busqueda-input-wrapper input {
+    width: 100%;
+    padding: 7px 12px 7px 34px;
+    font-size: 12.5px;
+    height: 38px;
+    border: 1px solid var(--borde);
+    border-radius: var(--radius);
+    background: #f8fafc;
+    color: var(--texto);
+    transition: all 0.15s ease;
+  }
+
+  .busqueda-input-wrapper input:focus {
+    background: #ffffff;
+    border-color: #0284c7;
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.12);
+    outline: none;
+  }
+
+  .busqueda-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    font-size: 13px;
+    opacity: 0.6;
+  }
+
+  .contador-filtrados-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0369a1;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+  .contador-filtrados-badge:empty {
+    display: none;
   }
 
   .gestion-scroll-hint {

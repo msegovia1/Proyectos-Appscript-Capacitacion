@@ -25,62 +25,77 @@
             <div class="card module-kpi accent-amber"><span>Con asistencia</span><strong id="gAsistentes">0</strong></div>
             <div class="card module-kpi accent-emerald"><span>Aprobados</span><strong id="gAprobados">0</strong></div>
           </div>
+          <!-- ZONA 1: ACCIONES MASIVAS (EDICIÓN EN LOTE) -->
           <div class="bulk-panel">
             <div class="bulk-header">
-              <span class="bulk-title">⚡ Acciones masivas</span>
+              <div class="bulk-title-group">
+                <span class="bulk-title">⚡ Acciones Masivas (Edición en Lote)</span>
+                <span class="bulk-subtitle">Aplica cambios simultáneos a las personas que marques con la casilla (☑) en la tabla</span>
+              </div>
               <div class="bulk-selection-tools">
-                <button class="btn secondary compact" type="button" onclick="marcarTodosGestion(true)">☑ Marcar visibles</button>
-                <button class="btn secondary compact" type="button" onclick="marcarTodosGestion(false)">☐ Desmarcar</button>
+                <span id="bulkContadorSeleccionados" class="bulk-counter-pill empty" title="Cantidad de participantes marcados para aplicar cambios">0 seleccionados</span>
+                <button class="btn btn-bulk-select compact" type="button" onclick="marcarTodosGestion(true)">☑ Marcar visibles</button>
+                <button class="btn btn-bulk-select compact" type="button" onclick="marcarTodosGestion(false)">☐ Desmarcar</button>
               </div>
             </div>
             <div class="bulk-controls">
               <div class="bulk-group">
-                <label>Requisitos:</label>
+                <label>Asignar Requisitos:</label>
                 <div class="input-action-group">
                   <select id="bulkCumple">
                     <option value="">Seleccionar...</option><option>Sí</option><option>No</option><option>Pendiente</option>
                   </select>
-                  <button class="btn secondary compact" type="button" onclick="aplicarMasivo('CUMPLE_REQUISITOS','bulkCumple')">Aplicar</button>
+                  <button class="btn btn-bulk-apply compact" type="button" onclick="aplicarMasivo('CUMPLE_REQUISITOS','bulkCumple')">Aplicar</button>
                 </div>
               </div>
               <div class="bulk-group">
-                <label>Selección:</label>
+                <label>Asignar Selección:</label>
                 <div class="input-action-group">
                   <select id="bulkSeleccion">
                     <option value="">Seleccionar...</option><option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>Pendiente</option>
                   </select>
-                  <button class="btn secondary compact" type="button" onclick="aplicarMasivo('ESTADO_SELECCION','bulkSeleccion')">Aplicar</button>
+                  <button class="btn btn-bulk-apply compact" type="button" onclick="aplicarMasivo('ESTADO_SELECCION','bulkSeleccion')">Aplicar</button>
                 </div>
               </div>
               <div class="bulk-group">
-                <label>Confirmación:</label>
+                <label>Asignar Confirmación:</label>
                 <div class="input-action-group">
                   <select id="bulkConfirma">
                     <option value="">Seleccionar...</option><option>Sí</option><option>No</option><option>No informado</option>
                   </select>
-                  <button class="btn secondary compact" type="button" onclick="aplicarMasivo('CONFIRMA_PARTICIPACION','bulkConfirma')">Aplicar</button>
+                  <button class="btn btn-bulk-apply compact" type="button" onclick="aplicarMasivo('CONFIRMA_PARTICIPACION','bulkConfirma')">Aplicar</button>
                 </div>
               </div>
               <div class="bulk-group">
-                <label>Asistencia:</label>
+                <label>Asistencia Rápida:</label>
                 <div class="bulk-buttons-group">
-                  <button class="btn secondary compact" type="button" onclick="marcarAsistenciaCompleta()">100%</button>
-                  <button class="btn secondary compact" type="button" onclick="marcarAsistenciaCero()">En 0</button>
+                  <button class="btn btn-bulk-asis compact" type="button" onclick="marcarAsistenciaCompleta()" title="Asignar 100% de asistencia a los participantes seleccionados marcados">100%</button>
+                  <button class="btn btn-bulk-asis compact" type="button" onclick="marcarAsistenciaCero()" title="Dejar asistencias en 0 a los participantes marcados">En 0</button>
                 </div>
               </div>
             </div>
           </div>
-          <div class="table-tools" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
-            <!-- Fila 1: Buscador rápido, contador y selector de modo de vista -->
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-              <div style="display:flex;gap:10px;flex:1;min-width:280px;align-items:center">
-                <input id="buscarGestion" placeholder="🔍 Buscar por nombre, RUT, documento, correo o teléfono..." oninput="renderGestionConPausa()" style="flex:1">
-                <span id="contadorGestionFiltrados" style="font-size:12px;font-weight:600;color:var(--gris);white-space:nowrap"></span>
+
+          <!-- ZONA 2: FILTROS DE BÚSQUEDA Y VISUALIZACIÓN (SOLO CONSULTA) -->
+          <div class="gestion-filtros-panel">
+            <div class="gestion-filtros-header">
+              <div class="filtros-title-group">
+                <span class="filtros-panel-title">🔍 Filtros de Búsqueda y Visualización</span>
+                <span class="filtros-panel-subtitle">Busca y filtra participantes en pantalla sin modificar los datos</span>
               </div>
               <div class="asis-view-switcher" id="asisViewSwitcher">
                 <button type="button" class="asis-view-btn" id="btnAsisModoCompacto" onclick="cambiarModoVistaGestion('compacta')">🔢 Total Asistidas</button>
                 <button type="button" class="asis-view-btn active" id="btnAsisModoSesiones" onclick="cambiarModoVistaGestion('sesiones')">📅 Por Sesión</button>
               </div>
+            </div>
+
+            <!-- Fila 1: Buscador rápido y contador -->
+            <div class="gestion-busqueda-row">
+              <div class="busqueda-input-wrapper">
+                <span class="busqueda-icon">🔍</span>
+                <input id="buscarGestion" placeholder="Buscar por nombre, RUT, documento, correo o teléfono..." oninput="renderGestionConPausa()">
+              </div>
+              <span id="contadorGestionFiltrados" class="contador-filtrados-badge"></span>
             </div>
 
             <!-- Fila 2: Barra de Filtros Específicos -->
@@ -90,7 +105,7 @@
               </button>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionSeleccion">Selección:</label>
+                <label for="filtroGestionSeleccion">Filtrar Selección:</label>
                 <select id="filtroGestionSeleccion" class="filtro-gestion-select" onchange="actualizarEstadoBotonPorLlamar(); renderGestion();">
                   <option value="">Todos</option>
                   <option value="Seleccionado">Seleccionado</option>
@@ -102,7 +117,7 @@
               </div>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionConfirmacion">Confirmación:</label>
+                <label for="filtroGestionConfirmacion">Filtrar Confirmación:</label>
                 <select id="filtroGestionConfirmacion" class="filtro-gestion-select" onchange="renderGestion()">
                   <option value="">Todas</option>
                   <option value="Sí">Confirmaron (Sí)</option>
@@ -112,7 +127,7 @@
               </div>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionCertificado">Certificado:</label>
+                <label for="filtroGestionCertificado">Filtrar Certificado:</label>
                 <select id="filtroGestionCertificado" class="filtro-gestion-select" onchange="renderGestion()">
                   <option value="">Todos</option>
                   <option value="Sí">Con certificado (Sí)</option>
@@ -123,7 +138,7 @@
               </div>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionResultado">Resultado:</label>
+                <label for="filtroGestionResultado">Filtrar Resultado:</label>
                 <select id="filtroGestionResultado" class="filtro-gestion-select" onchange="renderGestion()">
                   <option value="">Todos</option>
                   <option value="Aprobado">Aprobado / Participó</option>
@@ -133,7 +148,7 @@
               </div>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionRequisitos">Requisitos:</label>
+                <label for="filtroGestionRequisitos">Filtrar Requisitos:</label>
                 <select id="filtroGestionRequisitos" class="filtro-gestion-select" onchange="renderGestion()">
                   <option value="">Todos</option>
                   <option value="Sí">Cumple (Sí)</option>
@@ -144,7 +159,7 @@
               </div>
 
               <div class="gestion-filtro-item">
-                <label for="filtroGestionPmjh">PMJH:</label>
+                <label for="filtroGestionPmjh">Filtrar PMJH:</label>
                 <select id="filtroGestionPmjh" class="filtro-gestion-select" onchange="renderGestion()">
                   <option value="">Todos</option>
                   <option value="Sí">Es PMJH (Sí)</option>

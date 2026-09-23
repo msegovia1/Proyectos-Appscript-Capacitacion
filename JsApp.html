@@ -3193,6 +3193,20 @@ ${filasActividadesHtml}
   }
 
   function actualizarCheckPrincipalGestion() {
+    const badgeContador = document.getElementById('bulkContadorSeleccionados');
+    const totalMarcados = GESTION_SELECCIONADOS.size;
+    if (badgeContador) {
+      if (totalMarcados === 0) {
+        badgeContador.textContent = '0 seleccionados';
+        badgeContador.className = 'bulk-counter-pill empty';
+        badgeContador.title = 'Marque las casillas (☑) en la tabla para aplicar cambios en lote';
+      } else {
+        badgeContador.textContent = `✓ ${totalMarcados} marcado${totalMarcados > 1 ? 's' : ''}`;
+        badgeContador.className = 'bulk-counter-pill active';
+        badgeContador.title = `${totalMarcados} participante(s) marcado(s) para aplicar cambios`;
+      }
+    }
+
     const principal = document.getElementById('checkTodosGestion');
     if (!principal) return;
     const checksVisibles = [
