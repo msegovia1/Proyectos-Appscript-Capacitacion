@@ -31,6 +31,140 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   const GESTION_SELECCIONADOS = new Set();
   const GESTION_MODIFICADOS = new Set();
   const charts = {};
+
+  // ==========================================
+  // MOTOR DE DATOS RELACIONAL Y CACHÉ LOCAL
+  // ==========================================
+  const SIGC_INDEX = {
+    personasPorId: new Map(),
+    personasPorDoc: new Map(),
+    actividadesPorId: new Map(),
+    participacionesPorId: new Map(),
+    participacionesPorActividad: new Map(),
+    participacionesPorPersona: new Map()
+  };
+
+  function normalizarClaveDoc(doc) {
+    return String(doc || '').replace(/[^0-9kK]/g, '').toUpperCase();
+  }
+
+  function sigcReconstruirIndices(tipo = 'todos') {
+    if (tipo === 'todos' || tipo === 'personas') {
+      SIGC_INDEX.personasPorId.clear();
+      SIGC_INDEX.personasPorDoc.clear();
+      (DB.personas || []).forEach(p => {
+        const id = String(p.ID_PERSONA || '').trim();
+        if (id) SIGC_INDEX.personasPorId.set(id, p);
+        const doc = normalizarClaveDoc(p.NUMERO_DOCUMENTO || p.DOCUMENTO || p.RUT);
+        if (doc) SIGC_INDEX.personasPorDoc.set(doc, p);
+      });
+    }
+    if (tipo === 'todos' || tipo === 'actividades') {
+      SIGC_INDEX.actividadesPorId.clear();
+      (DB.actividades || []).forEach(a => {
+        const id = String(a.ID_ACTIVIDAD || '').trim();
+        if (id) SIGC_INDEX.actividadesPorId.set(id, a);
+      });
+    }
+    if (tipo === 'todos' || tipo === 'participaciones') {
+      SIGC_INDEX.participacionesPorId.clear();
+      SIGC_INDEX.participacionesPorActividad.clear();
+      SIGC_INDEX.participacionesPorPersona.clear();
+      (DB.participaciones || []).forEach(p => {
+        const id = String(p.ID_PARTICIPACION || '').trim();
+        if (id) SIGC_INDEX.participacionesPorId.set(id, p);
+        const idAct = String(p.ID_ACTIVIDAD || '').trim();
+        if (idAct) {
+          if (!SIGC_INDEX.participacionesPorActividad.has(idAct)) {
+            SIGC_INDEX.participacionesPorActividad.set(idAct, []);
+          }
+          SIGC_INDEX.participacionesPorActividad.get(idAct).push(p);
+        }
+        const idPer = String(p.ID_PERSONA || '').trim();
+        if (idPer) {
+          if (!SIGC_INDEX.participacionesPorPersona.has(idPer)) {
+            SIGC_INDEX.participacionesPorPersona.set(idPer, []);
+          }
+          SIGC_INDEX.participacionesPorPersona.get(idPer).push(p);
+        }
+      });
+    }
+  }
+
+  // Almacén IndexedDB con fallback seguro a localStorage
+  const SIGC_STORE = {
+    dbName: 'SIGC_LOCAL_DB_V1',
+    storeName: 'datos',
+    _db: null,
+    async getDb() {
+      if (this._db) return this._db;
+      if (!window.indexedDB) return null;
+      return new Promise((resolve) => {
+        try {
+          const req = indexedDB.open(this.dbName, 1);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              db.createObjectStore(this.storeName);
+            }
+          };
+          req.onsuccess = (e) => {
+            this._db = e.target.result;
+            resolve(this._db);
+          };
+          req.onerror = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    },
+    async set(clave, valor) {
+      try {
+        const db = await this.getDb();
+        if (db) {
+          return new Promise((resolve) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).put(valor, clave);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+          });
+        }
+        localStorage.setItem('SIGC_' + clave, JSON.stringify(valor));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    async get(clave) {
+      try {
+        const db = await this.getDb();
+        if (db) {
+          return new Promise((resolve) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const req = tx.objectStore(this.storeName).get(clave);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+          });
+        }
+        const val = localStorage.getItem('SIGC_' + clave);
+        return val ? JSON.parse(val) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+  };
+
+  function actualizarEstadoSincronizacion(estado, textoCustom) {
+    const dot = document.querySelector('.status-dot');
+    const elAct = document.getElementById('ultimaActualizacion');
+    if (dot) {
+      dot.className = 'status-dot ' + (estado || 'saved');
+    }
+    if (elAct && textoCustom) {
+      elAct.textContent = textoCustom;
+    }
+  }
+
   function irAVista(nombreVista) {
     const btn = document.querySelector(`.menu button[data-view="${nombreVista}"]`);
     document.querySelectorAll('.menu button').forEach(x => x.classList.remove('active'));
@@ -54,88 +188,133 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       irAVista(btn.dataset.view);
     });
   });
-  function cargarDatos(forzar=false) {
+
+  async function cargarDatos(forzar=false) {
     const inicioCarga = performance.now();
-    const resumenLocal = !forzar && cargarDashboardLocal_();
-    mostrarCarga(!resumenLocal);
+    let localDataLoaded = false;
+
+    if (!forzar) {
+      // 1. Carga ultra-rápida desde IndexedDB/localStorage en 0.0 segundos
+      const [resumenLocal, personasLocal, actividadesLocal, partLocal] = await Promise.all([
+        SIGC_STORE.get('dashboard'),
+        SIGC_STORE.get('personas'),
+        SIGC_STORE.get('actividades'),
+        SIGC_STORE.get('participaciones')
+      ]);
+
+      if (resumenLocal && resumenLocal.resumen) {
+        DB.resumen = resumenLocal.resumen || {};
+        DB.graficos = resumenLocal.graficos || {};
+        DB.fechaActualizacion = resumenLocal.fechaActualizacion || '';
+        if (personasLocal && Array.isArray(personasLocal)) {
+          DB.personas = personasLocal;
+          MODULOS_CARGADOS.add('personas');
+        }
+        if (actividadesLocal && Array.isArray(actividadesLocal)) {
+          DB.actividades = actividadesLocal;
+          MODULOS_CARGADOS.add('actividades');
+        }
+        if (partLocal && Array.isArray(partLocal)) {
+          DB.participaciones = partLocal;
+          MODULOS_CARGADOS.add('participaciones');
+        }
+        sigcReconstruirIndices('todos');
+        renderDashboard();
+        llenarSelectores();
+        localDataLoaded = true;
+        const ms = (performance.now() - inicioCarga).toFixed(1);
+        actualizarEstadoSincronizacion('saved', `Listo (RAM) · ${ms} ms`);
+      }
+    }
+
+    if (!localDataLoaded) {
+      mostrarCarga(true, 'Cargando datos…');
+    } else {
+      actualizarEstadoSincronizacion('syncing', 'Sincronizando con Google Sheets…');
+    }
+
+    const clientTimestamp = (!forzar && DB.fechaActualizacion) ? DB.fechaActualizacion : null;
+
     google.script.run
       .withSuccessHandler(datos => {
-        if (!datos) {
-          mostrarCarga(false);
+        mostrarCarga(false);
+        if (!datos) return;
+
+        if (datos.sinCambios) {
+          actualizarEstadoSincronizacion('saved', `Sincronizado: ${datos.fechaActualizacion || 'Al día'}`);
+          precargarModulosSilencioso_();
           return;
         }
+
         DB.resumen = datos.resumen || {};
         DB.graficos = datos.graficos || {};
-        const segundos = ((performance.now() - inicioCarga) / 1000).toFixed(1);
-        const elAct = document.getElementById('ultimaActualizacion');
-        if (elAct) {
-          elAct.textContent =
-            (datos.desdeResumenPersistente ? 'Resumen guardado: ' : 'Actualizado: ') +
-            (datos.fechaActualizacion || 'Hoy') + ' · carga ' + segundos + ' s';
-        }
+        DB.fechaActualizacion = datos.fechaActualizacion || '';
         renderDashboard();
-        guardarDashboardLocal_(datos);
-        mostrarCarga(false);
+        SIGC_STORE.set('dashboard', datos);
+        const segundos = ((performance.now() - inicioCarga) / 1000).toFixed(1);
+        actualizarEstadoSincronizacion('saved', `Sincronizado: ${datos.fechaActualizacion || 'Hoy'} · ${segundos}s`);
         precargarModulosSilencioso_();
       })
       .withFailureHandler(error => {
         mostrarCarga(false);
-        const msg = error.message || String(error);
-        notificar(msg, true);
+        if (!localDataLoaded) {
+          notificar(error.message || String(error), true);
+          actualizarEstadoSincronizacion('error', 'Error al sincronizar');
+        } else {
+          actualizarEstadoSincronizacion('saved', 'Operando con datos locales');
+        }
       })
-      .obtenerDashboardLiviano(forzar === true);
+      .obtenerDashboardLiviano(forzar === true, clientTimestamp);
   }
+
   function precargarModulosSilencioso_() {
     setTimeout(() => {
-      if (!MODULOS_CARGADOS.has('actividades')) {
-        google.script.run.withSuccessHandler(datos => {
-          if (datos && datos.actividades) {
-            DB.actividades = datos.actividades;
-            MODULOS_CARGADOS.add('actividades');
-            llenarSelectores();
-            setTimeout(() => {
-              if (!MODULOS_CARGADOS.has('personas')) {
-                google.script.run.withSuccessHandler(dPersonas => {
-                  if (dPersonas && dPersonas.personas) {
-                    DB.personas = dPersonas.personas;
-                    MODULOS_CARGADOS.add('personas');
-                    llenarSelectores();
+      google.script.run.withSuccessHandler(datos => {
+        if (datos && datos.actividades) {
+          DB.actividades = datos.actividades;
+          MODULOS_CARGADOS.add('actividades');
+          SIGC_STORE.set('actividades', datos.actividades);
+          sigcReconstruirIndices('actividades');
+          llenarSelectores();
+          if (document.getElementById('actividades')?.classList.contains('active')) renderActividades();
+          if (document.getElementById('calendario')?.classList.contains('active')) renderCalendario();
+
+          setTimeout(() => {
+            google.script.run.withSuccessHandler(dPersonas => {
+              if (dPersonas && dPersonas.personas) {
+                DB.personas = dPersonas.personas;
+                MODULOS_CARGADOS.add('personas');
+                SIGC_STORE.set('personas', dPersonas.personas);
+                sigcReconstruirIndices('personas');
+                llenarSelectores();
+                if (document.getElementById('personas')?.classList.contains('active')) renderPersonas();
+
+                setTimeout(() => {
+                  if (!MODULOS_CARGADOS.has('participaciones')) {
+                    google.script.run.withSuccessHandler(dPart => {
+                      if (dPart && dPart.participaciones) {
+                        DB.participaciones = dPart.participaciones;
+                        MODULOS_CARGADOS.add('participaciones');
+                        SIGC_STORE.set('participaciones', dPart.participaciones);
+                        sigcReconstruirIndices('participaciones');
+                        if (document.getElementById('participaciones')?.classList.contains('active')) renderParticipaciones();
+                      }
+                    }).obtenerDatosModulo('participaciones');
                   }
-                }).obtenerDatosModulo('personas');
+                }, 1000);
               }
-            }, 1200);
-          }
-        }).obtenerDatosModulo('actividades');
-      }
-    }, 800);
+            }).obtenerDatosModulo('personas');
+          }, 800);
+        }
+      }).obtenerDatosModulo('actividades');
+    }, 600);
   }
+
   function cargarDashboardLocal_() {
-    try {
-      const guardado = localStorage.getItem(DASHBOARD_LOCAL_KEY);
-      if (!guardado) return false;
-      const datos = JSON.parse(guardado);
-      if (!datos || !datos.resumen || !datos.graficos) return false;
-      DB.resumen = datos.resumen;
-      DB.graficos = datos.graficos;
-      document.getElementById('ultimaActualizacion').textContent =
-        'Resumen local: ' + (datos.fechaActualizacion || 'sin fecha');
-      renderDashboard();
-      precargarModulosSilencioso_();
-      return true;
-    } catch (error) {
-      return false;
-    }
+    return false;
   }
   function guardarDashboardLocal_(datos) {
-    try {
-      localStorage.setItem(DASHBOARD_LOCAL_KEY, JSON.stringify({
-        fechaActualizacion: datos.fechaActualizacion,
-        resumen: datos.resumen || {},
-        graficos: datos.graficos || {}
-      }));
-    } catch (error) {
-      // El almacenamiento local es una mejora opcional, no una dependencia.
-    }
+    if (datos) SIGC_STORE.set('dashboard', datos);
   }
   function renderDashboard() {
     const r = DB.resumen;
@@ -351,16 +530,34 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   }
   function renderParticipaciones() {
     const q = normalizar(document.getElementById('buscarParticipaciones')?.value || '');
-    const filas = DB.participaciones.filter(p =>
-      normalizar([p.NOMBRE_COMPLETO,p.RUT,p.DOCUMENTO,p.EDAD,p.PARTICIPA_PMJH,p.NOMBRE_ACTIVIDAD,p.RESULTADO_FINAL].join(' ')).includes(q)
-    );
+    const filas = DB.participaciones.filter(p => {
+      const per = SIGC_INDEX.personasPorId.get(String(p.ID_PERSONA || '').trim());
+      const act = SIGC_INDEX.actividadesPorId.get(String(p.ID_ACTIVIDAD || '').trim());
+      const nombreCompleto = p.NOMBRE_COMPLETO || per?.NOMBRE_COMPLETO || '';
+      const doc = p.DOCUMENTO || p.RUT || per?.NUMERO_DOCUMENTO || per?.DOCUMENTO || per?.RUT || '';
+      const actNombre = p.NOMBRE_ACTIVIDAD || act?.NOMBRE_ACTIVIDAD || '';
+      return normalizar([nombreCompleto, doc, p.EDAD, p.PARTICIPA_PMJH, actNombre, p.RESULTADO_FINAL].join(' ')).includes(q);
+    });
     const visibles = paginarFilas_('participaciones', filas);
-    document.getElementById('tablaParticipaciones').innerHTML = visibles.length ? visibles.map(p => `<tr>
-      <td>${esc(p.ID_PARTICIPACION)}</td><td><strong>${esc(p.NOMBRE_COMPLETO)}</strong></td><td>${esc(p.DOCUMENTO || p.RUT)}</td>
-      <td>${esc(edadVisible(p.EDAD))}</td>
-      <td><span class="badge">${esc(p.PARTICIPA_PMJH || 'No informado')}</span></td>
-      <td>${esc(p.NOMBRE_ACTIVIDAD)}</td><td>${esc(p.ESTADO_SELECCION)}</td><td>${esc(p.PORCENTAJE_ASISTENCIA)}</td>
-      <td><span class="badge">${esc(p.RESULTADO_FINAL)}</span></td><td>${esc(p.ULTIMA_ACTUALIZACION)}</td></tr>`).join('') : '<tr><td colspan="10" class="empty-state">No se encontraron participaciones.</td></tr>';
+    document.getElementById('tablaParticipaciones').innerHTML = visibles.length ? visibles.map(p => {
+      const per = SIGC_INDEX.personasPorId.get(String(p.ID_PERSONA || '').trim());
+      const act = SIGC_INDEX.actividadesPorId.get(String(p.ID_ACTIVIDAD || '').trim());
+      const nombreCompleto = p.NOMBRE_COMPLETO || per?.NOMBRE_COMPLETO || '';
+      const doc = p.DOCUMENTO || p.RUT || per?.NUMERO_DOCUMENTO || per?.DOCUMENTO || per?.RUT || '';
+      const actNombre = p.NOMBRE_ACTIVIDAD || act?.NOMBRE_ACTIVIDAD || '';
+      return `<tr>
+        <td>${esc(p.ID_PARTICIPACION)}</td>
+        <td><strong>${esc(nombreCompleto)}</strong></td>
+        <td>${esc(doc)}</td>
+        <td>${esc(edadVisible(p.EDAD || per?.EDAD))}</td>
+        <td><span class="badge">${esc(p.PARTICIPA_PMJH || per?.PARTICIPA_PMJH || 'No informado')}</span></td>
+        <td>${esc(actNombre)}</td>
+        <td>${esc(p.ESTADO_SELECCION || 'Pendiente')}</td>
+        <td>${esc(p.PORCENTAJE_ASISTENCIA || '')}</td>
+        <td><span class="badge">${esc(p.RESULTADO_FINAL || 'Pendiente')}</span></td>
+        <td>${esc(p.ULTIMA_ACTUALIZACION || '')}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="10" class="empty-state">No se encontraron participaciones.</td></tr>';
   }
   function paginarFilas_(tipo, filas) {
     const estado = PAGINACION[tipo];
@@ -1199,23 +1396,45 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     if (!confirm('¿Desea guardar los cambios de esta actividad?' + avisoFinal)) {
       return;
     }
-    mostrarCarga(true);
+
+    const idActividad = datos.ID_ACTIVIDAD;
+    const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === idActividad);
+    const backupActividad = idx >= 0 ? {...DB.actividades[idx]} : null;
+
+    // Actualización optimista inmediata (0 ms)
+    if (idx >= 0) {
+      DB.actividades[idx] = Object.assign({}, DB.actividades[idx], datos);
+      sigcReconstruirIndices('actividades');
+      renderActividades();
+      llenarSelectores();
+      if (document.getElementById('calendario')?.classList.contains('active')) renderCalendario();
+    }
+    cerrarEdicionActividad();
+    notificar('Cambios aplicados localmente. Sincronizando con Google Sheets…');
+    actualizarEstadoSincronizacion('syncing', 'Guardando actividad en segundo plano…');
+
     google.script.run
       .withSuccessHandler(respuesta => {
-        mostrarCarga(false);
-        notificar(respuesta.mensaje);
-        cerrarEdicionActividad();
+        notificar(respuesta.mensaje || 'Actividad actualizada.');
+        actualizarEstadoSincronizacion('saved', '✓ Actividad guardada en Google Sheets');
         if (respuesta.actividad) {
-          const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === respuesta.id);
-          if (idx >= 0) DB.actividades[idx] = Object.assign({}, DB.actividades[idx], respuesta.actividad);
+          const freshIdx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === respuesta.id);
+          if (freshIdx >= 0) DB.actividades[freshIdx] = Object.assign({}, DB.actividades[freshIdx], respuesta.actividad);
+          SIGC_STORE.set('actividades', DB.actividades);
+          sigcReconstruirIndices('actividades');
           renderActividades();
           llenarSelectores();
         }
-        cargarDatos(true);
       })
       .withFailureHandler(error => {
-        mostrarCarga(false);
-        notificar(error.message || String(error), true);
+        if (backupActividad && idx >= 0) {
+          DB.actividades[idx] = backupActividad;
+          sigcReconstruirIndices('actividades');
+          renderActividades();
+          llenarSelectores();
+        }
+        notificar('Error al guardar en Google Sheets: ' + (error.message || String(error)), true);
+        actualizarEstadoSincronizacion('error', 'Error al guardar actividad');
       })
       .actualizarActividad(datos);
   }
@@ -1340,24 +1559,44 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const form = evento.target;
     const datos = Object.fromEntries(new FormData(form).entries());
     if (!confirm('¿Desea guardar los cambios de esta persona?')) return;
-    mostrarCarga(true);
+
+    const idPersona = datos.ID_PERSONA;
+    const idx = DB.personas.findIndex(p => p.ID_PERSONA === idPersona);
+    const backupPersona = idx >= 0 ? {...DB.personas[idx]} : null;
+
+    // Actualización optimista inmediata (0 ms)
+    if (idx >= 0) {
+      DB.personas[idx] = Object.assign({}, DB.personas[idx], datos);
+      sigcReconstruirIndices('personas');
+      renderPersonas();
+      llenarSelectores();
+    }
+    cerrarEdicionPersona();
+    notificar('Ficha actualizada localmente. Sincronizando con Google Sheets…');
+    actualizarEstadoSincronizacion('syncing', 'Guardando persona en segundo plano…');
+
     google.script.run
       .withSuccessHandler(respuesta => {
-        mostrarCarga(false);
-        notificar(respuesta.mensaje);
-        cerrarEdicionPersona();
+        notificar(respuesta.mensaje || 'Persona actualizada.');
+        actualizarEstadoSincronizacion('saved', '✓ Persona guardada en Google Sheets');
         if (respuesta.persona) {
-          const idx = DB.personas.findIndex(p => p.ID_PERSONA === respuesta.id);
-          if (idx >= 0) DB.personas[idx] = Object.assign({}, DB.personas[idx], respuesta.persona);
-          else DB.personas.unshift(respuesta.persona);
+          const freshIdx = DB.personas.findIndex(p => p.ID_PERSONA === respuesta.id);
+          if (freshIdx >= 0) DB.personas[freshIdx] = Object.assign({}, DB.personas[freshIdx], respuesta.persona);
+          SIGC_STORE.set('personas', DB.personas);
+          sigcReconstruirIndices('personas');
           renderPersonas();
           llenarSelectores();
         }
-        cargarDatos(true);
       })
       .withFailureHandler(error => {
-        mostrarCarga(false);
-        notificar(error.message || String(error), true);
+        if (backupPersona && idx >= 0) {
+          DB.personas[idx] = backupPersona;
+          sigcReconstruirIndices('personas');
+          renderPersonas();
+          llenarSelectores();
+        }
+        notificar('Error al guardar en Google Sheets: ' + (error.message || String(error)), true);
+        actualizarEstadoSincronizacion('error', 'Error al guardar persona');
       })
       .actualizarPersona(datos);
   }
@@ -1381,6 +1620,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   document.getElementById('formParticipacion').addEventListener('submit', e => enviarFormulario(e, 'guardarParticipacion'));
   document.getElementById('formEditarActividad').addEventListener('submit', enviarEdicionActividad);
   document.getElementById('formEditarPersona').addEventListener('submit', enviarEdicionPersona);
+
   function enviarFormulario(evento, funcion) {
     evento.preventDefault();
     const form = evento.target;
@@ -1389,71 +1629,161 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
     const datos = Object.fromEntries(new FormData(form).entries());
     if (form.id === 'formPersona') datos.INTERESES = NUEVOS_INTERESES.map(x => ({...x}));
-    mostrarCarga(true);
+
+    // Actualización optimista inmediata en cliente (0 ms)
+    let tempId = null;
+    if (form.id === 'formPersona') {
+      tempId = 'PER-TMP-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+      const localPersona = Object.assign({
+        ID_PERSONA: tempId,
+        DOCUMENTO: datos.NUMERO_DOCUMENTO || datos.RUT || '',
+        RUT: datos.TIPO_DOCUMENTO === 'RUT' ? (datos.NUMERO_DOCUMENTO || datos.RUT || '') : '',
+        ESTADO_CONTACTO: 'Pendiente',
+        FECHA_PRIMER_REGISTRO: new Date().toISOString().slice(0, 10)
+      }, datos);
+      DB.personas.unshift(localPersona);
+      sigcReconstruirIndices('personas');
+      renderPersonas();
+      llenarSelectores();
+      form.reset();
+      NUEVOS_INTERESES = [];
+      renderInteresesNuevaPersona();
+      actualizarDocumentoPersona();
+      actualizarEdadPersona();
+      actualizarAreasPersonaInteres();
+      notificar('Persona registrada localmente. Sincronizando con Google Sheets…');
+      actualizarEstadoSincronizacion('syncing', 'Guardando persona en segundo plano…');
+    } else if (form.id === 'formActividad') {
+      tempId = 'ACT-TMP-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+      const localActividad = Object.assign({
+        ID_ACTIVIDAD: tempId,
+        ESTADO_ACTIVIDAD: datos.ESTADO_ACTIVIDAD || 'Planificada'
+      }, datos);
+      DB.actividades.unshift(localActividad);
+      sigcReconstruirIndices('actividades');
+      renderActividades();
+      llenarSelectores();
+      form.reset();
+      actualizarAreasActividad();
+      SESIONES_CRONOGRAMA['reg'] = [];
+      renderSesionesProgramadas('reg');
+      sincronizarSesionesEnFormulario('reg');
+      notificar('Actividad registrada localmente. Sincronizando con Google Sheets…');
+      actualizarEstadoSincronizacion('syncing', 'Guardando actividad en segundo plano…');
+    } else if (form.id === 'formParticipacion') {
+      tempId = 'PAR-TMP-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+      const actObj = SIGC_INDEX.actividadesPorId.get(datos.ID_ACTIVIDAD) || {};
+      const localPart = Object.assign({
+        ID_PARTICIPACION: tempId,
+        NOMBRE_ACTIVIDAD: actObj.NOMBRE_ACTIVIDAD || '',
+        AREA_TEMATICA: actObj.AREA_TEMATICA || ''
+      }, datos);
+      DB.participaciones.unshift(localPart);
+      sigcReconstruirIndices('participaciones');
+      renderParticipaciones();
+      form.reset();
+      notificar('Inscripción registrada localmente. Sincronizando con Google Sheets…');
+      actualizarEstadoSincronizacion('syncing', 'Guardando participación en segundo plano…');
+    } else {
+      mostrarCarga(true);
+    }
+
     google.script.run
       .withSuccessHandler(r => {
         mostrarCarga(false);
-        notificar(r.mensaje);
-        form.reset();
+        notificar(r.mensaje || 'Registro guardado exitosamente.');
+        actualizarEstadoSincronizacion('saved', '✓ Guardado en Google Sheets');
+
         if (form.id === 'formPersona') {
-          NUEVOS_INTERESES = [];
-          renderInteresesNuevaPersona();
-          actualizarDocumentoPersona();
-          actualizarEdadPersona();
-          actualizarAreasPersonaInteres();
           if (r.persona) {
-            const idx = DB.personas.findIndex(p => p.ID_PERSONA === r.id);
+            const idx = DB.personas.findIndex(p => p.ID_PERSONA === tempId || p.ID_PERSONA === r.id);
             if (idx >= 0) DB.personas[idx] = Object.assign({}, DB.personas[idx], r.persona);
             else DB.personas.unshift(r.persona);
+            SIGC_STORE.set('personas', DB.personas);
+            sigcReconstruirIndices('personas');
             renderPersonas();
             llenarSelectores();
           }
         }
         if (form.id === 'formActividad') {
-          actualizarAreasActividad();
-          SESIONES_CRONOGRAMA['reg'] = [];
-          renderSesionesProgramadas('reg');
-          sincronizarSesionesEnFormulario('reg');
           if (r.actividad) {
-            const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === r.id);
+            const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === tempId || a.ID_ACTIVIDAD === r.id);
             if (idx >= 0) DB.actividades[idx] = Object.assign({}, DB.actividades[idx], r.actividad);
             else DB.actividades.unshift(r.actividad);
+            SIGC_STORE.set('actividades', DB.actividades);
+            sigcReconstruirIndices('actividades');
             renderActividades();
             llenarSelectores();
           }
         }
         if (form.id === 'formParticipacion') {
           if (r.participacion) {
-            DB.participaciones.unshift(r.participacion);
+            const idx = DB.participaciones.findIndex(p => p.ID_PARTICIPACION === tempId || p.ID_PARTICIPACION === r.id);
+            if (idx >= 0) DB.participaciones[idx] = Object.assign({}, DB.participaciones[idx], r.participacion);
+            else DB.participaciones.unshift(r.participacion);
+            SIGC_STORE.set('participaciones', DB.participaciones);
+            sigcReconstruirIndices('participaciones');
             renderParticipaciones();
           }
         }
-        cargarDatos(true);
       })
       .withFailureHandler(error => {
         mostrarCarga(false);
-        notificar(error.message || String(error), true);
+        if (tempId) {
+          if (form.id === 'formPersona') {
+            DB.personas = DB.personas.filter(p => p.ID_PERSONA !== tempId);
+            sigcReconstruirIndices('personas');
+            renderPersonas();
+          } else if (form.id === 'formActividad') {
+            DB.actividades = DB.actividades.filter(a => a.ID_ACTIVIDAD !== tempId);
+            sigcReconstruirIndices('actividades');
+            renderActividades();
+          } else if (form.id === 'formParticipacion') {
+            DB.participaciones = DB.participaciones.filter(p => p.ID_PARTICIPACION !== tempId);
+            sigcReconstruirIndices('participaciones');
+            renderParticipaciones();
+          }
+        }
+        notificar('Error al guardar en Google Sheets: ' + (error.message || String(error)), true);
+        actualizarEstadoSincronizacion('error', 'Error al guardar');
       })[funcion](datos);
   }
+
   function cargarGestionActividad() {
     const idActividad = document.getElementById('gestionActividad').value;
     if (!idActividad) {
       notificar('Debe seleccionar una actividad.', true);
       return;
     }
-    mostrarCarga(true);
+    // Pre-render instantáneo desde índices locales O(1)
+    const actLocal = SIGC_INDEX.actividadesPorId.get(idActividad);
+    const partsLocales = SIGC_INDEX.participacionesPorActividad.get(idActividad);
+    if (actLocal && partsLocales && partsLocales.length > 0) {
+      GESTION.actividad = actLocal;
+      GESTION.participaciones = partsLocales.map(p => ({...p}));
+      GESTION_SELECCIONADOS.clear();
+      GESTION_MODIFICADOS.clear();
+      actualizarKpisGestion();
+      renderGestion();
+      actualizarEstadoSincronizacion('syncing', 'Verificando con Google Sheets…');
+    } else {
+      mostrarCarga(true, 'Cargando gestión de participantes…');
+    }
+
     google.script.run
       .withSuccessHandler(datos => {
+        mostrarCarga(false);
         GESTION = datos;
         GESTION_SELECCIONADOS.clear();
         GESTION_MODIFICADOS.clear();
         actualizarKpisGestion();
         renderGestion();
-        mostrarCarga(false);
+        actualizarEstadoSincronizacion('saved', 'Gestión al día');
       })
       .withFailureHandler(error => {
         mostrarCarga(false);
         notificar(error.message || String(error), true);
+        actualizarEstadoSincronizacion('error', 'Error al cargar gestión');
       })
       .obtenerGestionActividad(idActividad);
   }
@@ -2033,16 +2363,30 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     if (!registros.length) {
       return notificar('No hay cambios pendientes para guardar.', true);
     }
-    mostrarCarga(true);
+
+    // Actualización optimista local inmediata (0 ms)
+    registros.forEach(reg => {
+      const idxDb = DB.participaciones.findIndex(p => p.ID_PARTICIPACION === reg.ID_PARTICIPACION);
+      if (idxDb >= 0) {
+        DB.participaciones[idxDb] = Object.assign({}, DB.participaciones[idxDb], reg);
+      }
+    });
+    sigcReconstruirIndices('participaciones');
+    GESTION_MODIFICADOS.clear();
+    actualizarKpisGestion();
+    renderGestion(false);
+    notificar('Cambios aplicados localmente. Sincronizando con Google Sheets…');
+    actualizarEstadoSincronizacion('syncing', 'Guardando gestión y asistencia en segundo plano…');
+
     google.script.run
       .withSuccessHandler(r => {
-        mostrarCarga(false);
-        notificar(r.mensaje);
-        cargarGestionActividad();
+        notificar(r.mensaje || 'Gestión guardada exitosamente.');
+        actualizarEstadoSincronizacion('saved', '✓ Asistencia y gestión guardada en Google Sheets');
+        SIGC_STORE.set('participaciones', DB.participaciones);
       })
       .withFailureHandler(error => {
-        mostrarCarga(false);
-        notificar(error.message || String(error), true);
+        notificar('Error al guardar en Google Sheets: ' + (error.message || String(error)), true);
+        actualizarEstadoSincronizacion('error', 'Error al guardar gestión');
       })
       .guardarGestionMasiva({
         idActividad: GESTION.actividad.ID_ACTIVIDAD,

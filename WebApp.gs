@@ -131,7 +131,7 @@ function obtenerDatosDashboard() {
 }
 
 /** Inicio liviano: calcula y conserva solo KPIs y gráficos agregados. */
-function obtenerDashboardLiviano(forzarActualizacion) {
+function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   const cache = CacheService.getScriptCache();
   const propiedades = PropertiesService.getScriptProperties();
   // Las claves estables permiten reutilizar el último resumen entre versiones
@@ -140,25 +140,33 @@ function obtenerDashboardLiviano(forzarActualizacion) {
   const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V3';
   const clavePersistenteAnterior = 'SIGC_DASHBOARD_ULTIMO_VALIDO_3_6_3';
   if (!forzarActualizacion) {
+    let salidaGuardada = null;
     try {
       const guardado = cache.get(clave);
-      if (guardado) return JSON.parse(guardado);
+      if (guardado) salidaGuardada = JSON.parse(guardado);
     } catch (error) {
       // Si la caché no está disponible, el Dashboard se calcula normalmente.
     }
-    try {
-      const ultimoValido = propiedades.getProperty(clavePersistente) ||
-        propiedades.getProperty(clavePersistenteAnterior);
-      if (ultimoValido) {
-        const salidaPersistida = JSON.parse(ultimoValido);
-        salidaPersistida.desdeResumenPersistente = true;
-        if (!propiedades.getProperty(clavePersistente)) {
-          propiedades.setProperty(clavePersistente, ultimoValido);
+    if (!salidaGuardada) {
+      try {
+        const ultimoValido = propiedades.getProperty(clavePersistente) ||
+          propiedades.getProperty(clavePersistenteAnterior);
+        if (ultimoValido) {
+          salidaGuardada = JSON.parse(ultimoValido);
+          salidaGuardada.desdeResumenPersistente = true;
+          if (!propiedades.getProperty(clavePersistente)) {
+            propiedades.setProperty(clavePersistente, ultimoValido);
+          }
         }
-        return salidaPersistida;
+      } catch (error) {
+        // Una instantánea dañada o no disponible se reemplaza al recalcular.
       }
-    } catch (error) {
-      // Una instantánea dañada o no disponible se reemplaza al recalcular.
+    }
+    if (salidaGuardada) {
+      if (clientTimestamp && String(salidaGuardada.fechaActualizacion || '').trim() === String(clientTimestamp).trim()) {
+        return { sinCambios: true, fechaActualizacion: salidaGuardada.fechaActualizacion };
+      }
+      return salidaGuardada;
     }
   }
   const ss = sigcSpreadsheetCentral_();

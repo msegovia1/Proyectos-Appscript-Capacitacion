@@ -228,11 +228,35 @@
   }
 
   .status-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     background: var(--verde);
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--verde-light);
+    transition: all 0.25s ease;
+  }
+
+  .status-dot.syncing {
+    background: #3b82f6 !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
+    animation: statusDotPulse 1.2s infinite ease-in-out;
+  }
+
+  .status-dot.saved {
+    background: var(--verde) !important;
+    box-shadow: 0 0 0 2px var(--verde-light) !important;
+    animation: none;
+  }
+
+  .status-dot.error {
+    background: #ef4444 !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25) !important;
+    animation: none;
+  }
+
+  @keyframes statusDotPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.35); opacity: 0.55; }
   }
 
   /* BOTONES */
