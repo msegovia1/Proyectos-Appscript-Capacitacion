@@ -364,7 +364,55 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     renderGraficos();
   }
   function cargarVistaBajoDemanda(vista) {
-    if (vista === 'dashboard') return;
+    if (vista === 'dashboard') {
+      renderDashboard();
+      return;
+    }
+    if (vista === 'personas') {
+      asegurarModulo('personas', () => {
+        renderPersonas();
+      });
+      return;
+    }
+    if (vista === 'actividades') {
+      asegurarModulo('actividades', () => {
+        renderActividades();
+        llenarSelectores();
+      });
+      return;
+    }
+    if (vista === 'participaciones') {
+      asegurarModulo('participaciones', () => {
+        renderParticipaciones();
+        llenarSelectores();
+      });
+      return;
+    }
+    if (vista === 'calendario') {
+      asegurarModulo('actividades', () => {
+        renderCalendario();
+      });
+      return;
+    }
+    if (vista === 'gestion') {
+      asegurarModulo('actividades', () => {
+        llenarSelectores();
+        if (typeof actualizarKpisGestion === 'function') actualizarKpisGestion();
+      });
+      return;
+    }
+    if (vista === 'comunicaciones') {
+      asegurarModulo('actividades', () => {
+        llenarSelectores();
+      });
+      return;
+    }
+    if (vista === 'demanda') {
+      asegurarModulo('demanda', () => {
+        renderDemanda();
+      });
+      return;
+    }
     if (vista === 'formularios') {
       asegurarModulo('actividades', cargarFormularios);
       return;
@@ -374,50 +422,89 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       return;
     }
     if (vista === 'reportes') {
-      asegurarModulo('actividades');
+      asegurarModulo('actividades', () => {
+        actualizarAreasReporte();
+        llenarSelectores();
+      });
       return;
     }
-    if (vista === 'calendario') {
-      asegurarModulo('actividades', renderCalendario);
+    if (vista === 'registro-personas') {
+      asegurarModulo('personas', () => {
+        llenarSelectores();
+      });
       return;
     }
-    const mapa = {
-      personas: 'personas',
-      actividades: 'actividades',
-      calendario: 'actividades',
-      participaciones: 'participaciones',
-      demanda: 'demanda',
-      gestion: 'actividades',
-      comunicaciones: 'actividades',
-      'registro-personas': 'personas',
-      'registro-actividades': 'actividades',
-      'registro-participaciones': 'catalogos'
-    };
-    if (mapa[vista]) asegurarModulo(mapa[vista]);
+    if (vista === 'registro-actividades') {
+      asegurarModulo('actividades', () => {
+        llenarSelectores();
+      });
+      return;
+    }
+    if (vista === 'registro-participaciones') {
+      asegurarModulo('catalogos', () => {
+        llenarSelectores();
+      });
+      return;
+    }
   }
+
   function asegurarModulo(modulo, alTerminar) {
-    if (MODULOS_CARGADOS.has(modulo)) { if (alTerminar) alTerminar(); return; }
-    mostrarCarga(true, 'Preparando módulo…');
-    google.script.run.withSuccessHandler(datos => {
-      Object.assign(DB, datos || {});
-      MODULOS_CARGADOS.add(modulo);
-      reconstruirIndicesCliente();
-      if (modulo === 'personas') renderPersonas();
-      if (modulo === 'actividades') {
-        renderActividades();
-        renderCalendario();
-        llenarSelectores();
+    if (MODULOS_CARGADOS.has(modulo)) {
+      if (modulo === 'personas' && (!DB.personas || !DB.personas.length)) {
+        // Permitir recargar del servidor si el array local está vacío
+      } else if (modulo === 'actividades' && (!DB.actividades || !DB.actividades.length)) {
+        // Permitir recargar del servidor si el array local está vacío
+      } else {
+        if (modulo === 'personas') renderPersonas();
+        if (modulo === 'actividades') {
+          renderActividades();
+          llenarSelectores();
+        }
+        if (modulo === 'participaciones') renderParticipaciones();
+        if (modulo === 'demanda') renderDemanda();
+        if (alTerminar) alTerminar();
+        return;
       }
-      if (modulo === 'participaciones') { renderPersonas(); renderActividades(); renderParticipaciones(); llenarSelectores(); MODULOS_CARGADOS.add('personas'); MODULOS_CARGADOS.add('actividades'); }
-      if (modulo === 'demanda') renderDemanda();
-      if (modulo === 'catalogos') {
-        MODULOS_CARGADOS.add('personas');
-        MODULOS_CARGADOS.add('actividades');
-        llenarSelectores();
-      }
-      mostrarCarga(false);
-      if (alTerminar) alTerminar();
-    }).withFailureHandler(error => { mostrarCarga(false); notificar(error.message || String(error), true); })
+    }
+
+    mostrarCarga(true, 'Cargando datos del módulo…');
+    google.script.run
+      .withSuccessHandler(datos => {
+        Object.assign(DB, datos || {});
+        MODULOS_CARGADOS.add(modulo);
+        reconstruirIndicesCliente();
+        sigcReconstruirIndices(modulo);
+        if (datos && datos.personas) SIGC_STORE.set('personas', datos.personas);
+        if (datos && datos.actividades) SIGC_STORE.set('actividades', datos.actividades);
+        if (datos && datos.participaciones) SIGC_STORE.set('participaciones', datos.participaciones);
+
+        if (modulo === 'personas') renderPersonas();
+        if (modulo === 'actividades') {
+          renderActividades();
+          renderCalendario();
+          llenarSelectores();
+        }
+        if (modulo === 'participaciones') {
+          renderPersonas();
+          renderActividades();
+          renderParticipaciones();
+          llenarSelectores();
+          MODULOS_CARGADOS.add('personas');
+          MODULOS_CARGADOS.add('actividades');
+        }
+        if (modulo === 'demanda') renderDemanda();
+        if (modulo === 'catalogos') {
+          MODULOS_CARGADOS.add('personas');
+          MODULOS_CARGADOS.add('actividades');
+          llenarSelectores();
+        }
+        mostrarCarga(false);
+        if (alTerminar) alTerminar();
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
       .obtenerDatosModulo(modulo);
   }
   function renderGraficos() {
