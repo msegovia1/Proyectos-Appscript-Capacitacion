@@ -2,21 +2,60 @@
   <div class="section-head">
     <div>
       <h2>Registrar participación</h2>
-      <p>Inscriba directamente a una persona registrada en una actividad de capacitación.</p>
+      <p>Inscriba directamente a una persona en una actividad de capacitación utilizando el buscador rápido.</p>
     </div>
     <button class="btn secondary" type="button" onclick="irAVista('participaciones')">Ver listado de participaciones</button>
   </div>
   <div class="card panel">
     <h3>Nueva inscripción en actividad</h3>
     <form id="formParticipacion" class="form-grid">
-      <div class="field"><label>Persona *</label><select id="selectPersona" name="ID_PERSONA" required></select></div>
-      <div class="field"><label>Actividad *</label><select id="selectActividad" name="ID_ACTIVIDAD" required></select></div>
+      
+      <!-- BUSCADOR PREDICTIVO DE PERSONA -->
+      <div class="field full" style="position:relative;">
+        <label>Persona a inscribir * <small style="color:var(--gris); font-weight:normal;">(Busque por RUT, nombre completo o correo)</small></label>
+        
+        <!-- Input de búsqueda en vivo -->
+        <div id="contenedorBuscadorPersonaReg" style="position:relative;">
+          <input id="inputBuscarPersonaParticipacion" type="text" placeholder="🔍 Escriba RUT (ej: 18.345.678-9), nombre o correo..." autocomplete="off" oninput="buscarPersonasPredictivoRegConPausa()">
+          <div id="dropdownResultadosPersonasReg" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:280px; overflow-y:auto; background:#ffffff; border:1px solid var(--azul,#1e3a8a); border-radius:0 0 8px 8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:1000; padding:4px;">
+            <!-- Resultados generados dinámicamente -->
+          </div>
+        </div>
+
+        <!-- Tarjeta de Persona Seleccionada -->
+        <div id="cardPersonaSeleccionadaReg" style="display:none; background:rgba(0,59,112,0.05); border:1px solid rgba(0,59,112,0.2); border-radius:8px; padding:12px 16px; margin-top:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:22px;">👤</span>
+              <div>
+                <strong id="personaSeleccionadaNombre" style="font-size:14px; color:var(--azul,#003b70); display:block;">Nombre de la persona</strong>
+                <div style="font-size:12px; color:var(--gris,#555); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                  <span id="personaSeleccionadaDoc">🆔 Documento: -</span>
+                  <span id="personaSeleccionadaCorreo">📧 Correo: -</span>
+                  <span id="personaSeleccionadaTel">📞 Tel: -</span>
+                  <span id="personaSeleccionadaPmjh">👩 PMJH: -</span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn secondary compact" onclick="deseleccionarPersonaReg()">✕ Cambiar persona</button>
+          </div>
+        </div>
+
+        <!-- Hidden input que guarda el ID_PERSONA para el formulario -->
+        <input type="hidden" id="selectPersona" name="ID_PERSONA" required value="">
+      </div>
+
+      <div class="field full">
+        <label>Actividad de capacitación *</label>
+        <select id="selectActividad" name="ID_ACTIVIDAD" required onchange="sincronizarSesionesActividadReg()"></select>
+      </div>
+
       <div class="field"><label>Fecha inscripción</label><input name="FECHA_INSCRIPCION" type="date"></div>
       <div class="field"><label>Cumple requisitos</label><select name="CUMPLE_REQUISITOS"><option>Pendiente</option><option>Sí</option><option>No</option><option>No informado</option></select></div>
       <div class="field"><label>Estado selección</label><select name="ESTADO_SELECCION"><option>Pendiente</option><option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>No informado</option></select></div>
       <div class="field"><label>Confirma participación</label><select name="CONFIRMA_PARTICIPACION"><option>No informado</option><option>Sí</option><option>No</option></select></div>
       <div class="field"><label>Sesiones asistidas</label><input name="SESIONES_ASISTIDAS" type="number" min="0" value="0"></div>
-      <div class="field"><label>Sesiones totales</label><input name="SESIONES_TOTALES" type="number" min="1"></div>
+      <div class="field"><label>Sesiones totales</label><input id="regPartSesionesTotales" name="SESIONES_TOTALES" type="number" min="1"></div>
       <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
       <div class="form-actions"><button class="btn" type="submit">Guardar participación</button></div>
     </form>

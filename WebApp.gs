@@ -1,5 +1,5 @@
 /**
- * WEB APP SIGC 3.8.0
+ * WEB APP SIGC 3.9.0
  * Backend modular de alto rendimiento para gestión de capacitaciones.
  */
 function doGet(e) {
@@ -48,6 +48,108 @@ function probarConexionSIGC() {
     archivo: ss.getName(),
     url: ss.getUrl(),
     zonaHoraria: ss.getSpreadsheetTimeZone()
+  };
+}
+/**
+ * Ejecuta una consulta SQL estructurada sobre cualquier hoja del SIGC.
+ */
+function ejecutarConsultaSqlSIGC(datos) {
+  datos = datos || {};
+  const nombreHoja = String(datos.hoja || WEBAPP_CONFIG.HOJAS.ACTIVIDADES).trim();
+  const sql = String(datos.sql || 'SELECT *').trim();
+  const inicio = new Date().getTime();
+  const resultado = sigcConsultarSql_(nombreHoja, sql);
+  const duracionMs = new Date().getTime() - inicio;
+  return {
+    ok: true,
+    hoja: nombreHoja,
+    sql: sql,
+    total: resultado.length,
+    duracionMs: duracionMs,
+    datos: resultado
+  };
+}
+
+/**
+ * Obtiene registros paginados y filtrados directamente desde el motor SQL en servidor.
+ * Reduce drásticamente la transferencia de datos y acelera la carga en el cliente.
+ */
+function obtenerTablaPaginadaSql(opciones) {
+  opciones = opciones || {};
+  const nombreHoja = String(opciones.hoja || WEBAPP_CONFIG.HOJAS.ACTIVIDADES).trim();
+  const pagina = Math.max(1, parseInt(opciones.pagina, 10) || 1);
+  const tamano = Math.max(1, Math.min(200, parseInt(opciones.tamano, 10) || 50));
+  const offset = (pagina - 1) * tamano;
+  const columnas = String(opciones.columnas || '*').trim();
+  const filtroClausula = opciones.where ? (' WHERE ' + opciones.where) : '';
+  const ordenClausula = opciones.orderBy ? (' ORDER BY ' + opciones.orderBy) : '';
+
+  const sqlConPaginacion = 'SELECT ' + columnas + filtroClausula + ordenClausula + ' LIMIT ' + tamano + ' OFFSET ' + offset;
+  const sqlConteo = 'SELECT COUNT(' + (opciones.columnaId || 'Col1') + ')' + filtroClausula;
+
+  const inicio = new Date().getTime();
+  const registros = sigcConsultarSql_(nombreHoja, sqlConPaginacion);
+  let totalRegistros = registros.length;
+
+  try {
+    const resConteo = sigcConsultarSql_(nombreHoja, sqlConteo);
+    if (resConteo && resConteo.length > 0) {
+      const primerObj = resConteo[0];
+      const primeraProp = Object.keys(primerObj)[0];
+      if (primeraProp && primerObj[primeraProp] !== undefined) {
+        totalRegistros = parseInt(primerObj[primeraProp], 10) || totalRegistros;
+      }
+    }
+  } catch (eConteo) {
+    totalRegistros = offset + registros.length + (registros.length === tamano ? 1 : 0);
+  }
+
+  const duracionMs = new Date().getTime() - inicio;
+  return {
+    ok: true,
+    hoja: nombreHoja,
+    pagina: pagina,
+    tamano: tamano,
+    total: totalRegistros,
+    totalPaginas: Math.ceil(totalRegistros / tamano) || 1,
+    duracionMs: duracionMs,
+    datos: registros
+  };
+}
+
+/**
+ * Función de prueba rápida del motor SQL.
+ * Ejecuta 3 consultas analíticas reales y muestra tiempos y resultados.
+ */
+function probarMotorSqlSIGC() {
+  console.log('--- INICIANDO PRUEBA DEL MOTOR SQL SIGC ---');
+
+  // Prueba 1: Actividades agrupadas por Escuela/Línea con suma de cupos
+  const p1 = ejecutarConsultaSqlSIGC({
+    hoja: 'ACTIVIDADES',
+    sql: 'SELECT ESCUELA_LINEA, COUNT(ID_ACTIVIDAD), SUM(CUPOS) GROUP BY ESCUELA_LINEA'
+  });
+  console.log('✅ Prueba 1 (ACTIVIDADES por Escuela en ' + p1.duracionMs + ' ms):', JSON.stringify(p1.datos));
+
+  // Prueba 2: Top 5 Comunas con más personas registradas
+  const p2 = ejecutarConsultaSqlSIGC({
+    hoja: 'PERSONAS',
+    sql: 'SELECT COMUNA, COUNT(ID_PERSONA) GROUP BY COMUNA ORDER BY COUNT(ID_PERSONA) DESC LIMIT 5'
+  });
+  console.log('✅ Prueba 2 (Top 5 Comunas PERSONAS en ' + p2.duracionMs + ' ms):', JSON.stringify(p2.datos));
+
+  // Prueba 3: Conteo de participaciones por resultado
+  const p3 = ejecutarConsultaSqlSIGC({
+    hoja: 'PARTICIPACIONES',
+    sql: 'SELECT RESULTADO_FINAL, COUNT(ID_PARTICIPACION) GROUP BY RESULTADO_FINAL'
+  });
+  console.log('✅ Prueba 3 (PARTICIPACIONES por Resultado en ' + p3.duracionMs + ' ms):', JSON.stringify(p3.datos));
+
+  return {
+    mensaje: 'Pruebas completadas exitosamente.',
+    prueba1: p1,
+    prueba2: p2,
+    prueba3: p3
   };
 }
 /**
@@ -375,10 +477,27 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
     .map(function(p) {
       const actividad = actividadesPorId[p.ID_ACTIVIDAD] || {};
       const asistidas = Math.max(0, Number(p.SESIONES_ASISTIDAS || 0));
-      const totales = Math.max(0, Number(p.SESIONES_TOTALES || actividad.SESIONES_TOTALES || 0));
+      const totales = Math.max(0, Number(p.SESIONES_TOTALES || actividad.SESIONES_TOTALES || 1));
       let porcentaje = totales ? asistidas / totales : Number(p.PORCENTAJE_ASISTENCIA);
       if (!isFinite(porcentaje)) porcentaje = 0;
       if (porcentaje > 1) porcentaje = porcentaje / 100;
+
+      let sesionesArray = [];
+      if (p.ASISTENCIA_SESIONES) {
+        try {
+          const parsed = typeof p.ASISTENCIA_SESIONES === 'string' ? JSON.parse(p.ASISTENCIA_SESIONES) : p.ASISTENCIA_SESIONES;
+          if (Array.isArray(parsed)) sesionesArray = parsed.map(Number).filter(function(n) { return !isNaN(n) && n > 0; });
+        } catch (e) {}
+      }
+      if (!sesionesArray.length && asistidas > 0) {
+        for (let i = 1; i <= Math.min(asistidas, totales); i++) sesionesArray.push(i);
+      }
+      sesionesArray.sort(function(a, b) { return a - b; });
+
+      const detalleTexto = sesionesArray.length
+        ? 'Sesión ' + sesionesArray.join(', Sesión ')
+        : (asistidas === 0 ? 'Sin asistencia' : asistidas + ' sesión(es)');
+
       return {
         ID_PARTICIPACION: p.ID_PARTICIPACION || '',
         ID_PERSONA: p.ID_PERSONA || '',
@@ -398,6 +517,9 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
         ESTADO_SELECCION: p.ESTADO_SELECCION || '',
         SESIONES_ASISTIDAS: asistidas,
         SESIONES_TOTALES: totales,
+        ASISTENCIA_SESIONES: p.ASISTENCIA_SESIONES || JSON.stringify(sesionesArray),
+        SESIONES_ASISTIDAS_ARRAY: sesionesArray,
+        SESIONES_DETALLE_TEXTO: detalleTexto,
         PORCENTAJE_ASISTENCIA: Math.max(0, porcentaje),
         RESULTADO_ASISTENCIA: p.RESULTADO_ASISTENCIA || '',
         RESULTADO_FINAL: p.RESULTADO_FINAL || '',
@@ -409,9 +531,16 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
       return String(a.NOMBRE_ACTIVIDAD).localeCompare(String(b.NOMBRE_ACTIVIDAD), 'es') ||
         String(a.NOMBRE_COMPLETO).localeCompare(String(b.NOMBRE_COMPLETO), 'es');
     });
+
+  let maxSesiones = 1;
+  enriquecidas.forEach(function(f) {
+    if (f.SESIONES_TOTALES > maxSesiones) maxSesiones = f.SESIONES_TOTALES;
+  });
+
   const porcentajes = enriquecidas.map(function(f) { return Number(f.PORCENTAJE_ASISTENCIA || 0); });
   return {
     fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
+    maxSesionesTotales: maxSesiones,
     resumen: {
       registros: enriquecidas.length,
       personasUnicas: new Set(enriquecidas.map(function(f) { return String(f.ID_PERSONA || ''); }).filter(Boolean)).size,
@@ -977,7 +1106,10 @@ function guardarActividad(datos) {
       RESPONSABLE: sigcNormalizarTexto(datos.RESPONSABLE),
       ESTADO_ACTIVIDAD: sigcNormalizarTexto(datos.ESTADO_ACTIVIDAD) || 'Planificada',
       CARPETA_DRIVE: sigcNormalizarTexto(datos.CARPETA_DRIVE),
-      OBSERVACIONES: sigcNormalizarTexto(datos.OBSERVACIONES)
+      OBSERVACIONES: sigcNormalizarTexto(datos.OBSERVACIONES),
+      LINK_INSCRIPCION: String(datos.LINK_INSCRIPCION || '').trim(),
+      REQUISITOS: sigcNormalizarTexto(datos.REQUISITOS),
+      DESCRIPCION_CORTA: sigcNormalizarTexto(datos.DESCRIPCION_CORTA)
     };
     webAgregarFilaPorEncabezados_(hoja, tabla.encabezados, nuevaActividad);
     sigcRegistrarLog(
@@ -1130,7 +1262,10 @@ function actualizarActividad(datos) {
       RESPONSABLE: sigcNormalizarTexto(datos.RESPONSABLE),
       ESTADO_ACTIVIDAD: estado,
       CARPETA_DRIVE: String(datos.CARPETA_DRIVE || '').trim(),
-      OBSERVACIONES: sigcNormalizarTexto(datos.OBSERVACIONES)
+      OBSERVACIONES: sigcNormalizarTexto(datos.OBSERVACIONES),
+      LINK_INSCRIPCION: String(datos.LINK_INSCRIPCION || '').trim(),
+      REQUISITOS: sigcNormalizarTexto(datos.REQUISITOS),
+      DESCRIPCION_CORTA: sigcNormalizarTexto(datos.DESCRIPCION_CORTA)
     };
     webActualizarFilaPorEncabezados_(
       hojaActividades,
@@ -1164,17 +1299,23 @@ function actualizarActividad(datos) {
       const idxMatriz = fila.numeroFila - 1;
       if (idxMatriz < 1 || idxMatriz >= matrizP.length) return;
 
-      if (mapaP['SESIONES_TOTALES'] !== undefined) matrizP[idxMatriz][mapaP['SESIONES_TOTALES']] = sesionesTotales;
-      if (mapaP['PORCENTAJE_ASISTENCIA'] !== undefined) matrizP[idxMatriz][mapaP['PORCENTAJE_ASISTENCIA']] = porcentajeAsistencia;
-      if (mapaP['ULTIMA_ACTUALIZACION'] !== undefined) matrizP[idxMatriz][mapaP['ULTIMA_ACTUALIZACION']] = ahora;
+      const colSesTot = mapaP['SESIONES TOTALES'] !== undefined ? mapaP['SESIONES TOTALES'] : mapaP['SESIONES_TOTALES'];
+      const colPctAsis = mapaP['PORCENTAJE ASISTENCIA'] !== undefined ? mapaP['PORCENTAJE ASISTENCIA'] : mapaP['PORCENTAJE_ASISTENCIA'];
+      const colUltAct = mapaP['ULTIMA ACTUALIZACION'] !== undefined ? mapaP['ULTIMA ACTUALIZACION'] : mapaP['ULTIMA_ACTUALIZACION'];
+      const colResAsis = mapaP['RESULTADO ASISTENCIA'] !== undefined ? mapaP['RESULTADO ASISTENCIA'] : mapaP['RESULTADO_ASISTENCIA'];
+      const colResFin = mapaP['RESULTADO FINAL'] !== undefined ? mapaP['RESULTADO FINAL'] : mapaP['RESULTADO_FINAL'];
+
+      if (colSesTot !== undefined) matrizP[idxMatriz][colSesTot] = sesionesTotales;
+      if (colPctAsis !== undefined) matrizP[idxMatriz][colPctAsis] = porcentajeAsistencia;
+      if (colUltAct !== undefined) matrizP[idxMatriz][colUltAct] = ahora;
 
       if (finalizada) {
         const seleccionada = sigcEsSeleccionado(fila.datos);
         const resultado = seleccionada
           ? sigcCalcularResultado(actividadActualizada, asistidas, sesionesTotales, true)
           : { resultadoAsistencia: 'Pendiente', resultadoFinal: 'Pendiente' };
-        if (mapaP['RESULTADO_ASISTENCIA'] !== undefined) matrizP[idxMatriz][mapaP['RESULTADO_ASISTENCIA']] = resultado.resultadoAsistencia;
-        if (mapaP['RESULTADO_FINAL'] !== undefined) matrizP[idxMatriz][mapaP['RESULTADO_FINAL']] = resultado.resultadoFinal;
+        if (colResAsis !== undefined) matrizP[idxMatriz][colResAsis] = resultado.resultadoAsistencia;
+        if (colResFin !== undefined) matrizP[idxMatriz][colResFin] = resultado.resultadoFinal;
         if (seleccionada) resultadosRecalculados++;
       }
       sincronizadas++;
@@ -1456,11 +1597,28 @@ function obtenerGestionActividad(idActividad) {
     idActividad
   );
   if (!actividad) throw new Error('No se encontró la actividad seleccionada.');
-  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+
+  // Depurar y unificar duplicados para esta actividad automáticamente
+  try {
+    depurarDuplicadosActividad(idActividad);
+  } catch (eDup) {
+    console.warn('Advertencia al depurar duplicados de participaciones: ' + eDup.message);
+  }
+
+  // Homogeneizar y reparar sesiones de las participaciones para esta actividad
+  try {
+    corregirYSincronizarSesionesParticipaciones(idActividad);
+  } catch (eCorr) {
+    console.warn('Advertencia al sincronizar sesiones de participaciones: ' + eCorr.message);
+  }
+
+  const sesionesOficiales = Math.max(1, Number(actividad.SESIONES_TOTALES || 1));
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS, true);
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
   const participaciones = webLeerTablaConCache_(
     ss,
-    WEBAPP_CONFIG.HOJAS.PARTICIPACIONES
+    WEBAPP_CONFIG.HOJAS.PARTICIPACIONES,
+    true
   )
     .filter(function(participacion) {
       return String(participacion.ID_ACTIVIDAD) === String(idActividad) &&
@@ -1478,6 +1636,7 @@ function obtenerGestionActividad(idActividad) {
         persona.RUT
       );
       return Object.assign({}, participacion, {
+        SESIONES_TOTALES: sesionesOficiales,
         NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
         RUT: persona.RUT || '',
         TIPO_DOCUMENTO: tipo,
@@ -1500,9 +1659,13 @@ function obtenerGestionActividad(idActividad) {
         {sensitivity: 'base'}
       );
     });
+  const cuposTotales = Number(actividad.CUPOS || 0);
   const seleccionadas = participaciones.filter(sigcEsSeleccionado);
+  const vacantesDisponibles = cuposTotales > 0 ? Math.max(0, cuposTotales - seleccionadas.length) : 'Sin límite';
   const resumen = {
     inscritos: participaciones.length,
+    cupos: cuposTotales,
+    vacantes: vacantesDisponibles,
     seleccionados: seleccionadas.length,
     confirmados: seleccionadas.filter(function(participacion) {
       return sigcNormalizarSiNo(
@@ -1527,6 +1690,14 @@ function obtenerGestionActividad(idActividad) {
     participaciones: participaciones,
     resumen: resumen
   };
+}
+
+/**
+ * Ejecuta la depuración y unificación manual de duplicados desde la Web App.
+ */
+function depurarDuplicadosActividadWeb(idActividad) {
+  webValidarObjeto_({ ID_ACTIVIDAD: idActividad }, ['ID_ACTIVIDAD']);
+  return depurarDuplicadosActividad(idActividad);
 }
 /**
  * Guarda selección, asistencia y resultados de forma masiva.
@@ -1578,7 +1749,7 @@ function guardarGestionMasiva(payload) {
         if (String(valores[indiceMatriz][colActividad]) !== String(payload.idActividad)) {
           throw new Error('La participación no pertenece a la actividad seleccionada.');
         }
-        const total = webNumeroNoNegativo_(registro.SESIONES_TOTALES, actividad.SESIONES_TOTALES || 1);
+        const total = Math.max(1, Number(actividad.SESIONES_TOTALES || 1));
         let asistidas = webNumeroNoNegativo_(registro.SESIONES_ASISTIDAS, 0);
         let asistSesiones = registro.ASISTENCIA_SESIONES;
         if (asistSesiones !== undefined && asistSesiones !== null) {
@@ -2618,7 +2789,7 @@ function webAsegurarColumna_(hoja, encabezado) {
 }
 
 function webAsegurarEncabezadosActividades_(hoja, tablaEncabezados) {
-  ['HORARIO', 'DETALLE_SESIONES'].forEach(function(col) {
+  ['HORARIO', 'DETALLE_SESIONES', 'LINK_INSCRIPCION', 'REQUISITOS', 'DESCRIPCION_CORTA'].forEach(function(col) {
     webAsegurarColumna_(hoja, col);
     const norm = sigcNormalizarEncabezado(col);
     if (!tablaEncabezados.some(function(enc) { return sigcNormalizarEncabezado(enc) === norm; })) {
@@ -2639,6 +2810,40 @@ function webAsegurarEncabezadosParticipaciones_(hoja, tablaEncabezados) {
 
 function webGuardarSpreadsheetId(nuevoId) {
   return sigcGuardarSpreadsheetId(nuevoId);
+}
+
+/**
+ * Envía un correo de prueba con el diseño HTML de la cartelera de capacitaciones al usuario activo.
+ */
+function enviarPruebaCarteleraCorreo(datos) {
+  datos = datos || {};
+  const html = String(datos.html || '').trim();
+  const asunto = String(datos.asunto || 'Cartelera de Capacitaciones — Municipalidad de Santiago · DIDEL').trim();
+  if (!html) throw new Error('El contenido HTML de la cartelera está vacío.');
+
+  let destinatario = '';
+  try {
+    destinatario = Session.getActiveUser().getEmail();
+  } catch (e) {}
+
+  if (!destinatario && datos.correoDestino) {
+    destinatario = String(datos.correoDestino).trim();
+  }
+
+  if (!destinatario || !sigcValidarCorreo(destinatario)) {
+    throw new Error('No se pudo identificar una casilla de correo válida para el envío de prueba. Ingrese su correo en la configuración.');
+  }
+
+  GmailApp.sendEmail(destinatario, asunto, 'Por favor visualice este correo en un cliente compatible con HTML.', {
+    htmlBody: html,
+    name: 'Capacitaciones DIDEL · Municipalidad de Santiago'
+  });
+
+  return {
+    ok: true,
+    mensaje: 'Correo de prueba enviado con éxito a: ' + destinatario,
+    destinatario: destinatario
+  };
 }
 
 

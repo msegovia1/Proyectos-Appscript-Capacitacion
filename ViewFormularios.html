@@ -42,7 +42,10 @@
         <div id="panelCasosRevision" class="card panel review-panel" hidden>
           <div class="edit-head">
             <div><h3>Casos por revisar</h3><p id="casosRevisionContexto">Seleccione una vinculación para ver sus casos.</p></div>
-            <button class="btn secondary compact" type="button" onclick="cerrarCasosRevision()">Cerrar</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn compact" type="button" onclick="reprocesarTodosCasosRevisionWeb()">⚡ Reprocesar casos</button>
+              <button class="btn secondary compact" type="button" onclick="cerrarCasosRevision()">Cerrar</button>
+            </div>
           </div>
           <div class="table-container"><table><thead><tr><th>Fila</th><th>Fecha</th><th>Persona</th><th>Documento</th><th>Contacto</th><th>Motivo</th><th>Acción</th></tr></thead><tbody id="tablaCasosRevision"></tbody></table></div>
           <div id="editorCasoRevision" class="card panel review-panel" hidden>

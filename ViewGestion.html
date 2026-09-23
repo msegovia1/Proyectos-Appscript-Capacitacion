@@ -9,15 +9,18 @@
           <div class="gestion-selector">
             <div class="field">
               <label>Actividad de capacitación</label>
-              <select id="gestionActividad" onchange="actualizarActividadAsistenciaSeleccionada()">
+              <select id="gestionActividad" onchange="actualizarActividadAsistenciaSeleccionada(); if(this.value) cargarGestionActividad();">
                 <option value="">Seleccione una actividad...</option>
               </select>
             </div>
             <button class="btn" type="button" onclick="cargarGestionActividad()">Cargar participantes</button>
+            <button class="btn secondary" type="button" onclick="depurarDuplicadosGestion()" title="Detectar y unificar participantes duplicados en esta actividad">🧹 Depurar duplicados</button>
           </div>
           <div class="module-kpis">
             <div class="card module-kpi accent-blue"><span>Inscritos</span><strong id="gInscritos">0</strong></div>
+            <div class="card module-kpi accent-teal"><span>Cupos totales</span><strong id="gCupos">0</strong></div>
             <div class="card module-kpi accent-indigo"><span>Seleccionados</span><strong id="gSeleccionados">0</strong></div>
+            <div class="card module-kpi accent-emerald" style="border-left:4px solid #10b981"><span>Vacantes libres</span><strong id="gVacantes" style="color:#059669">0</strong></div>
             <div class="card module-kpi accent-teal"><span>Confirmados</span><strong id="gConfirmados">0</strong></div>
             <div class="card module-kpi accent-amber"><span>Con asistencia</span><strong id="gAsistentes">0</strong></div>
             <div class="card module-kpi accent-emerald"><span>Aprobados</span><strong id="gAprobados">0</strong></div>
@@ -67,17 +70,91 @@
               </div>
             </div>
           </div>
-          <div class="table-tools" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-            <div style="display:flex;gap:10px;flex:1;min-width:280px">
-              <input id="buscarGestion" placeholder="🔍 Buscar por nombre o RUT..." oninput="renderGestion()">
-              <select id="filtroGestionSeleccion" onchange="renderGestion()">
-                <option value="">Todos los estados</option>
-                <option>Seleccionado</option><option>Lista de espera</option><option>No seleccionado</option><option>Pendiente</option>
-              </select>
+          <div class="table-tools" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+            <!-- Fila 1: Buscador rápido, contador y selector de modo de vista -->
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <div style="display:flex;gap:10px;flex:1;min-width:280px;align-items:center">
+                <input id="buscarGestion" placeholder="🔍 Buscar por nombre, RUT, documento, correo o teléfono..." oninput="renderGestionConPausa()" style="flex:1">
+                <span id="contadorGestionFiltrados" style="font-size:12px;font-weight:600;color:var(--gris);white-space:nowrap"></span>
+              </div>
+              <div class="asis-view-switcher" id="asisViewSwitcher">
+                <button type="button" class="asis-view-btn" id="btnAsisModoCompacto" onclick="cambiarModoVistaGestion('compacta')">🔢 Total Asistidas</button>
+                <button type="button" class="asis-view-btn active" id="btnAsisModoSesiones" onclick="cambiarModoVistaGestion('sesiones')">📅 Por Sesión</button>
+              </div>
             </div>
-            <div class="asis-view-switcher" id="asisViewSwitcher">
-              <button type="button" class="asis-view-btn" id="btnAsisModoCompacto" onclick="cambiarModoVistaGestion('compacta')">🔢 Total Asistidas</button>
-              <button type="button" class="asis-view-btn active" id="btnAsisModoSesiones" onclick="cambiarModoVistaGestion('sesiones')">📅 Por Sesión</button>
+
+            <!-- Fila 2: Barra de Filtros Específicos -->
+            <div class="gestion-filtros-bar">
+              <button type="button" class="btn compact" id="btnFiltroPorLlamar" onclick="alternarFiltroPorLlamar()" style="background:#0284c7;color:#fff;font-weight:600;display:inline-flex;align-items:center;gap:4px" title="Filtrar postulantes pendientes para llamar y cubrir vacantes">
+                📞 Postulantes por llamar
+              </button>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionSeleccion">Selección:</label>
+                <select id="filtroGestionSeleccion" class="filtro-gestion-select" onchange="actualizarEstadoBotonPorLlamar(); renderGestion();">
+                  <option value="">Todos</option>
+                  <option value="Seleccionado">Seleccionado</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Lista de espera">Lista de espera</option>
+                  <option value="No seleccionado">No seleccionado</option>
+                  <option value="No informado">No informado</option>
+                </select>
+              </div>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionConfirmacion">Confirmación:</label>
+                <select id="filtroGestionConfirmacion" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todas</option>
+                  <option value="Sí">Confirmaron (Sí)</option>
+                  <option value="No">No confirmaron (No)</option>
+                  <option value="No informado">No informado / Pendiente</option>
+                </select>
+              </div>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionCertificado">Certificado:</label>
+                <select id="filtroGestionCertificado" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todos</option>
+                  <option value="Sí">Con certificado (Sí)</option>
+                  <option value="No">Sin certificado (No)</option>
+                  <option value="No aplica">No aplica</option>
+                  <option value="No informado">No informado</option>
+                </select>
+              </div>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionResultado">Resultado:</label>
+                <select id="filtroGestionResultado" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todos</option>
+                  <option value="Aprobado">Aprobado / Participó</option>
+                  <option value="Desaprobado">Desaprobado / No participó</option>
+                  <option value="Pendiente">Pendiente</option>
+                </select>
+              </div>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionRequisitos">Requisitos:</label>
+                <select id="filtroGestionRequisitos" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todos</option>
+                  <option value="Sí">Cumple (Sí)</option>
+                  <option value="No">No cumple (No)</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="No informado">No informado</option>
+                </select>
+              </div>
+
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionPmjh">PMJH:</label>
+                <select id="filtroGestionPmjh" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todos</option>
+                  <option value="Sí">Es PMJH (Sí)</option>
+                  <option value="No">No PMJH (No)</option>
+                </select>
+              </div>
+
+              <button type="button" class="btn secondary compact btn-limpiar-filtros" onclick="limpiarFiltrosGestion()" title="Restablecer todos los filtros a sus valores predeterminados">
+                ✕ Limpiar filtros
+              </button>
             </div>
           </div>
           <p class="gestion-scroll-hint">↔ Desplácese horizontalmente dentro de la tabla para consultar resultados, certificación y observaciones.</p>
@@ -95,7 +172,7 @@
                   </th>
                   <th class="col-persona">Persona</th>
                   <th class="col-doc">Documento</th>
-                  <th class="col-edad th-center">Edad</th>
+                  <th class="col-telefono th-center">Teléfono</th>
                   <th class="col-pmjh th-center">PMJH</th>
                   <th class="col-requisitos">Cumple requisitos</th>
                   <th class="col-seleccion">Selección</th>

@@ -3,6 +3,36 @@
  * SISTEMA DE INTERFAZ, NOTIFICACIONES TOAST Y MODALES SIGC
  */
 
+/**
+ * Sanitiza cualquier texto para prevenir vulnerabilidades XSS e inyecciones de maquetado HTML.
+ */
+function sigcEscapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+window.escapeHtml = sigcEscapeHtml;
+window.sigcEscapeHtml = sigcEscapeHtml;
+
+/**
+ * Función utilitaria debounce para optimizar búsquedas y eventos en tiempo real.
+ */
+function sigcDebounce(func, delay = 250) {
+  let timer = null;
+  return function(...args) {
+    const context = this;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      func.apply(context, args);
+    }, delay);
+  };
+}
+window.sigcDebounce = sigcDebounce;
+
 function mostrarToast(tipo, mensaje, duracion = 4000) {
   let contenedor = document.querySelector('.toast-container');
   if (!contenedor) {

@@ -2,6 +2,37 @@
 let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda:{resumen:{},filas:[],detalle:[]}, graficos:{}, resumen:{}};
   window.DB = DB;
   window.DATOS = DB;
+  const DB_INDEX = {
+    actividadesPorId: new Map(),
+    personasPorId: new Map(),
+    personasPorRut: new Map(),
+    participacionesPorActividad: new Map()
+  };
+
+  function reconstruirIndicesCliente() {
+    DB_INDEX.actividadesPorId.clear();
+    (DB.actividades || []).forEach(a => {
+      if (a.ID_ACTIVIDAD) DB_INDEX.actividadesPorId.set(String(a.ID_ACTIVIDAD).trim(), a);
+    });
+
+    DB_INDEX.personasPorId.clear();
+    DB_INDEX.personasPorRut.clear();
+    (DB.personas || []).forEach(p => {
+      if (p.ID_PERSONA) DB_INDEX.personasPorId.set(String(p.ID_PERSONA).trim(), p);
+      if (p.RUT) DB_INDEX.personasPorRut.set(String(p.RUT).trim(), p);
+      if (p.NUMERO_DOCUMENTO) DB_INDEX.personasPorRut.set(String(p.NUMERO_DOCUMENTO).trim(), p);
+    });
+
+    DB_INDEX.participacionesPorActividad.clear();
+    (DB.participaciones || []).forEach(p => {
+      const idAct = String(p.ID_ACTIVIDAD || '').trim();
+      if (!DB_INDEX.participacionesPorActividad.has(idAct)) {
+        DB_INDEX.participacionesPorActividad.set(idAct, []);
+      }
+      DB_INDEX.participacionesPorActividad.get(idAct).push(p);
+    });
+  }
+
   let GESTION = {actividad:null, participaciones:[], resumen:{}};
   let COMUNICACIONES = {destinatarios:[], resumen:{}};
   let DEMANDA_DETALLE_ACTUAL = [];
@@ -191,6 +222,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     google.script.run.withSuccessHandler(datos => {
       Object.assign(DB, datos || {});
       MODULOS_CARGADOS.add(modulo);
+      reconstruirIndicesCliente();
       if (modulo === 'personas') renderPersonas();
       if (modulo === 'actividades') {
         renderActividades();
@@ -387,24 +419,181 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     clearTimeout(TEMPORIZADORES_RENDER[tipo]);
     TEMPORIZADORES_RENDER[tipo] = setTimeout(() => reiniciarYRenderizar(tipo), 220);
   }
+  function renderGestionConPausa() {
+    clearTimeout(TEMPORIZADORES_RENDER['gestion']);
+    TEMPORIZADORES_RENDER['gestion'] = setTimeout(() => {
+      if (typeof renderGestion === 'function') renderGestion();
+    }, 220);
+  }
+  function renderDemandaConPausa() {
+    clearTimeout(TEMPORIZADORES_RENDER['demanda']);
+    TEMPORIZADORES_RENDER['demanda'] = setTimeout(() => {
+      if (typeof renderDemanda === 'function') renderDemanda();
+    }, 220);
+  }
+  function renderComunicacionesConPausa() {
+    clearTimeout(TEMPORIZADORES_RENDER['comunicaciones']);
+    TEMPORIZADORES_RENDER['comunicaciones'] = setTimeout(() => {
+      if (typeof renderComunicaciones === 'function') renderComunicaciones();
+    }, 220);
+  }
+  function renderCalendarioConPausa() {
+    clearTimeout(TEMPORIZADORES_RENDER['calendario']);
+    TEMPORIZADORES_RENDER['calendario'] = setTimeout(() => {
+      if (typeof renderCalendario === 'function') renderCalendario();
+    }, 220);
+  }
+  /* =========================================================================
+   * BUSCADOR PREDICTIVO DE PERSONAS (REGISTRO DE PARTICIPACIÓN)
+   * ========================================================================= */
+  function buscarPersonasPredictivoRegConPausa() {
+    clearTimeout(TEMPORIZADORES_RENDER['predictivo_persona']);
+    TEMPORIZADORES_RENDER['predictivo_persona'] = setTimeout(buscarPersonasPredictivoReg, 150);
+  }
+
+  function buscarPersonasPredictivoReg() {
+    const input = document.getElementById('inputBuscarPersonaParticipacion');
+    const dropdown = document.getElementById('dropdownResultadosPersonasReg');
+    if (!input || !dropdown) return;
+
+    const query = normalizar(input.value.trim());
+    const queryLimpia = query.replace(/[^a-z0-9]/g, '');
+
+    if (query.length < 2) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      return;
+    }
+
+    const personas = (DB.personas || []);
+    const coincidencias = personas.filter(p => {
+      const nombreNorm = normalizar(p.NOMBRE_COMPLETO || '');
+      const rutNorm = String(p.RUT || p.NUMERO_DOCUMENTO || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const correoNorm = normalizar(p.CORREO || '');
+      return nombreNorm.includes(query) || (queryLimpia.length >= 2 && rutNorm.includes(queryLimpia)) || correoNorm.includes(query);
+    }).slice(0, 10);
+
+    if (coincidencias.length === 0) {
+      dropdown.innerHTML = `
+        <div style="padding:14px; text-align:center; color:#555;">
+          <p style="margin:0 0 8px 0; font-size:13px;">No se encontró a nadie que coincida con "<strong>${esc(input.value)}</strong>".</p>
+          <button type="button" class="btn compact" onclick="irARegistrarPersonaDesdeBusqueda('${esc(input.value)}')">＋ Registrar a esta persona ahora</button>
+        </div>
+      `;
+      dropdown.style.display = 'block';
+      return;
+    }
+
+    dropdown.innerHTML = coincidencias.map(p => {
+      const id = esc(p.ID_PERSONA);
+      const nombre = esc(p.NOMBRE_COMPLETO);
+      const doc = esc(p.DOCUMENTO || p.RUT || 'Sin documento');
+      const correo = esc(p.CORREO || '');
+      const pmjh = esc(p.PARTICIPA_PMJH || 'No');
+      const edad = p.EDAD ? ` · ${esc(p.EDAD)} años` : '';
+
+      return `
+        <div class="predictivo-item" onclick="seleccionarPersonaReg('${id}')" style="display:flex; justify-content:space-between; align-items:center; padding:9px 12px; border-bottom:1px solid #f0f4f8; cursor:pointer; border-radius:6px; transition:background 0.15s;" onmouseover="this.style.background='#f0f7ff'" onmouseout="this.style.background='transparent'">
+          <div>
+            <strong style="font-size:13px; color:var(--azul,#003b70); display:block;">${nombre}</strong>
+            <small style="font-size:12px; color:#555;">🆔 ${doc}${edad} ${correo ? `· 📧 ${correo}` : ''}</small>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${pmjh === 'Sí' ? '<span class="badge" style="background:#fce7f3; color:#9d174d; font-size:10px;">PMJH</span>' : ''}
+            <span class="btn secondary compact" style="padding:2px 8px; font-size:11px;">Elegir</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    dropdown.style.display = 'block';
+  }
+
+  function seleccionarPersonaReg(idPersona) {
+    const persona = (DB.personas || []).find(p => String(p.ID_PERSONA || '').trim() === String(idPersona || '').trim());
+    if (!persona) return;
+
+    const inputHidden = document.getElementById('selectPersona');
+    const contenedorBuscador = document.getElementById('contenedorBuscadorPersonaReg');
+    const dropdown = document.getElementById('dropdownResultadosPersonasReg');
+    const card = document.getElementById('cardPersonaSeleccionadaReg');
+
+    if (inputHidden) inputHidden.value = persona.ID_PERSONA;
+    if (dropdown) dropdown.style.display = 'none';
+    if (contenedorBuscador) contenedorBuscador.style.display = 'none';
+
+    if (card) {
+      texto('personaSeleccionadaNombre', persona.NOMBRE_COMPLETO);
+      texto('personaSeleccionadaDoc', '🆔 ' + (persona.DOCUMENTO || persona.RUT || 'Sin documento'));
+      texto('personaSeleccionadaCorreo', '📧 ' + (persona.CORREO || 'Sin correo'));
+      texto('personaSeleccionadaTel', '📞 ' + (persona.TELEFONO || 'Sin teléfono'));
+      texto('personaSeleccionadaPmjh', '👩 PMJH: ' + (persona.PARTICIPA_PMJH || 'No informado'));
+      card.style.display = 'block';
+    }
+  }
+
+  function deseleccionarPersonaReg() {
+    const inputHidden = document.getElementById('selectPersona');
+    const contenedorBuscador = document.getElementById('contenedorBuscadorPersonaReg');
+    const inputBuscar = document.getElementById('inputBuscarPersonaParticipacion');
+    const card = document.getElementById('cardPersonaSeleccionadaReg');
+
+    if (inputHidden) inputHidden.value = '';
+    if (card) card.style.display = 'none';
+    if (contenedorBuscador) contenedorBuscador.style.display = 'block';
+    if (inputBuscar) {
+      inputBuscar.value = '';
+      inputBuscar.focus();
+    }
+  }
+
+  function irARegistrarPersonaDesdeBusqueda(termino) {
+    irAVista('registro-personas');
+    setTimeout(() => {
+      const form = document.getElementById('formPersona');
+      if (!form) return;
+      if (sigcValidarRut(termino)) {
+        asignarCampoFormulario(form, 'RUT', termino);
+      } else {
+        asignarCampoFormulario(form, 'NOMBRE_COMPLETO', termino);
+      }
+    }, 150);
+  }
+
+  function sincronizarSesionesActividadReg() {
+    const select = document.getElementById('selectActividad');
+    const inputSesiones = document.getElementById('regPartSesionesTotales');
+    if (!select || !inputSesiones) return;
+    const idAct = String(select.value || '').trim();
+    const actividad = (DB.actividades || []).find(a => String(a.ID_ACTIVIDAD || '').trim() === idAct);
+    if (actividad && actividad.SESIONES_TOTALES) {
+      inputSesiones.value = actividad.SESIONES_TOTALES;
+    }
+  }
+
+  // Cerrar dropdown al hacer clic fuera
+  document.addEventListener('click', (e) => {
+    const contenedor = document.getElementById('contenedorBuscadorPersonaReg');
+    const dropdown = document.getElementById('dropdownResultadosPersonasReg');
+    if (dropdown && contenedor && !contenedor.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
   function llenarSelectores() {
-    document.getElementById('selectPersona').innerHTML = '<option value="">Seleccione...</option>' +
-      DB.personas.slice().sort((a,b)=>a.NOMBRE_COMPLETO.localeCompare(b.NOMBRE_COMPLETO))
-        .map(p => {
-          const edad = p.EDAD === '' || p.EDAD === null || p.EDAD === undefined
-            ? ''
-            : ` — ${esc(p.EDAD)} años`;
-          return `<option value="${esc(p.ID_PERSONA)}">${esc(p.NOMBRE_COMPLETO)} — ${esc(p.DOCUMENTO || p.RUT)}${edad} — PMJH: ${esc(p.PARTICIPA_PMJH || 'No informado')}</option>`;
-        }).join('');
-    // El registro manual mantiene el orden alfabético para facilitar la búsqueda.
+    const elSelectPersona = document.getElementById('selectPersona');
+    if (elSelectPersona && elSelectPersona.tagName === 'SELECT') {
+      elSelectPersona.innerHTML = '<option value="">Seleccione...</option>' +
+        DB.personas.slice().sort((a,b)=>a.NOMBRE_COMPLETO.localeCompare(b.NOMBRE_COMPLETO))
+          .map(p => {
+            const edad = p.EDAD === '' || p.EDAD === null || p.EDAD === undefined
+              ? ''
+              : ` — ${esc(p.EDAD)} años`;
+            return `<option value="${esc(p.ID_PERSONA)}">${esc(p.NOMBRE_COMPLETO)} — ${esc(p.DOCUMENTO || p.RUT)}${edad} — PMJH: ${esc(p.PARTICIPA_PMJH || 'No informado')}</option>`;
+          }).join('');
+    }
+
     const actividadesOperativas = DB.actividades.filter(a => !esActividadArchivada_(a));
-    const opcionesActividadesRegistro = actividadesOperativas.slice()
-      .sort((a,b)=>String(a.NOMBRE_ACTIVIDAD || '').localeCompare(String(b.NOMBRE_ACTIVIDAD || ''), 'es'))
-      .map(a => `<option value="${esc(a.ID_ACTIVIDAD)}">${esc(a.NOMBRE_ACTIVIDAD)} — ${esc(a.ID_ACTIVIDAD)}</option>`).join('');
-    // En Gestión de participantes se muestran primero las actividades más nuevas.
-    // Este mismo orden se usa al vincular formularios para que las actividades
-    // recién creadas sigan siendo fáciles de encontrar cuando el catálogo crezca.
-    // La prioridad es: año y correlativo del ID; luego fecha de inicio y orden de ingreso.
     const opcionesActividadesGestion = actividadesOperativas
       .map((actividad, indice) => ({...actividad, _ordenIngreso: indice}))
       .sort(compararActividadesRecientes)
@@ -412,8 +601,11 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         const fecha = fechaActividadVisible(a.FECHA_INICIO);
         return `<option value="${esc(a.ID_ACTIVIDAD)}">${esc(a.ID_ACTIVIDAD)} — ${esc(a.NOMBRE_ACTIVIDAD)}${fecha ? ` — ${esc(fecha)}` : ''}</option>`;
       }).join('');
-    document.getElementById('selectActividad').innerHTML =
-      '<option value="">Seleccione...</option>' + opcionesActividadesRegistro;
+
+    const elSelectAct = document.getElementById('selectActividad');
+    if (elSelectAct) {
+      elSelectAct.innerHTML = '<option value="">Seleccione una actividad...</option>' + opcionesActividadesGestion;
+    }
     document.getElementById('gestionActividad').innerHTML =
       '<option value="">Seleccione una actividad...</option>' + opcionesActividadesGestion;
     document.getElementById('comActividad').innerHTML =
@@ -783,6 +975,433 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       auxiliar.remove();
     }
   }
+
+  /* =========================================================================
+   * GENERADOR DE CARTELERA / BOLETÍN DE CAPACITACIONES EN HTML
+   * ========================================================================= */
+  let CARTELERA = {
+    seleccionadas: new Set(),
+    htmlGenerado: ''
+  };
+
+  function cambiarSubTabComunicaciones(subtab) {
+    const tabDestinatarios = document.getElementById('subtabComDestinatarios');
+    const tabCartelera = document.getElementById('subtabComCartelera');
+    const btnDest = document.getElementById('btnSubTabComDestinatarios');
+    const btnCart = document.getElementById('btnSubTabComCartelera');
+
+    if (subtab === 'cartelera') {
+      if (tabDestinatarios) tabDestinatarios.style.display = 'none';
+      if (tabCartelera) tabCartelera.style.display = 'block';
+      if (btnDest) btnDest.classList.remove('active');
+      if (btnCart) btnCart.classList.add('active');
+
+      if (CARTELERA.seleccionadas.size === 0) {
+        seleccionarActividadesCartelera('activas');
+      } else {
+        renderListaSeleccionCartelera();
+        actualizarVistaPreviaCartelera();
+      }
+    } else {
+      if (tabDestinatarios) tabDestinatarios.style.display = 'block';
+      if (tabCartelera) tabCartelera.style.display = 'none';
+      if (btnDest) btnDest.classList.add('active');
+      if (btnCart) btnCart.classList.remove('active');
+    }
+  }
+
+  function seleccionarActividadesCartelera(modo) {
+    CARTELERA.seleccionadas.clear();
+    const actividades = (DB.actividades || []).filter(a => !esActividadArchivada_(a));
+
+    if (modo === 'activas') {
+      actividades.forEach(a => {
+        const est = String(a.ESTADO_ACTIVIDAD || '').toLowerCase();
+        if (est.includes('abierta') || est.includes('difusi') || est.includes('planific') || est.includes('ejecuci')) {
+          CARTELERA.seleccionadas.add(String(a.ID_ACTIVIDAD));
+        }
+      });
+      if (CARTELERA.seleccionadas.size === 0) {
+        actividades.slice(0, 8).forEach(a => CARTELERA.seleccionadas.add(String(a.ID_ACTIVIDAD)));
+      }
+    } else if (modo === 'todas') {
+      actividades.forEach(a => CARTELERA.seleccionadas.add(String(a.ID_ACTIVIDAD)));
+    }
+
+    renderListaSeleccionCartelera();
+    actualizarVistaPreviaCartelera();
+  }
+
+  function resolverUrlFormularioActividad_(actividad) {
+    if (actividad.LINK_INSCRIPCION && String(actividad.LINK_INSCRIPCION).trim().startsWith('http')) {
+      return String(actividad.LINK_INSCRIPCION).trim();
+    }
+    const idAct = String(actividad.ID_ACTIVIDAD || '').trim();
+    const cfgForm = (FORMULARIOS || []).find(f => String(f.idActividad || '').trim() === idAct);
+    if (cfgForm && cfgForm.formUrlPublica) {
+      return String(cfgForm.formUrlPublica).trim();
+    }
+    return '';
+  }
+
+  function renderListaSeleccionCartelera() {
+    const contenedor = document.getElementById('listaActividadesCartelera');
+    if (!contenedor) return;
+
+    const filtroEscuela = String(document.getElementById('filtroCarteleraEscuela')?.value || '').toLowerCase();
+    const filtroBusqueda = normalizar(document.getElementById('buscarActividadCartelera')?.value || '');
+
+    const actividades = (DB.actividades || [])
+      .filter(a => !esActividadArchivada_(a))
+      .filter(a => {
+        if (filtroEscuela && normalizar(a.ESCUELA_LINEA) !== filtroEscuela) return false;
+        if (filtroBusqueda && !normalizar([a.NOMBRE_ACTIVIDAD, a.AREA_TEMATICA, a.ID_ACTIVIDAD, a.INSTITUCION_ASOCIADA].join(' ')).includes(filtroBusqueda)) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.ID_ACTIVIDAD || '').localeCompare(String(a.ID_ACTIVIDAD || '')));
+
+    if (actividades.length === 0) {
+      contenedor.innerHTML = '<div style="padding:14px; text-align:center; color:var(--gris);">No hay actividades que coincidan con el filtro.</div>';
+      return;
+    }
+
+    contenedor.innerHTML = actividades.map(a => {
+      const id = String(a.ID_ACTIVIDAD);
+      const seleccionada = CARTELERA.seleccionadas.has(id);
+      const urlForm = resolverUrlFormularioActividad_(a);
+      const badgeEscuela = a.ESCUELA_LINEA === 'Empleo'
+        ? '<span style="font-size:10px; font-weight:700; background:#E6F1FB; color:#003B70; padding:2px 6px; border-radius:4px;">Empleo</span>'
+        : a.ESCUELA_LINEA === 'Emprendimiento'
+          ? '<span style="font-size:10px; font-weight:700; background:#E8F5E9; color:#1B5E20; padding:2px 6px; border-radius:4px;">Emprendimiento</span>'
+          : `<span style="font-size:10px; font-weight:700; background:#F3E5F5; color:#4A148C; padding:2px 6px; border-radius:4px;">${esc(a.ESCUELA_LINEA || 'General')}</span>`;
+
+      const badgeModalidad = `<span style="font-size:10px; background:#F4F6F9; color:#555; padding:2px 6px; border-radius:4px;">${esc(a.MODALIDAD || 'Presencial')}</span>`;
+      const indicadorEnlace = urlForm
+        ? `<span style="font-size:11px; color:#2e7d32; font-weight:600;" title="${esc(urlForm)}">🔗 Con enlace</span>`
+        : `<span style="font-size:11px; color:#c62828;" title="No tiene enlace configurado">⚠️ Sin enlace directo</span>`;
+
+      return `
+        <label style="display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:6px; cursor:pointer; background:${seleccionada ? 'rgba(0,59,112,0.06)' : 'transparent'}; border-bottom:1px solid #f0f0f0;">
+          <input type="checkbox" ${seleccionada ? 'checked' : ''} data-id="${esc(id)}" onchange="alternarSeleccionActividadCartelera(this)" style="width:17px; height:17px;">
+          <div style="flex:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            ${badgeEscuela}
+            ${badgeModalidad}
+            <strong style="font-size:13px; color:#222;">${esc(a.NOMBRE_ACTIVIDAD)}</strong>
+            <small style="color:#777;">(${esc(a.ID_ACTIVIDAD)})</small>
+          </div>
+          <div style="font-size:11px; color:#666; margin-right:6px;">${indicadorEnlace}</div>
+        </label>
+      `;
+    }).join('');
+
+    const conteo = CARTELERA.seleccionadas.size;
+    const txtConteo = document.getElementById('carteleraConteoSeleccionadas');
+    if (txtConteo) txtConteo.textContent = `${conteo} ${conteo === 1 ? 'actividad seleccionada' : 'actividades seleccionadas'}`;
+  }
+
+  function alternarSeleccionActividadCartelera(checkbox) {
+    const id = String(checkbox.dataset.id || '');
+    if (checkbox.checked) CARTELERA.seleccionadas.add(id);
+    else CARTELERA.seleccionadas.delete(id);
+
+    const conteo = CARTELERA.seleccionadas.size;
+    const txtConteo = document.getElementById('carteleraConteoSeleccionadas');
+    if (txtConteo) txtConteo.textContent = `${conteo} ${conteo === 1 ? 'actividad seleccionada' : 'actividades seleccionadas'}`;
+
+    actualizarVistaPreviaCartelera();
+  }
+
+  function formatearFechaTextoCartelera_(fechaStr) {
+    if (!fechaStr) return '';
+    const visible = fechaActividadVisible(fechaStr);
+    const partes = visible.split('-');
+    if (partes.length === 3) {
+      const meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      const dia = parseInt(partes[0], 10);
+      const mesNum = parseInt(partes[1], 10);
+      const anio = partes[2];
+      if (mesNum >= 1 && mesNum <= 12) {
+        return `${dia} de ${meses[mesNum]} (${visible})`;
+      }
+    }
+    return visible;
+  }
+
+  function generarHtmlCartelera() {
+    const titulo = document.getElementById('carteleraTitulo')?.value || 'Cartelera de Capacitaciones';
+    const subtitulo = document.getElementById('carteleraSubtitulo')?.value || 'Talleres, cursos y charlas gratuitos para tu negocio y carrera';
+    const intro = document.getElementById('carteleraIntro')?.value || 'Haz clic en "Inscribirme" en el curso que te interese. Todos los programas son gratuitos y están disponibles para vecinos y vecinas de Santiago.';
+
+    const actividades = (DB.actividades || [])
+      .filter(a => CARTELERA.seleccionadas.has(String(a.ID_ACTIVIDAD)));
+
+    let filasActividadesHtml = '';
+
+    if (actividades.length === 0) {
+      filasActividadesHtml = `
+        <tr>
+          <td style="background:#ffffff;padding:36px 32px;border-left:1px solid #e4e1da;border-right:1px solid #e4e1da;text-align:center;color:#6b7280;">
+            <p style="margin:0;font-size:15px;font-weight:600;">No has seleccionado ninguna actividad para la cartelera.</p>
+            <p style="margin:6px 0 0;font-size:13px;color:#9ca3af;">Selecciona una o más capacitaciones en la lista superior para generar la vista previa.</p>
+          </td>
+        </tr>
+      `;
+    } else {
+      filasActividadesHtml = actividades.map(a => {
+        const urlInscripcion = resolverUrlFormularioActividad_(a) || '#';
+        const escuela = esc(a.ESCUELA_LINEA || 'Capacitación');
+        const materia = esc(a.AREA_TEMATICA || '');
+        const modalidad = esc(a.MODALIDAD || 'Presencial');
+        const nombre = esc(a.NOMBRE_ACTIVIDAD || '');
+        const descripcion = esc(a.DESCRIPCION_CORTA || a.OBSERVACIONES || 'Programa de formación y capacitación formativa.');
+        const requisitos = esc(a.REQUISITOS || 'Sin requisitos previos informados.');
+        const sesionesTotales = Math.max(1, Number(a.SESIONES_TOTALES) || 1);
+        const estado = String(a.ESTADO_ACTIVIDAD || '').toLowerCase();
+
+        // 1. Fechas Inteligentes
+        const fInicio = fechaActividadVisible(a.FECHA_INICIO);
+        const fTermino = fechaActividadVisible(a.FECHA_TERMINO);
+        let textoFechas = '';
+        if (fInicio && fTermino && fInicio !== fTermino) {
+          textoFechas = `Del ${fInicio} al ${fTermino}`;
+        } else if (fInicio) {
+          if (estado.includes('planific')) {
+            textoFechas = `Fecha tentativa: ${fInicio}`;
+          } else {
+            textoFechas = `Fecha de inicio: ${fInicio}`;
+          }
+        } else {
+          textoFechas = 'Fecha a coordinar';
+        }
+
+        // 2. Colores institucionales por escuela
+        let colorEscuelaBg = '#E6F1FB';
+        let colorEscuelaText = '#003B70';
+        let colorEscuelaBorder = '#B9D5F3';
+        if (a.ESCUELA_LINEA === 'Emprendimiento') {
+          colorEscuelaBg = '#E8F5E9';
+          colorEscuelaText = '#1B5E20';
+          colorEscuelaBorder = '#C8E6C9';
+        } else if (a.ESCUELA_LINEA === 'Transversal') {
+          colorEscuelaBg = '#F3E5F5';
+          colorEscuelaText = '#4A148C';
+          colorEscuelaBorder = '#E1BEE7';
+        }
+
+        // Icono de modalidad
+        const iconoMod = modalidad.toLowerCase().includes('online') ? '💻 Online' : (modalidad.toLowerCase().includes('híbr') ? '🔄 Híbrida' : '🏛️ Presencial');
+
+        // Badge de materia
+        const badgeMateriaHtml = materia
+          ? `<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;background:#F1F5F9;color:#334155;padding:3px 9px;border-radius:5px;border:1px solid #CBD5E1;">🏷️ ${materia}</span>`
+          : '';
+
+        // Badge de sesiones
+        const badgeSesionesHtml = `<span style="display:inline-block;margin-left:6px;font-size:11px;font-weight:700;background:#FFFBEB;color:#92400E;padding:3px 9px;border-radius:5px;border:1px solid #FDE68A;">⏱️ ${sesionesTotales} ${sesionesTotales === 1 ? 'sesión' : 'sesiones'}</span>`;
+
+        // Filas de detalles
+        let filasDetalle = `
+          <tr>
+            <td width="20" style="font-size:14px; vertical-align:top; padding:3px 0;">📅</td>
+            <td style="font-size:12px; color:#2c3e50; line-height:1.4; padding:3px 0;">
+              <strong>${textoFechas}</strong> · ${sesionesTotales} ${sesionesTotales === 1 ? 'sesión' : 'sesiones'}
+            </td>
+          </tr>
+        `;
+
+        if (a.HORARIO) {
+          filasDetalle += `
+            <tr>
+              <td width="20" style="font-size:14px; vertical-align:top; padding:3px 0;">⏰</td>
+              <td style="font-size:12px; color:#2c3e50; line-height:1.4; padding:3px 0;">
+                <strong>Horario:</strong> ${esc(a.HORARIO)}
+              </td>
+            </tr>
+          `;
+        }
+
+        if (a.INSTITUCION_ASOCIADA) {
+          filasDetalle += `
+            <tr>
+              <td width="20" style="font-size:14px; vertical-align:top; padding:3px 0;">📍</td>
+              <td style="font-size:12px; color:#2c3e50; line-height:1.4; padding:3px 0;">
+                <strong>Lugar / Institución:</strong> ${esc(a.INSTITUCION_ASOCIADA)}
+              </td>
+            </tr>
+          `;
+        }
+
+        if (a.CUPOS && Number(a.CUPOS) > 0) {
+          filasDetalle += `
+            <tr>
+              <td width="20" style="font-size:14px; vertical-align:top; padding:3px 0;">👥</td>
+              <td style="font-size:12px; color:#2c3e50; line-height:1.4; padding:3px 0;">
+                <strong>Cupos disponibles:</strong> ${esc(a.CUPOS)}
+              </td>
+            </tr>
+          `;
+        }
+
+        filasDetalle += `
+          <tr>
+            <td width="20" style="font-size:14px; vertical-align:top; padding:3px 0;">✔️</td>
+            <td style="font-size:12px; color:#6b7280; line-height:1.4; padding:3px 0;">
+              <strong>Requisitos:</strong> ${requisitos}
+            </td>
+          </tr>
+        `;
+
+        return `
+    <tr>
+      <td style="background:#ffffff;padding:12px 32px 0;border-left:1px solid #e4e1da;border-right:1px solid #e4e1da;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #d1d5db;border-radius:10px;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+          <tr>
+            <td style="padding:16px 18px 14px;">
+              <!-- Fila superior de Badges -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+                <tr>
+                  <td align="left" style="vertical-align:middle;">
+                    <span style="display:inline-block;font-size:11px;font-weight:700;background:${colorEscuelaBg};color:${colorEscuelaText};padding:3px 9px;border-radius:5px;border:1px solid ${colorEscuelaBorder};">${escuela}</span>
+                    ${badgeMateriaHtml}
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="display:inline-block;font-size:11px;font-weight:700;background:#F3F4F6;color:#374151;padding:3px 9px;border-radius:5px;border:1px solid #E5E7EB;">${iconoMod}</span>
+                    ${badgeSesionesHtml}
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Título del Curso -->
+              <div style="margin:6px 0 6px;font-size:16px;font-weight:700;color:#003B70;line-height:1.3;">${nombre}</div>
+              
+              <!-- Descripción -->
+              <p style="margin:0 0 12px;font-size:13px;color:#4b5563;line-height:1.5;">${descripcion}</p>
+              
+              <!-- Tabla de Atributos -->
+              <div style="background:#F8FAFC;padding:10px 12px;border-radius:8px;border:1px solid #E2E8F0;margin-bottom:14px;">
+                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                  ${filasDetalle}
+                </table>
+              </div>
+              
+              <!-- Botón CTA Inscribirme -->
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background:#003B70;border-radius:7px;padding:0;">
+                    <a href="${esc(urlInscripcion)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;font-size:13px;font-weight:700;color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:7px;letter-spacing:0.02em;">Inscribirme &#8594;</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+        `;
+      }).join('');
+    }
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(titulo)}</title>
+</head>
+<body style="margin:0;padding:0;background:#F4F6F9;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F4F6F9;padding:24px 12px;">
+<tr><td align="center">
+
+  <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;margin:0 auto;">
+
+    <!-- Encabezado Institucional -->
+    <tr>
+      <td style="background:#003B70;border-radius:12px 12px 0 0;padding:28px 32px 24px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#E6F1FB;font-weight:700;">Municipalidad de Santiago · DIDEL</p>
+        <h1 style="margin:0 0 6px;font-size:24px;font-weight:700;color:#ffffff;line-height:1.2;">${esc(titulo)}</h1>
+        <p style="margin:0;font-size:13px;color:#E6F1FB;line-height:1.4;">${esc(subtitulo)}</p>
+      </td>
+    </tr>
+
+    <!-- Texto de Bienvenida / Instrucciones -->
+    <tr>
+      <td style="background:#ffffff;padding:20px 32px 14px;border-left:1px solid #e4e1da;border-right:1px solid #e4e1da;">
+        <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">${esc(intro)}</p>
+      </td>
+    </tr>
+
+    <!-- Tarjetas de Cursos -->
+${filasActividadesHtml}
+
+    <!-- Pie de Página Institucional -->
+    <tr>
+      <td style="background:#ffffff;padding:24px 32px;border-left:1px solid #e4e1da;border-right:1px solid #e4e1da;border-bottom:1px solid #e4e1da;border-radius:0 0 12px 12px;text-align:center;">
+        <p style="margin:0 0 4px;font-size:12px;color:#6b7280;border-top:1px solid #e4e1da;padding-top:18px;font-weight:600;">Departamento de Capacitación · Subdirección de Desarrollo Económico Local (DIDEL)</p>
+        <p style="margin:0;font-size:12px;color:#9ca3af;">Municipalidad de Santiago</p>
+      </td>
+    </tr>
+
+  </table>
+
+</td></tr>
+</table>
+
+</body>
+</html>`;
+  }
+
+  function actualizarVistaPreviaCartelera() {
+    const html = generarHtmlCartelera();
+    CARTELERA.htmlGenerado = html;
+
+    const wrapper = document.getElementById('previewEmailIframeWrapper');
+    if (!wrapper) return;
+    wrapper.innerHTML = html;
+  }
+
+  async function copiarHtmlCartelera() {
+    if (!CARTELERA.htmlGenerado) actualizarVistaPreviaCartelera();
+    await copiarTextoPortapapeles_(CARTELERA.htmlGenerado);
+    notificar('✓ Código HTML copiado al portapapeles. Listo para pegar en tu plataforma de correo.');
+  }
+
+  async function copiarDisenoCartelera() {
+    if (!CARTELERA.htmlGenerado) actualizarVistaPreviaCartelera();
+    try {
+      const blobHtml = new Blob([CARTELERA.htmlGenerado], { type: 'text/html' });
+      const blobText = new Blob([CARTELERA.htmlGenerado], { type: 'text/plain' });
+      const data = [new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })];
+      await navigator.clipboard.write(data);
+      notificar('✓ Diseño formateado copiado. Puedes pegarlo directamente (Ctrl+V) en Gmail o Outlook.');
+    } catch (e) {
+      await copiarTextoPortapapeles_(CARTELERA.htmlGenerado);
+      notificar('✓ Código copiado al portapapeles.');
+    }
+  }
+
+  function enviarPruebaCartelera() {
+    if (!CARTELERA.htmlGenerado) actualizarVistaPreviaCartelera();
+    if (CARTELERA.seleccionadas.size === 0) {
+      return notificar('Seleccione al menos una actividad para generar la cartelera.', true);
+    }
+    const titulo = document.getElementById('carteleraTitulo')?.value || 'Cartelera de Capacitaciones';
+    mostrarCarga(true, 'Enviando correo de prueba...');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Correo de prueba enviado con éxito.');
+      })
+      .withFailureHandler(err => {
+        mostrarCarga(false);
+        notificar(err.message || String(err), true);
+      })
+      .enviarPruebaCarteleraCorreo({
+        html: CARTELERA.htmlGenerado,
+        asunto: 'Prueba: ' + titulo
+      });
+  }
+
   function actualizarAreasActividad() {
     const linea = document.getElementById('escuelaLineaActividad')?.value || '';
     const selectorArea = document.getElementById('areaTematicaActividad');
@@ -795,12 +1414,12 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     selectorArea.disabled = opciones.length === 0;
     selectorArea.value = '';
   }
-  function actualizarAreasEdicionActividad(valorActual='') {
+  function actualizarAreasEdicionActividad(valorActual) {
     const linea = document.getElementById('editarEscuelaLinea')?.value || '';
     const selectorArea = document.getElementById('editarAreaTematica');
     if (!selectorArea) return;
+    const actual = valorActual !== undefined ? String(valorActual || '').trim() : String(selectorArea.value || '').trim();
     const opciones = (AREAS_POR_LINEA[linea] || []).slice();
-    const actual = String(valorActual || '').trim();
     if (actual && !opciones.includes(actual)) {
       opciones.unshift(actual);
     }
@@ -809,7 +1428,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         opciones.map(area => `<option value="${esc(area)}">${esc(area)}</option>`).join('')
       : '<option value="">Primero seleccione una escuela o línea...</option>';
     selectorArea.disabled = opciones.length === 0;
-    selectorArea.value = actual && opciones.includes(actual) ? actual : '';
+    selectorArea.value = actual && opciones.includes(actual) ? actual : (opciones.length > 0 ? (opciones.includes(selectorArea.value) ? selectorArea.value : '') : '');
   }
 
   // --- GESTIÓN DE CRONOGRAMA Y SESIONES ---
@@ -824,7 +1443,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const btn = contenedor.querySelector(`[data-dia="${diaNum}"]`);
     if (!btn) return;
     btn.classList.toggle('active');
-    sincronizarHorarioTexto(prefijo);
+    sincronizarHorarioTexto(prefijo, true);
   }
 
   function obtenerDiasSeleccionados(prefijo) {
@@ -834,9 +1453,12 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     return Array.from(btns).map(b => Number(b.dataset.dia)).sort((a, b) => a - b);
   }
 
-  function sincronizarHorarioTexto(prefijo) {
+  function sincronizarHorarioTexto(prefijo, forzar=false) {
     const inputHorario = document.getElementById(`${prefijo}HorarioTexto`);
     if (!inputHorario) return;
+    if (!forzar && inputHorario.value && !inputHorario.dataset.auto) {
+      return;
+    }
     const dias = obtenerDiasSeleccionados(prefijo);
     const hInicio = document.getElementById(`${prefijo}HoraInicio`)?.value || '';
     const hFin = document.getElementById(`${prefijo}HoraFin`)?.value || '';
@@ -858,15 +1480,59 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     else if (hInicio) textoHoras = `desde ${hInicio}`;
 
     const resumen = [textoDias, textoHoras].filter(Boolean).join(' ');
-    if (resumen) inputHorario.value = resumen;
+    if (resumen) {
+      inputHorario.value = resumen;
+      inputHorario.dataset.auto = '1';
+    }
+  }
+
+  function sincronizarFechaInicioFormulario(prefijo) {
+    const fiVal = document.getElementById(`${prefijo}FechaInicio`)?.value;
+    if (!fiVal) return;
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (sesiones.length > 0) {
+      sesiones[0].fecha = fiVal;
+      if (sesiones.length === 1) {
+        const ft = document.getElementById(`${prefijo}FechaTermino`);
+        if (ft && !ft.value) ft.value = fiVal;
+      }
+      renderSesionesProgramadas(prefijo);
+      sincronizarSesionesEnFormulario(prefijo);
+    }
+  }
+
+  function sincronizarFechaTerminoFormulario(prefijo) {
+    const ftVal = document.getElementById(`${prefijo}FechaTermino`)?.value;
+    if (!ftVal) return;
+    const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
+    if (sesiones.length > 0) {
+      if (sesiones.length === 1) {
+        const fi = document.getElementById(`${prefijo}FechaInicio`);
+        if (!fi?.value) {
+          if (fi) fi.value = ftVal;
+          sesiones[0].fecha = ftVal;
+        }
+      } else {
+        sesiones[sesiones.length - 1].fecha = ftVal;
+      }
+      renderSesionesProgramadas(prefijo);
+      sincronizarSesionesEnFormulario(prefijo);
+    }
   }
 
   function sincronizarContadorSesiones(prefijo) {
-    // Si cambia el input de sesiones totales y ya hay sesiones generadas
     const totalSes = parseInt(document.getElementById(`${prefijo}SesionesTotales`)?.value || '1', 10);
     const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
-    if (sesiones.length > 0 && sesiones.length !== totalSes) {
-      // Si el usuario incrementó o redujo, podemos avisarle o invocar generar
+    if (sesiones.length > 0 && totalSes >= 1) {
+      if (totalSes < sesiones.length) {
+        SESIONES_CRONOGRAMA[prefijo] = sesiones.slice(0, totalSes);
+        renderSesionesProgramadas(prefijo);
+        sincronizarSesionesEnFormulario(prefijo);
+        const ft = document.getElementById(`${prefijo}FechaTermino`);
+        if (ft && SESIONES_CRONOGRAMA[prefijo].length > 0) {
+          ft.value = SESIONES_CRONOGRAMA[prefijo][SESIONES_CRONOGRAMA[prefijo].length - 1].fecha || '';
+        }
+      }
     }
   }
 
@@ -919,7 +1585,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
 
     renderSesionesProgramadas(prefijo);
-    sincronizarHorarioTexto(prefijo);
+    sincronizarHorarioTexto(prefijo, true);
     sincronizarSesionesEnFormulario(prefijo);
     notificar(`Se programaron ${sesiones.length} sesiones.`);
   }
@@ -954,6 +1620,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const inputTotales = document.getElementById(`${prefijo}SesionesTotales`);
     if (inputTotales) inputTotales.value = sesiones.length;
 
+    const inputTermino = document.getElementById(`${prefijo}FechaTermino`);
+    if (inputTermino && fechaSugerida) inputTermino.value = fechaSugerida;
+
     renderSesionesProgramadas(prefijo);
     sincronizarSesionesEnFormulario(prefijo);
   }
@@ -968,6 +1637,13 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       const inputTotales = document.getElementById(`${prefijo}SesionesTotales`);
       if (inputTotales && sesiones.length > 0) inputTotales.value = sesiones.length;
 
+      if (sesiones.length > 0) {
+        const fi = document.getElementById(`${prefijo}FechaInicio`);
+        if (fi && sesiones[0].fecha) fi.value = sesiones[0].fecha;
+        const ft = document.getElementById(`${prefijo}FechaTermino`);
+        if (ft && sesiones[sesiones.length - 1].fecha) ft.value = sesiones[sesiones.length - 1].fecha;
+      }
+
       renderSesionesProgramadas(prefijo);
       sincronizarSesionesEnFormulario(prefijo);
     }
@@ -976,6 +1652,14 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   function cambiarFechaSesion(prefijo, index, nuevaFecha) {
     if (SESIONES_CRONOGRAMA[prefijo] && SESIONES_CRONOGRAMA[prefijo][index]) {
       SESIONES_CRONOGRAMA[prefijo][index].fecha = nuevaFecha;
+      if (index === 0) {
+        const fi = document.getElementById(`${prefijo}FechaInicio`);
+        if (fi) fi.value = nuevaFecha;
+      }
+      if (index === SESIONES_CRONOGRAMA[prefijo].length - 1) {
+        const ft = document.getElementById(`${prefijo}FechaTermino`);
+        if (ft) ft.value = nuevaFecha;
+      }
       sincronizarSesionesEnFormulario(prefijo);
     }
   }
@@ -1029,7 +1713,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
 
   function abrirEdicionActividad(idActividad) {
     const actividad = DB.actividades.find(a =>
-      String(a.ID_ACTIVIDAD || '') === String(idActividad || '')
+      String(a.ID_ACTIVIDAD || '').trim() === String(idActividad || '').trim()
     );
     if (!actividad) {
       notificar('No se encontró la actividad seleccionada.', true);
@@ -1072,6 +1756,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     asignarCampoFormulario(form, 'RESPONSABLE', actividad.RESPONSABLE);
     asignarCampoFormulario(form, 'CARPETA_DRIVE', actividad.CARPETA_DRIVE);
     asignarCampoFormulario(form, 'HORARIO', actividad.HORARIO || '');
+    asignarCampoFormulario(form, 'LINK_INSCRIPCION', actividad.LINK_INSCRIPCION || '');
+    asignarCampoFormulario(form, 'REQUISITOS', actividad.REQUISITOS || '');
+    asignarCampoFormulario(form, 'DESCRIPCION_CORTA', actividad.DESCRIPCION_CORTA || '');
     asignarCampoFormulario(form, 'OBSERVACIONES', actividad.OBSERVACIONES);
 
     let sesiones = [];
@@ -1084,6 +1771,11 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     }
     SESIONES_CRONOGRAMA['edit'] = Array.isArray(sesiones) ? [...sesiones] : [];
 
+    const contenedorDias = document.getElementById('editDiasSemana');
+    if (contenedorDias) {
+      contenedorDias.querySelectorAll('.day-toggle-btn').forEach(btn => btn.classList.remove('active'));
+    }
+
     // Cargar horas de la primera sesión si existen
     if (SESIONES_CRONOGRAMA['edit'].length > 0) {
       const s1 = SESIONES_CRONOGRAMA['edit'][0];
@@ -1095,9 +1787,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         const inpHf = document.getElementById('editHoraFin');
         if (inpHf) inpHf.value = s1.horaFin;
       }
-      const contenedorDias = document.getElementById('editDiasSemana');
       if (contenedorDias) {
-        contenedorDias.querySelectorAll('.day-toggle-btn').forEach(btn => btn.classList.remove('active'));
         SESIONES_CRONOGRAMA['edit'].forEach(s => {
           if (s.fecha) {
             const p = s.fecha.split('-');
@@ -1206,9 +1896,14 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         notificar(respuesta.mensaje);
         cerrarEdicionActividad();
         if (respuesta.actividad) {
-          const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === respuesta.id);
-          if (idx >= 0) DB.actividades[idx] = Object.assign({}, DB.actividades[idx], respuesta.actividad);
+          const idx = DB.actividades.findIndex(a => String(a.ID_ACTIVIDAD || '').trim() === String(respuesta.id || '').trim());
+          if (idx >= 0) {
+            DB.actividades[idx] = Object.assign({}, DB.actividades[idx], respuesta.actividad);
+          } else {
+            DB.actividades.unshift(respuesta.actividad);
+          }
           renderActividades();
+          renderCalendario();
           llenarSelectores();
         }
         cargarDatos(true);
@@ -1415,10 +2110,11 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
           renderSesionesProgramadas('reg');
           sincronizarSesionesEnFormulario('reg');
           if (r.actividad) {
-            const idx = DB.actividades.findIndex(a => a.ID_ACTIVIDAD === r.id);
+            const idx = DB.actividades.findIndex(a => String(a.ID_ACTIVIDAD || '').trim() === String(r.id || '').trim());
             if (idx >= 0) DB.actividades[idx] = Object.assign({}, DB.actividades[idx], r.actividad);
             else DB.actividades.unshift(r.actividad);
             renderActividades();
+            renderCalendario();
             llenarSelectores();
           }
         }
@@ -1426,6 +2122,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
           if (r.participacion) {
             DB.participaciones.unshift(r.participacion);
             renderParticipaciones();
+          }
+          if (typeof deseleccionarPersonaReg === 'function') {
+            deseleccionarPersonaReg();
           }
         }
         cargarDatos(true);
@@ -1533,7 +2232,8 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const act = GESTION.actividad || {};
     const regla = act.REGLA_RESULTADO || 'Asistencia';
     const exigencia = Number(act.PORCENTAJE_APROBACION || 0.8);
-    const total = Number(p.SESIONES_TOTALES || act.SESIONES_TOTALES || 1);
+    const total = Number(act.SESIONES_TOTALES || p.SESIONES_TOTALES || 1);
+    p.SESIONES_TOTALES = total;
     const asistidas = Number(p.SESIONES_ASISTIDAS || 0);
     const pct = total > 0 ? asistidas / total : 0;
     p.PORCENTAJE_ASISTENCIA = pct;
@@ -1549,7 +2249,8 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(idParticipacion));
     if (!p) return;
     if (p.ESTADO_SELECCION !== 'Seleccionado') {
-      return notificar('Solo se puede registrar asistencia en personas seleccionadas.', true);
+      p.ESTADO_SELECCION = 'Seleccionado';
+      notificar(`${p.NOMBRE_COMPLETO} pasó a "Seleccionado" y se registró su asistencia.`);
     }
     let asistidas = obtenerSesionesAsistidasParticipacion(p);
     numSesion = Number(numSesion);
@@ -1570,8 +2271,18 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   }
 
   function marcarSesionCompleta(numSesion) {
-    const seleccionados = (GESTION.participaciones || []).filter(p => p.ESTADO_SELECCION === 'Seleccionado');
-    if (!seleccionados.length) return notificar('No hay personas seleccionadas.', true);
+    let seleccionados = (GESTION.participaciones || []).filter(p => p.ESTADO_SELECCION === 'Seleccionado');
+    if (!seleccionados.length) {
+      const visibles = obtenerParticipantesFiltradosGestion();
+      if (!visibles.length) return notificar('No hay personas visibles en la tabla.', true);
+      const confirmacion = confirm(`No hay personas en estado "Seleccionado". ¿Deseas pasar a todos los participantes visibles (${visibles.length}) a "Seleccionado" y registrar su asistencia en la Sesión ${numSesion}?`);
+      if (!confirmacion) return;
+      visibles.forEach(p => {
+        p.ESTADO_SELECCION = 'Seleccionado';
+        GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
+      });
+      seleccionados = visibles;
+    }
     numSesion = Number(numSesion);
 
     const todosMarcados = seleccionados.every(p => {
@@ -1596,7 +2307,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
 
     actualizarKpisGestion();
     renderGestion(false);
-    notificar(nuevoEstado ? `Sesión ${numSesion} marcada para todos los seleccionados.` : `Sesión ${numSesion} desmarcada.`);
+    notificar(nuevoEstado ? `Sesión ${numSesion} marcada para todos (${seleccionados.length} personas).` : `Sesión ${numSesion} desmarcada.`);
   }
 
   function renderHeaderGestion_(sesionesActividad) {
@@ -1629,7 +2340,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         </th>
         <th class="col-persona">Persona</th>
         <th class="col-doc">Documento</th>
-        <th class="col-edad th-center">Edad</th>
+        <th class="col-telefono th-center">Teléfono</th>
         <th class="col-pmjh th-center">PMJH</th>
         <th class="col-requisitos">Cumple requisitos</th>
         <th class="col-seleccion">Selección</th>
@@ -1755,12 +2466,171 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   }
 
   function actualizarKpisGestion() {
+    if (!GESTION) return;
+    const parts = GESTION.participaciones || [];
+    const act = GESTION.actividad || {};
     const r = GESTION.resumen || {};
-    texto('gInscritos', r.inscritos || 0);
-    texto('gSeleccionados', r.seleccionados || 0);
-    texto('gConfirmados', r.confirmados || 0);
-    texto('gAsistentes', r.asistentes || 0);
-    texto('gAprobados', r.aprobados || 0);
+    const cupos = Number(act.CUPOS || r.cupos || 0);
+
+    const seleccionados = parts.filter(p => (p.ESTADO_SELECCION || '').toLowerCase() === 'seleccionado');
+    const confirmados = seleccionados.filter(p => {
+      const c = (p.CONFIRMA_PARTICIPACION || '').toLowerCase();
+      return c === 'sí' || c === 'si';
+    });
+    const asistentes = seleccionados.filter(p => Number(p.SESIONES_ASISTIDAS || 0) > 0);
+    const aprobados = seleccionados.filter(p => (p.RESULTADO_FINAL || '').toLowerCase() === 'aprobado');
+    const vacantes = cupos > 0 ? Math.max(0, cupos - seleccionados.length) : 'Sin límite';
+
+    texto('gInscritos', parts.length);
+    texto('gCupos', cupos > 0 ? cupos : 'Sin límite');
+    texto('gSeleccionados', seleccionados.length);
+    texto('gVacantes', vacantes);
+    texto('gConfirmados', confirmados.length);
+    texto('gAsistentes', asistentes.length);
+    texto('gAprobados', aprobados.length);
+  }
+
+  function alternarFiltroPorLlamar() {
+    const selEl = document.getElementById('filtroGestionSeleccion');
+    const btn = document.getElementById('btnFiltroPorLlamar');
+    if (!selEl) return;
+    if (selEl.value === 'Pendiente') {
+      selEl.value = '';
+      if (btn) {
+        btn.style.background = '#0284c7';
+        btn.innerText = '📞 Postulantes por llamar';
+      }
+    } else {
+      selEl.value = 'Pendiente';
+      if (btn) {
+        btn.style.background = '#0369a1';
+        btn.innerText = '✓ Viendo por llamar';
+      }
+    }
+    renderGestion();
+  }
+
+  function actualizarEstadoBotonPorLlamar() {
+    const selEl = document.getElementById('filtroGestionSeleccion');
+    const btn = document.getElementById('btnFiltroPorLlamar');
+    if (!selEl || !btn) return;
+    if (selEl.value === 'Pendiente') {
+      btn.style.background = '#0369a1';
+      btn.innerText = '✓ Viendo por llamar';
+    } else {
+      btn.style.background = '#0284c7';
+      btn.innerText = '📞 Postulantes por llamar';
+    }
+  }
+
+  function depurarDuplicadosGestion() {
+    const idActividad = document.getElementById('gestionActividad').value;
+    if (!idActividad) {
+      notificar('Debe seleccionar una actividad.', true);
+      return;
+    }
+    mostrarCarga(true, 'Depurando y unificando participantes duplicados...');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Depuración completada.');
+        cargarGestionActividad();
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .depurarDuplicadosActividadWeb(idActividad);
+  }
+
+  function obtenerParticipantesFiltradosGestion() {
+    const q = normalizar(document.getElementById('buscarGestion')?.value || '');
+    const filtroSeleccion = document.getElementById('filtroGestionSeleccion')?.value || '';
+    const filtroConfirmacion = document.getElementById('filtroGestionConfirmacion')?.value || '';
+    const filtroCertificado = document.getElementById('filtroGestionCertificado')?.value || '';
+    const filtroResultado = document.getElementById('filtroGestionResultado')?.value || '';
+    const filtroRequisitos = document.getElementById('filtroGestionRequisitos')?.value || '';
+    const filtroPmjh = document.getElementById('filtroGestionPmjh')?.value || '';
+
+    return (GESTION.participaciones || []).filter(p => {
+      // 1. Buscador de texto general
+      if (q) {
+        const textoFila = normalizar([
+          p.NOMBRE_COMPLETO,
+          p.RUT,
+          p.DOCUMENTO,
+          p.TELEFONO,
+          p.EDAD,
+          p.CORREO,
+          p.PARTICIPA_PMJH,
+          p.OBSERVACIONES
+        ].join(' '));
+        if (!textoFila.includes(q)) return false;
+      }
+
+      // 2. Filtro Selección
+      if (filtroSeleccion) {
+        const sel = p.ESTADO_SELECCION || 'Pendiente';
+        if (sel !== filtroSeleccion) return false;
+      }
+
+      // 3. Filtro Confirmación
+      if (filtroConfirmacion) {
+        const conf = p.CONFIRMA_PARTICIPACION || 'No informado';
+        if (conf !== filtroConfirmacion) return false;
+      }
+
+      // 4. Filtro Certificado
+      if (filtroCertificado) {
+        const cert = p.CERTIFICADO || 'No informado';
+        if (cert !== filtroCertificado) return false;
+      }
+
+      // 5. Filtro Resultado / Aprobación
+      if (filtroResultado) {
+        const res = p.RESULTADO_FINAL || 'Pendiente';
+        if (filtroResultado === 'Aprobado') {
+          if (res !== 'Aprobado' && res !== 'Participó') return false;
+        } else if (filtroResultado === 'Desaprobado') {
+          if (res !== 'Desaprobado' && res !== 'No participó') return false;
+        } else if (res !== filtroResultado) {
+          return false;
+        }
+      }
+
+      // 6. Filtro Requisitos
+      if (filtroRequisitos) {
+        const req = p.CUMPLE_REQUISITOS || 'Pendiente';
+        if (req !== filtroRequisitos) return false;
+      }
+
+      // 7. Filtro PMJH
+      if (filtroPmjh) {
+        const pmjh = p.PARTICIPA_PMJH || 'No informado';
+        if (filtroPmjh === 'Sí' && pmjh !== 'Sí') return false;
+        if (filtroPmjh === 'No' && pmjh !== 'No') return false;
+      }
+
+      return true;
+    });
+  }
+
+  function limpiarFiltrosGestion() {
+    const ids = [
+      'buscarGestion',
+      'filtroGestionSeleccion',
+      'filtroGestionConfirmacion',
+      'filtroGestionCertificado',
+      'filtroGestionResultado',
+      'filtroGestionRequisitos',
+      'filtroGestionPmjh'
+    ];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    actualizarEstadoBotonPorLlamar();
+    renderGestion(false);
   }
 
   function renderGestion(sincronizarAntes = true) {
@@ -1771,19 +2641,30 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     renderHeaderGestion_(sesionesActividad);
 
     const tbody = document.getElementById('tablaGestion');
-    const q = normalizar(document.getElementById('buscarGestion')?.value || '');
-    const filtro = document.getElementById('filtroGestionSeleccion')?.value || '';
-    const filas = (GESTION.participaciones || []).filter(p =>
-      normalizar([p.NOMBRE_COMPLETO,p.RUT,p.DOCUMENTO,p.EDAD,p.CORREO,p.PARTICIPA_PMJH].join(' ')).includes(q) &&
-      (!filtro || p.ESTADO_SELECCION === filtro)
-    );
+    const filas = obtenerParticipantesFiltradosGestion();
+    const totalRegistrados = (GESTION.participaciones || []).length;
+
+    // Actualizar indicador de contador de filtrados
+    const contadorEl = document.getElementById('contadorGestionFiltrados');
+    if (contadorEl) {
+      if (totalRegistrados === 0) {
+        contadorEl.textContent = '';
+      } else if (filas.length === totalRegistrados) {
+        contadorEl.textContent = `${totalRegistrados} participante(s)`;
+      } else {
+        contadorEl.textContent = `Mostrando ${filas.length} de ${totalRegistrados} participantes`;
+      }
+    }
 
     const colSpanTotal = 13 + (GESTION_MODO_VISTA === 'sesiones' ? sesionesActividad.length : 0);
 
     if (!filas.length) {
-      tbody.innerHTML = `<tr><td colspan="${colSpanTotal}" class="empty-state">${
-        GESTION.actividad ? 'No hay participantes que coincidan con el filtro.' : 'Seleccione una actividad para comenzar.'
-      }</td></tr>`;
+      const mensajeVacio = GESTION.actividad
+        ? ((GESTION.participaciones && GESTION.participaciones.length > 0)
+          ? 'No hay participantes que coincidan con los filtros seleccionados.<br><button type="button" class="btn secondary compact" onclick="limpiarFiltrosGestion()" style="margin-top:8px">✕ Quitar filtros</button>'
+          : 'No hay participantes registrados para esta capacitación.<br><small style="color:var(--text-muted);margin-top:6px;display:inline-block">Si vinculaste un formulario de Google, ve a la sección <strong>Formularios</strong> y haz clic en <strong>⚡ Reprocesar</strong>.</small>')
+        : 'Seleccione una actividad para comenzar.';
+      tbody.innerHTML = `<tr><td colspan="${colSpanTotal}" class="empty-state">${mensajeVacio}</td></tr>`;
       actualizarCheckPrincipalGestion();
       return;
     }
@@ -1804,7 +2685,8 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       const pmjh = p.PARTICIPA_PMJH || 'No informado';
       const pmjhBadge = pmjh === 'Sí' ? 'badge success' : (pmjh === 'No' ? 'badge neutral' : 'badge neutral');
 
-      const totalSes = Number(p.SESIONES_TOTALES || GESTION.actividad?.SESIONES_TOTALES || 1);
+      const totalSes = Number(GESTION.actividad?.SESIONES_TOTALES || p.SESIONES_TOTALES || 1);
+      p.SESIONES_TOTALES = totalSes;
       const asistidasNums = obtenerSesionesAsistidasParticipacion(p);
       const totalAsistidas = asistidasNums.length;
 
@@ -1817,9 +2699,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
             <td class="col-sesion td-center">
               <button
                 type="button"
-                class="sesion-toggle-pill ${presente ? 'presente' : ''} ${deshabilitado ? 'disabled' : ''}"
+                class="sesion-toggle-pill ${presente ? 'presente' : ''} ${deshabilitado ? 'pendiente-toggle' : ''}"
                 onclick="alternarAsistenciaSesion('${esc(id)}', ${s.numero})"
-                title="Sesión ${s.numero}${s.fecha ? ' (' + fechaActividadCorta(s.fecha) + ')' : ''}: ${presente ? 'Presente' : 'Ausente'}"
+                title="${deshabilitado ? 'Actualmente en Pendiente. Haz clic para pasarlo a Seleccionado y marcar asistencia en ' : ''}Sesión ${s.numero}${s.fecha ? ' (' + fechaActividadCorta(s.fecha) + ')' : ''}: ${presente ? 'Presente' : 'Ausente'}"
               >
                 ${presente ? '✓' : '—'}
               </button>
@@ -1838,18 +2720,34 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
              <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" title="Ver desglose por sesión">📋</button>
            </div>`;
 
+      const tel = String(p.TELEFONO || '').trim();
+      const telLimpio = tel.replace(/[^0-9+]/g, '');
+      let wpHtml = '';
+      const soloDigitos = tel.replace(/\D/g, '');
+      if (soloDigitos.length >= 8) {
+        const numWp = soloDigitos.length === 9 && soloDigitos.startsWith('9')
+          ? '56' + soloDigitos
+          : (soloDigitos.startsWith('569') ? soloDigitos : (soloDigitos.length === 8 ? '569' + soloDigitos : ''));
+        if (numWp) {
+          wpHtml = `<a href="https://wa.me/${numWp}" target="_blank" class="wp-link" title="Abrir chat de WhatsApp con ${esc(p.NOMBRE_COMPLETO)}">💬</a>`;
+        }
+      }
+      const telHtml = tel
+        ? `<div style="display:inline-flex;align-items:center;justify-content:center"><a href="tel:${esc(telLimpio)}" class="tel-link" title="Llamar a ${esc(p.NOMBRE_COMPLETO)}">📞 ${esc(tel)}</a>${wpHtml}</div>`
+        : `<span class="muted">—</span>`;
+
       return `<tr data-idx="${idx}" data-id="${esc(id)}">
         <td class="col-check td-center"><input type="checkbox" class="gestion-check" data-id="${esc(id)}" ${marcado} onchange="cambiarSeleccionGestion(this)"></td>
         <td class="col-persona nombre"><strong>${esc(p.NOMBRE_COMPLETO)}</strong><small>${esc(p.CORREO || 'Sin correo')}</small></td>
         <td class="col-doc">${esc(p.DOCUMENTO || p.RUT || '—')}</td>
-        <td class="col-edad td-center">${esc(edadVisible(p.EDAD))}</td>
+        <td class="col-telefono td-center">${telHtml}</td>
         <td class="col-pmjh td-center"><span class="${pmjhBadge}">${esc(pmjh)}</span></td>
         <td class="col-requisitos">${selectGestion('CUMPLE_REQUISITOS', p.CUMPLE_REQUISITOS, ['Pendiente','Sí','No','No informado'])}</td>
         <td class="col-seleccion">${selectGestion('ESTADO_SELECCION', p.ESTADO_SELECCION, ['Pendiente','Seleccionado','Lista de espera','No seleccionado','No informado'])}</td>
         <td class="col-confirma">${selectGestion('CONFIRMA_PARTICIPACION', p.CONFIRMA_PARTICIPACION, ['No informado','Sí','No'])}</td>
         ${celdasSesionesHtml}
         <td class="col-asistidas td-center">${campoAsistidasHtml}</td>
-        <td class="col-total td-center"><input data-campo="SESIONES_TOTALES" type="number" min="1" value="${esc(numeroPlano(p.SESIONES_TOTALES, GESTION.actividad?.SESIONES_TOTALES || 1))}" onchange="registrarCambioGestion(this)"></td>
+        <td class="col-total td-center"><span class="badge neutral" style="font-weight:700;font-size:12px;padding:3px 8px" title="Sesiones totales de la capacitación">${totalSes}</span></td>
         <td class="col-resultado td-center"><span class="badge ${badgeClase}">${esc(resultado)}</span></td>
         <td class="col-cert">${selectGestion('CERTIFICADO', p.CERTIFICADO, ['No informado','Sí','No','No aplica'])}</td>
         <td class="col-obs"><input class="obs" data-campo="OBSERVACIONES" placeholder="Observación..." value="${esc(p.OBSERVACIONES || '')}" onchange="registrarCambioGestion(this)"></td>
@@ -2107,9 +3005,12 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         <td>${esc(r.revision || 0)}</td>
         <td>${detalle}</td>
         <td>
-          <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="cargarCasosRevision(this.dataset.id)" ${(r.revision || 0) ? '' : 'disabled'}>Ver casos (${esc(r.revision || 0)})</button>
-          <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="repararYRecuperarFormularioWeb(this.dataset.id)" ${activo ? '' : 'disabled'}>Reparar y recuperar</button>
-          <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" data-activo="${activo ? '0' : '1'}" onclick="cambiarEstadoFormularioWeb(this.dataset.id,this.dataset.activo)">${activo ? 'Desactivar' : 'Activar'}</button>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+            <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="repararYRecuperarFormularioWeb(this.dataset.id)" title="Reprocesar e inscribir todas las respuestas de la planilla">⚡ Reprocesar</button>
+            <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="cargarCasosRevision(this.dataset.id)" ${(r.revision || 0) ? '' : 'disabled'}>Casos (${esc(r.revision || 0)})</button>
+            <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" data-activo="${activo ? '0' : '1'}" onclick="cambiarEstadoFormularioWeb(this.dataset.id,this.dataset.activo)">${activo ? 'Desactivar' : 'Activar'}</button>
+            <button class="btn secondary compact danger" type="button" data-id="${esc(f.idConfig)}" data-nombre="${esc(f.actividad)}" onclick="eliminarFormularioWeb(this.dataset.id,this.dataset.nombre)" title="Eliminar vinculación duplicada o no deseada">✕ Desvincular</button>
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -2200,6 +3101,24 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       })
       .cambiarEstadoFormularioVinculado(idConfig, activar === '1');
   }
+  function eliminarFormularioWeb(idConfig, nombreActividad) {
+    const nombre = nombreActividad ? ` de "${nombreActividad}"` : '';
+    if (!confirm(`¿Está seguro de que desea desvincular y eliminar este formulario${nombre}?\n\nEsta acción quitará la fila de la lista y no afectará a las personas ya inscritas.`)) {
+      return;
+    }
+    mostrarCarga(true, 'Eliminando vinculación…');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Vinculación eliminada.');
+        cargarFormularios(true);
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .eliminarFormularioVinculado(idConfig);
+  }
   function reprocesarFormulario(idConfig) {
     mostrarCarga(true);
     google.script.run
@@ -2227,6 +3146,23 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         notificar(error.message || String(error), true);
       })
       .repararYRecuperarFormulario(idConfig);
+  }
+  function reprocesarTodosCasosRevisionWeb() {
+    if (!CONFIG_REVISION_ACTIVA) return;
+    if (!confirm('¿Desea reprocesar todas las respuestas pendientes de revisión de este formulario?')) return;
+    mostrarCarga(true, 'Reprocesando respuestas…');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Respuestas reprocesadas.');
+        cargarCasosRevision(CONFIG_REVISION_ACTIVA);
+        cargarFormularios(true);
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .reprocesarRevisionesFormulario(CONFIG_REVISION_ACTIVA);
   }
   function cargarCasosRevision(idConfig) {
     CONFIG_REVISION_ACTIVA = String(idConfig || '');
@@ -2335,11 +3271,18 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     if (panel) panel.hidden = true;
   }
   function fechaInput(valor) {
+    if (!valor) return '';
     const s = String(valor || '').trim();
     if (!s) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    const m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-    return m ? `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}` : '';
+    let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      return formatoClaveFecha(d);
+    }
+    return '';
   }
   function numeroPlano(valor, defecto=0) {
     const n = Number(String(valor ?? '').replace(',','.'));
@@ -2468,21 +3411,45 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const visibles = filas.slice(inicio, inicio + TAMANO_PAGINA_ASISTENCIAS);
     texto('paginaAsistenciasInfo', `${filas.length ? inicio + 1 : 0}–${Math.min(inicio + TAMANO_PAGINA_ASISTENCIAS, filas.length)} de ${filas.length}`);
     document.getElementById('tablaReporteAsistencias').innerHTML = visibles.length ? visibles.map(f => {
-      let detalleAsis = esc(f.SESIONES_ASISTIDAS);
-      if (f.ASISTENCIA_SESIONES) {
-        try {
-          const arr = typeof f.ASISTENCIA_SESIONES === 'string' ? JSON.parse(f.ASISTENCIA_SESIONES) : f.ASISTENCIA_SESIONES;
-          if (Array.isArray(arr) && arr.length > 0) {
-            detalleAsis = `<strong>${f.SESIONES_ASISTIDAS}</strong> <small class="muted" style="display:block;font-size:10.5px">(S${arr.join(', S')})</small>`;
-          }
-        } catch(e){}
+      const asistidasNums = f.SESIONES_ASISTIDAS_ARRAY || [];
+      const totalSes = Number(f.SESIONES_TOTALES || 1);
+
+      let pillsSesionesHtml = '';
+      if (totalSes > 1) {
+        pillsSesionesHtml = '<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px">';
+        for (let s = 1; s <= totalSes; s++) {
+          const estuvo = asistidasNums.includes(s);
+          pillsSesionesHtml += `<span class="badge ${estuvo ? 'success' : 'neutral'}" style="font-size:10px;padding:2px 5px" title="${estuvo ? 'Presente en Sesión ' + s : 'Ausente en Sesión ' + s}">S${s} ${estuvo ? '✓' : '✗'}</span>`;
+        }
+        pillsSesionesHtml += '</div>';
+      } else if (asistidasNums.length > 0) {
+        pillsSesionesHtml = '<div style="margin-top:2px"><span class="badge success" style="font-size:10px;padding:2px 5px">Sesión 1 ✓</span></div>';
       }
+
+      const detalleTexto = esc(f.SESIONES_DETALLE_TEXTO || '');
+
       return `<tr>
-        <td><strong>${esc(f.NOMBRE_COMPLETO)}</strong></td><td>${esc(f.DOCUMENTO)}</td><td>${esc(f.CORREO)}</td><td>${esc(f.TELEFONO)}</td>
-        <td>${esc(f.COMUNA)}</td><td><span class="badge">${esc(f.PARTICIPA_PMJH)}</span></td><td><strong>${esc(f.NOMBRE_ACTIVIDAD)}</strong><br><span class="muted">${esc(f.ID_ACTIVIDAD)}</span></td>
-        <td>${esc(f.ANO)}</td><td>${esc(f.ESCUELA_LINEA)}<br><span class="muted">${esc(f.AREA_TEMATICA)}</span></td><td>${esc(f.INSTITUCION_ASOCIADA)}</td>
-        <td>${esc(f.ESTADO_SELECCION)}</td><td>${detalleAsis}</td><td>${esc(f.SESIONES_TOTALES)}</td><td>${esc(formatoPorcentaje(f.PORCENTAJE_ASISTENCIA || 0))}</td>
-        <td><span class="badge">${esc(f.RESULTADO_FINAL || f.RESULTADO_ASISTENCIA || 'Pendiente')}</span></td><td>${esc(f.CERTIFICADO)}</td><td>${esc(f.ULTIMA_ACTUALIZACION)}</td>
+        <td><strong>${esc(f.NOMBRE_COMPLETO)}</strong></td>
+        <td>${esc(f.DOCUMENTO)}</td>
+        <td>${esc(f.CORREO)}</td>
+        <td>${esc(f.TELEFONO)}</td>
+        <td>${esc(f.COMUNA)}</td>
+        <td><span class="badge">${esc(f.PARTICIPA_PMJH)}</span></td>
+        <td><strong>${esc(f.NOMBRE_ACTIVIDAD)}</strong><br><span class="muted">${esc(f.ID_ACTIVIDAD)}</span></td>
+        <td>${esc(f.ANO)}</td>
+        <td>${esc(f.ESCUELA_LINEA)}<br><span class="muted">${esc(f.AREA_TEMATICA)}</span></td>
+        <td>${esc(f.INSTITUCION_ASOCIADA)}</td>
+        <td><span class="badge">${esc(f.ESTADO_SELECCION)}</span></td>
+        <td>
+          <strong>${esc(f.SESIONES_ASISTIDAS)} / ${esc(f.SESIONES_TOTALES)}</strong>
+          ${pillsSesionesHtml}
+          ${detalleTexto ? `<div class="muted" style="font-size:10.5px;margin-top:2px">${detalleTexto}</div>` : ''}
+        </td>
+        <td>${esc(f.SESIONES_TOTALES)}</td>
+        <td><strong>${esc(formatoPorcentaje(f.PORCENTAJE_ASISTENCIA || 0))}</strong></td>
+        <td><span class="badge ${f.RESULTADO_FINAL === 'Aprobado' || f.RESULTADO_FINAL === 'Participó' ? 'success' : (f.RESULTADO_FINAL === 'Desaprobado' || f.RESULTADO_FINAL === 'No participó' ? 'danger' : 'warning')}">${esc(f.RESULTADO_FINAL || f.RESULTADO_ASISTENCIA || 'Pendiente')}</span></td>
+        <td>${esc(f.CERTIFICADO)}</td>
+        <td>${esc(f.ULTIMA_ACTUALIZACION)}</td>
       </tr>`;
     }).join('') : '<tr><td colspan="17" class="empty-state">No se encontraron registros para los filtros seleccionados.</td></tr>';
   }
@@ -2507,27 +3474,75 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       notificar('No hay registros para descargar.', true);
       return;
     }
+
+    const maxSesiones = Number(REPORTE_ASISTENCIAS?.maxSesionesTotales || 1);
+
+    // Campos base
     const campos = [
-      ['ID participación','ID_PARTICIPACION'], ['ID persona','ID_PERSONA'], ['Nombre completo','NOMBRE_COMPLETO'],
-      ['Documento','DOCUMENTO'], ['Correo','CORREO'], ['Teléfono','TELEFONO'], ['Comuna','COMUNA'], ['PMJH','PARTICIPA_PMJH'],
-      ['ID actividad','ID_ACTIVIDAD'], ['Capacitación','NOMBRE_ACTIVIDAD'], ['Año','ANO'], ['Escuela / línea','ESCUELA_LINEA'],
-      ['Área temática','AREA_TEMATICA'], ['Institución','INSTITUCION_ASOCIADA'], ['Modalidad','MODALIDAD'],
-      ['Estado selección','ESTADO_SELECCION'], ['Sesiones asistidas','SESIONES_ASISTIDAS'], ['Sesiones totales','SESIONES_TOTALES'],
-      ['Porcentaje asistencia','PORCENTAJE_ASISTENCIA'], ['Resultado asistencia','RESULTADO_ASISTENCIA'], ['Resultado final','RESULTADO_FINAL'],
-      ['Certificado','CERTIFICADO'], ['Última actualización','ULTIMA_ACTUALIZACION']
+      ['ID participación', 'ID_PARTICIPACION'],
+      ['ID persona', 'ID_PERSONA'],
+      ['Nombre completo', 'NOMBRE_COMPLETO'],
+      ['Documento', 'DOCUMENTO'],
+      ['Correo', 'CORREO'],
+      ['Teléfono', 'TELEFONO'],
+      ['Comuna', 'COMUNA'],
+      ['PMJH', 'PARTICIPA_PMJH'],
+      ['ID actividad', 'ID_ACTIVIDAD'],
+      ['Capacitación', 'NOMBRE_ACTIVIDAD'],
+      ['Año', 'ANO'],
+      ['Escuela / línea', 'ESCUELA_LINEA'],
+      ['Área temática', 'AREA_TEMATICA'],
+      ['Institución', 'INSTITUCION_ASOCIADA'],
+      ['Modalidad', 'MODALIDAD'],
+      ['Estado selección', 'ESTADO_SELECCION'],
+      ['Sesiones asistidas', 'SESIONES_ASISTIDAS'],
+      ['Sesiones totales', 'SESIONES_TOTALES'],
+      ['Detalle sesiones asistidas', 'SESIONES_DETALLE_TEXTO']
     ];
+
+    // Columnas individuales por cada sesión
+    for (let s = 1; s <= maxSesiones; s++) {
+      campos.push([`Sesión ${s}`, `_SESION_${s}`]);
+    }
+
+    campos.push(
+      ['Porcentaje asistencia', 'PORCENTAJE_ASISTENCIA'],
+      ['Resultado asistencia', 'RESULTADO_ASISTENCIA'],
+      ['Resultado final', 'RESULTADO_FINAL'],
+      ['Certificado', 'CERTIFICADO'],
+      ['Última actualización', 'ULTIMA_ACTUALIZACION']
+    );
+
     const celda = valor => {
       let contenido = String(valor ?? '');
       if (/^[=+\-@]/.test(contenido)) contenido = "'" + contenido;
       return `"${contenido.replace(/"/g, '""')}"`;
     };
-    const lineas = [campos.map(c => celda(c[0])).join(';')].concat(filas.map(f => campos.map(c => {
-      const valor = c[1] === 'PORCENTAJE_ASISTENCIA' ? formatoPorcentaje(f[c[1]] || 0) : f[c[1]];
-      return celda(valor);
-    }).join(';')));
+
+    const lineas = [campos.map(c => celda(c[0])).join(';')].concat(filas.map(f => {
+      const asistidasNums = f.SESIONES_ASISTIDAS_ARRAY || [];
+      const totalSes = Number(f.SESIONES_TOTALES || 1);
+
+      return campos.map(c => {
+        const campo = c[1];
+        if (campo.startsWith('_SESION_')) {
+          const numSesion = parseInt(campo.replace('_SESION_', ''), 10);
+          if (numSesion > totalSes) return celda('No aplica');
+          return celda(asistidasNums.includes(numSesion) ? 'Presente' : 'Ausente');
+        }
+        if (campo === 'PORCENTAJE_ASISTENCIA') {
+          return celda(formatoPorcentaje(f[campo] || 0));
+        }
+        return celda(f[campo]);
+      }).join(';');
+    }));
+
+    const nombreAct = REPORTE_ASISTENCIAS?.filas?.[0]?.NOMBRE_ACTIVIDAD
+      ? `_${normalizar(REPORTE_ASISTENCIAS.filas[0].NOMBRE_ACTIVIDAD).replace(/[^a-z0-9]/gi, '_')}`
+      : '';
     const enlace = document.createElement('a');
     enlace.href = URL.createObjectURL(new Blob(['\ufeff' + lineas.join('\r\n')], {type:'text/csv;charset=utf-8'}));
-    enlace.download = `listado_asistencias_${new Date().toISOString().slice(0,10)}.csv`;
+    enlace.download = `nomina_asistencias${nombreAct}_${new Date().toISOString().slice(0,10)}.csv`;
     enlace.click();
     URL.revokeObjectURL(enlace.href);
   }
