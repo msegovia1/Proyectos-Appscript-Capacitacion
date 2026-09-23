@@ -96,6 +96,7 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
         SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO,
         false
       );
+      sigcInvalidarCache_();
       return {
         ok: true,
         actualizado: true,
@@ -117,6 +118,7 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
     SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO,
     false
   );
+  sigcInvalidarCache_();
   return {
     ok: true,
     actualizado: false,
@@ -802,6 +804,38 @@ function crearFormularioRegistroInteresesDesdeWeb() {
   }
 }
 
+function eliminarFormularioVinculado(idConfig) {
+  prepararConfigFormularios();
+  const central = sigcSpreadsheetCentral_();
+  const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+  if (!hojaConfig || hojaConfig.getLastRow() < 2) throw new Error('No hay vinculaciones registradas.');
+  const datos = hojaConfig.getDataRange().getValues();
+  const mapa = mapaEncabezados_(datos[0]);
+  let filaEliminar = -1;
+  let spreadsheetId = '';
+  for (let i = 1; i < datos.length; i++) {
+    if (String(datos[i][mapa['ID CONFIG']]) === String(idConfig)) {
+      filaEliminar = i + 1;
+      spreadsheetId = String(datos[i][mapa['SPREADSHEET RESPUESTAS ID']] || '').trim();
+      break;
+    }
+  }
+  if (filaEliminar < 2) throw new Error('No se encontró la vinculación para eliminar.');
+  hojaConfig.deleteRow(filaEliminar);
+  if (spreadsheetId) {
+    try {
+      eliminarTriggerFormularioVinculadoSiNoSeUsa_(spreadsheetId);
+    } catch (e) {
+      console.warn('Error al verificar activador tras eliminar vinculación: ' + e.message);
+    }
+  }
+  sigcInvalidarCache_();
+  return {
+    ok: true,
+    mensaje: 'Vinculación eliminada del sistema correctamente.'
+  };
+}
+
 function cambiarEstadoFormularioVinculado(idConfig, activar) {
   prepararConfigFormularios();
   const hoja = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.FORMULARIOS);
@@ -813,113 +847,422 @@ function cambiarEstadoFormularioVinculado(idConfig, activar) {
     if (activar) instalarTriggerFormularioVinculado_(spreadsheetId);
     hoja.getRange(i + 1, mapa['ESTADO'] + 1).setValue(activar ? 'Activo' : 'Inactivo');
     if (!activar) eliminarTriggerFormularioVinculadoSiNoSeUsa_(spreadsheetId);
+    sigcInvalidarCache_();
     return {ok: true, mensaje: activar ? 'Formulario activado.' : 'Formulario desactivado.'};
   }
   throw new Error('No se encontró la vinculación indicada.');
 }
 
 /**
- * Repara el activador de una vinculación activa y recupera respuestas que
- * todavía no tienen estado técnico. Los casos REVISION no se modifican.
+ * Repara el activador de una vinculación y recupera/reprocesa todas las respuestas.
  */
 function repararYRecuperarFormulario(idConfig) {
   const origen = resolverConfigFormularioPorId_(idConfig);
-  if (normalizarEncabezado_(origen.estado) !== 'ACTIVO') {
-    throw new Error('Active primero la vinculación antes de repararla.');
+  let activador = {operativo: false};
+  try {
+    activador = instalarTriggerFormularioVinculado_(origen.spreadsheetId);
+  } catch (eTrig) {
+    console.warn('Activador no instalado: ' + eTrig.message);
   }
-  const activador = instalarTriggerFormularioVinculado_(origen.spreadsheetId);
   const recuperacion = procesarPendientesFormularioVinculado_(
     origen.spreadsheetId,
     origen.hoja,
     origen.idActividad,
-    SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO,
-    false,
+    Math.max(250, SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO || 100),
+    true,
     origen.tipo
   );
+  sigcInvalidarCache_();
   return {
     ok: true,
     activador: activador,
     recuperacion: recuperacion,
-    mensaje: 'Automatización verificada. Se revisaron ' + recuperacion.intentadas +
-      ' respuesta(s) pendiente(s): ' + recuperacion.resueltas + ' procesada(s) y ' +
-      recuperacion.revision + ' enviada(s) a revisión.'
+    mensaje: 'Procesamiento completado: ' + recuperacion.resueltas +
+      ' respuesta(s) procesada(s) correctamente, ' + recuperacion.revision +
+      ' en revisión de ' + recuperacion.intentadas + ' revisadas.'
   };
 }
 
-/** Procesa pendientes de una única pestaña con un límite seguro por ejecución. */
+/** Procesa pendientes de una única pestaña con un motor masivo en memoria ultrarrápido. */
 function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, idActividad, limite, incluirRevisiones, tipoFormulario) {
-  const hoja = SpreadsheetApp.openById(spreadsheetId).getSheetByName(hojaRespuestas);
+  const ssResp = SpreadsheetApp.openById(spreadsheetId);
+  const hoja = ssResp.getSheetByName(hojaRespuestas);
   if (!hoja) throw new Error('No se encontró la hoja de respuestas vinculada.');
   asegurarColumnasProceso_(hoja);
   if (hoja.getLastRow() < 2) return {intentadas: 0, resueltas: 0, revision: 0, restantes: 0};
-  const valores = hoja.getDataRange().getValues();
-  const mapa = mapaEncabezados_(valores[0]);
-  const colEstado = mapa['ESTADO PROCESO'];
-  const maximo = Math.max(1, Number(limite || 100));
-  let intentadas = 0;
-  let resueltas = 0;
-  let revision = 0;
-  let restantes = 0;
-  for (let i = 1; i < valores.length; i++) {
-    const estado = normalizarEncabezado_(colEstado === undefined ? '' : valores[i][colEstado]);
-    const esPendiente = estado === '';
-    const esRevision = incluirRevisiones && (estado === 'REVISION' || estado === 'ERROR');
-    if (!esPendiente && !esRevision) continue;
-    if (intentadas >= maximo) {
-      restantes++;
-      continue;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const central = sigcSpreadsheetCentral_();
+    const hojaPersonas = central.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+    const hojaPart = central.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+
+    // 1. Cargar datos de la hoja de respuestas
+    const valoresHoja = hoja.getDataRange().getValues();
+    const encabezados = valoresHoja[0];
+    const mr = mapaEncabezados_(encabezados);
+    const colEstado = mr['ESTADO PROCESO'];
+
+    // 2. Pre-cargar e indexar PERSONAS en memoria
+    const personasDatos = hojaPersonas.getDataRange().getValues();
+    const perEncabezados = personasDatos[0];
+    const mper = mapaEncabezados_(perEncabezados);
+    
+    const personasPorRut = {};
+    const personasPorDoc = {};
+    const personasPorCorreo = {};
+    const personasPorTelefono = {};
+    const personasPorId = {};
+    let maxIdPersona = 0;
+
+    for (let p = 1; p < personasDatos.length; p++) {
+      const pFila = personasDatos[p];
+      const idP = String(pFila[mper['ID PERSONA']] || '').trim();
+      if (idP.indexOf('PER-') === 0) {
+        const num = Number(idP.substring(4).replace(/\D/g, ''));
+        if (num > maxIdPersona) maxIdPersona = num;
+      }
+      const tipoDoc = sigcNormalizarTipoDocumento(
+        mper['TIPO DOCUMENTO'] !== undefined ? pFila[mper['TIPO DOCUMENTO']] : '',
+        mper['RUT'] !== undefined ? pFila[mper['RUT']] : ''
+      );
+      const numDoc = sigcNormalizarDocumento(
+        tipoDoc,
+        mper['NUMERO DOCUMENTO'] !== undefined ? pFila[mper['NUMERO DOCUMENTO']] : '',
+        mper['RUT'] !== undefined ? pFila[mper['RUT']] : ''
+      );
+      const rutP = mper['RUT'] !== undefined ? sigcNormalizarRut(pFila[mper['RUT']]) : '';
+      const nacP = sigcNormalizarClave(mper['NACIONALIDAD'] !== undefined ? pFila[mper['NACIONALIDAD']] : '');
+      const correoP = normalizarCorreo_(mper['CORREO'] !== undefined ? pFila[mper['CORREO']] : '');
+      const telP = normalizarTelefono_(mper['TELEFONO'] !== undefined ? pFila[mper['TELEFONO']] : '');
+      const nomP = normalizarNombre_(mper['NOMBRE COMPLETO'] !== undefined ? pFila[mper['NOMBRE COMPLETO']] : '');
+
+      const infoPersona = {
+        filaOriginal: p + 1,
+        id: idP,
+        tipoDocumento: tipoDoc,
+        numeroDocumento: numDoc,
+        rut: rutP,
+        nacionalidad: nacP,
+        correo: correoP,
+        telefono: telP,
+        nombre: nomP
+      };
+
+      if (rutP) personasPorRut[rutP] = infoPersona;
+      if (numDoc) personasPorDoc[tipoDoc + ':' + numDoc] = infoPersona;
+      if (correoP) personasPorCorreo[correoP] = infoPersona;
+      if (telP) personasPorTelefono[telP] = infoPersona;
+      if (idP) personasPorId[idP] = infoPersona;
     }
-    intentadas++;
-    const resultado = procesarFilaFormularioSeguro_(hoja, i + 1, {
-      tipo: tipoFormulario || 'INSCRIPCION',
-      idActividad: idActividad
-    });
-    if (resultado.ok) resueltas++;
-    else revision++;
+
+    // 3. Pre-cargar e indexar PARTICIPACIONES en memoria
+    const partDatos = hojaPart ? hojaPart.getDataRange().getValues() : [];
+    const partEncabezados = partDatos.length ? partDatos[0] : [];
+    const mpart = mapaEncabezados_(partEncabezados);
+    const participacionesExistentes = new Set();
+    let maxIdPart = 0;
+    const anioActual = new Date().getFullYear();
+    const prefijoPartAnio = 'PAR-' + anioActual + '-';
+
+    for (let pt = 1; pt < partDatos.length; pt++) {
+      const ptFila = partDatos[pt];
+      const idPt = String(ptFila[mpart['ID PARTICIPACION']] || '').trim();
+      if (idPt.indexOf(prefijoPartAnio) === 0) {
+        const num = Number(idPt.substring(prefijoPartAnio.length).replace(/\D/g, ''));
+        if (num > maxIdPart) maxIdPart = num;
+      }
+      const idP = String(ptFila[mpart['ID PERSONA']] || '').trim();
+      const idA = String(ptFila[mpart['ID ACTIVIDAD']] || '').trim();
+      const activo = mpart['REGISTRO ACTIVO'] === undefined ||
+        normalizarEncabezado_(ptFila[mpart['REGISTRO ACTIVO']]) !== 'NO';
+      if (idP && idA && activo) {
+        participacionesExistentes.add(idP + '|' + idA);
+      }
+    }
+
+    // 4. Pre-cargar ACTIVIDAD
+    const actividad = idActividad ? resolverActividad_(idActividad) : null;
+    const sesionesTotales = actividad ? Number(actividad.sesionesTotales || 0) : 0;
+
+    const nuevasFilasPersonas = [];
+    const nuevasFilasParticipaciones = [];
+    const estadosActualizar = [];
+
+    const maximo = Math.max(1, Number(limite || 500));
+    let intentadas = 0;
+    let resueltas = 0;
+    let revision = 0;
+    let restantes = 0;
+    const ahora = new Date();
+
+    const tipoForm = normalizarEncabezado_(tipoFormulario || 'INSCRIPCION');
+
+    for (let i = 1; i < valoresHoja.length; i++) {
+      const estadoActual = normalizarEncabezado_(colEstado === undefined ? '' : valoresHoja[i][colEstado]);
+      const esPendiente = estadoActual === '';
+      const esRevision = incluirRevisiones && (estadoActual === 'REVISION' || estadoActual === 'ERROR' || estadoActual === 'REPROCESANDO');
+      
+      if (!esPendiente && !esRevision) continue;
+      if (intentadas >= maximo) {
+        restantes++;
+        continue;
+      }
+      intentadas++;
+      const filaSheet = i + 1;
+      const filaValores = valoresHoja[i];
+
+      try {
+        if (tipoForm === 'INTERES GENERAL') {
+          procesarFilaInteresGeneral_(hoja, filaSheet, encabezados, filaValores);
+          resueltas++;
+          continue;
+        }
+
+        const registro = registroDesdeFila_(encabezados, filaValores);
+        const advertencias = prepararRegistroFormulario_(registro);
+        const actFinal = idActividad ? actividad : resolverActividad_(registro.idActividad || registro.actividad);
+        if (!actFinal) {
+          throw new Error('No se encontró la actividad asociada a este formulario.');
+        }
+
+        // Validación y normalización de documento e identidad
+        const tipoDoc = sigcNormalizarTipoDocumento(registro.tipoDocumento, registro.rut);
+        const docNormalizado = sigcNormalizarDocumento(tipoDoc, registro.numeroDocumento, registro.rut);
+        const docValidado = sigcValidarDocumento(tipoDoc, docNormalizado, registro.nacionalidad);
+        const rutValidado = docValidado.tipo === 'RUT' ? docValidado.numero : '';
+        const correoNorm = sigcNormalizarCorreo(registro.correo);
+        const telNorm = sigcNormalizarTelefono(registro.telefono);
+        const nombreNorm = sigcNormalizarNombre(registro.nombre);
+        const nacNorm = sigcNormalizarTexto(registro.nacionalidad);
+
+        if (!nombreNorm) throw new Error('El nombre completo es obligatorio.');
+        if (correoNorm && !sigcValidarCorreo(correoNorm)) throw new Error('El correo electrónico no es válido.');
+        if (telNorm && !sigcValidarTelefono(telNorm)) throw new Error('El teléfono no tiene un formato válido.');
+
+        registro.tipoDocumento = docValidado.tipo;
+        registro.numeroDocumento = docValidado.numero;
+        registro.rut = rutValidado;
+        registro.nombre = nombreNorm;
+        registro.correo = correoNorm;
+        registro.telefono = telNorm;
+        registro.nacionalidad = nacNorm;
+
+        // Búsqueda en índice en memoria
+        let personaEncontrada = null;
+        if (rutValidado && personasPorRut[rutValidado]) {
+          personaEncontrada = personasPorRut[rutValidado];
+        } else if (docValidado.numero && personasPorDoc[docValidado.tipo + ':' + docValidado.numero]) {
+          personaEncontrada = personasPorDoc[docValidado.tipo + ':' + docValidado.numero];
+        } else if (correoNorm && personasPorCorreo[correoNorm] && nombresCompatibles_(nombreNorm, personasPorCorreo[correoNorm].nombre)) {
+          personaEncontrada = personasPorCorreo[correoNorm];
+        } else if (telNorm && personasPorTelefono[telNorm] && nombresCompatibles_(nombreNorm, personasPorTelefono[telNorm].nombre)) {
+          personaEncontrada = personasPorTelefono[telNorm];
+        }
+
+        let idPersona = '';
+        if (personaEncontrada) {
+          idPersona = personaEncontrada.id;
+        } else {
+          maxIdPersona++;
+          idPersona = 'PER-' + String(maxIdPersona).padStart(6, '0');
+          const pmjhOrigen = normalizarEncabezado_(registro.origen).indexOf('PMJH') >= 0 ? 'Sí' : 'No informado';
+          const pmjh = registro.participaPmjh ? sigcNormalizarSiNo(registro.participaPmjh, pmjhOrigen) : pmjhOrigen;
+
+          const nuevaFilaP = nuevaFilaSegunEncabezados_(perEncabezados, {
+            'ID PERSONA': idPersona,
+            'RUT': rutValidado,
+            'NOMBRE COMPLETO': nombreNorm,
+            'CORREO': correoNorm,
+            'TELEFONO': telNorm,
+            'COMUNA': sigcNormalizarTexto(registro.comuna),
+            'BARRIO': sigcNormalizarTexto(registro.barrio),
+            'DIRECCION': sigcNormalizarTexto(registro.direccion),
+            'FECHA NACIMIENTO': registro.fechaNacimiento || '',
+            'GENERO': sigcNormalizarTexto(registro.genero),
+            'NACIONALIDAD': nacNorm,
+            'AUTORIZA CONTACTO': sigcNormalizarSiNo(registro.autorizaContacto, 'No informado'),
+            'FECHA PRIMER REGISTRO': registro.timestamp || ahora,
+            'PARTICIPA PMJH': pmjh,
+            'ORIGEN REGISTRO': sigcNormalizarTexto(registro.origen) || 'Formulario',
+            'ESTADO CONTACTO': correoNorm || telNorm ? 'Activo' : 'Sin contacto',
+            'ULTIMA ACTUALIZACION': ahora,
+            'OBSERVACIONES': sigcNormalizarTexto(registro.observaciones),
+            'TIPO DOCUMENTO': docValidado.tipo,
+            'NUMERO DOCUMENTO': docValidado.numero
+          });
+
+          nuevasFilasPersonas.push(nuevaFilaP);
+
+          const nuevoInfoPersona = {
+            id: idPersona,
+            tipoDocumento: docValidado.tipo,
+            numeroDocumento: docValidado.numero,
+            rut: rutValidado,
+            nacionalidad: sigcNormalizarClave(nacNorm),
+            correo: correoNorm,
+            telefono: telNorm,
+            nombre: nombreNorm
+          };
+          if (rutValidado) personasPorRut[rutValidado] = nuevoInfoPersona;
+          if (docValidado.numero) personasPorDoc[docValidado.tipo + ':' + docValidado.numero] = nuevoInfoPersona;
+          if (correoNorm) personasPorCorreo[correoNorm] = nuevoInfoPersona;
+          if (telNorm) personasPorTelefono[telNorm] = nuevoInfoPersona;
+        }
+
+        // Participación
+        const clavePart = idPersona + '|' + actFinal.id;
+        let idPart = '';
+        let esNuevaPart = false;
+
+        if (participacionesExistentes.has(clavePart)) {
+          // Duplicada existente
+          idPart = '';
+        } else {
+          maxIdPart++;
+          idPart = prefijoPartAnio + String(maxIdPart).padStart(6, '0');
+          esNuevaPart = true;
+          participacionesExistentes.add(clavePart);
+
+          const nuevaFilaPart = nuevaFilaSegunEncabezados_(partEncabezados, {
+            'ID PARTICIPACION': idPart,
+            'ID PERSONA': idPersona,
+            'ID ACTIVIDAD': actFinal.id,
+            'FECHA INSCRIPCION': registro.timestamp || ahora,
+            'CANAL INSCRIPCION': sigcNormalizarTexto(registro.canal) || 'Formulario',
+            'CUMPLE REQUISITOS': sigcNormalizarCumple(registro.cumpleRequisitos),
+            'ESTADO SELECCION': 'Pendiente',
+            'CONFIRMA PARTICIPACION': 'No informado',
+            'SESIONES ASISTIDAS': 0,
+            'SESIONES TOTALES': actFinal.sesionesTotales || sesionesTotales || 0,
+            'PORCENTAJE ASISTENCIA': 0,
+            'RESULTADO ASISTENCIA': 'Pendiente',
+            'RESULTADO FINAL': 'Pendiente',
+            'CERTIFICADO': 'No informado',
+            'OBSERVACIONES': sigcNormalizarTexto(registro.observaciones),
+            'ARCHIVO ORIGEN': 'Formulario Google',
+            'REGISTRO ACTIVO': 'Sí',
+            'ULTIMA ACTUALIZACION': ahora
+          });
+
+          nuevasFilasParticipaciones.push(nuevaFilaPart);
+        }
+
+        const estadoFinal = esNuevaPart
+          ? (advertencias.length ? 'PROCESADO_CON_ADVERTENCIA' : 'PROCESADO')
+          : 'DUPLICADO';
+        const detalleFinal = (esNuevaPart
+          ? 'Registro creado correctamente. La participación quedó pendiente de selección.'
+          : 'La persona ya tenía una participación activa en esta actividad.') +
+          (advertencias.length ? ' Advertencias: ' + advertencias.join(' ') : '');
+
+        estadosActualizar.push({
+          fila: filaSheet,
+          idPersona: idPersona,
+          idParticipacion: idPart,
+          estado: estadoFinal,
+          detalle: detalleFinal
+        });
+
+        resueltas++;
+      } catch (errFila) {
+        revision++;
+        const msgError = errFila && errFila.message ? errFila.message : String(errFila);
+        estadosActualizar.push({
+          fila: filaSheet,
+          idPersona: '',
+          idParticipacion: '',
+          estado: 'REVISION',
+          detalle: msgError
+        });
+      }
+    }
+
+    // 5. ESCRITURA EN BLOQUE A GOOGLE SHEETS
+    if (nuevasFilasPersonas.length > 0) {
+      const uFilaP = hojaPersonas.getLastRow();
+      hojaPersonas.getRange(uFilaP + 1, 1, nuevasFilasPersonas.length, perEncabezados.length)
+        .setValues(nuevasFilasPersonas);
+    }
+
+    if (nuevasFilasParticipaciones.length > 0 && hojaPart) {
+      const uFilaPt = hojaPart.getLastRow();
+      hojaPart.getRange(uFilaPt + 1, 1, nuevasFilasParticipaciones.length, partEncabezados.length)
+        .setValues(nuevasFilasParticipaciones);
+    }
+
+    // 6. Actualizar columnas en la hoja del Formulario en lote
+    if (estadosActualizar.length > 0) {
+      const colIdPersonaIdx = mr['ID PERSONA'] !== undefined ? mr['ID PERSONA'] : mr['ID_PERSONA'];
+      const colIdPartIdx = mr['ID PARTICIPACION'] !== undefined ? mr['ID PARTICIPACION'] : mr['ID_PARTICIPACION'];
+      const colEstadoIdx = mr['ESTADO PROCESO'] !== undefined ? mr['ESTADO PROCESO'] : mr['ESTADO_PROCESO'];
+      const colDetalleIdx = mr['DETALLE PROCESO'] !== undefined ? mr['DETALLE PROCESO'] : mr['DETALLE_PROCESO'];
+
+      const minFila = estadosActualizar[0].fila;
+      const maxFila = estadosActualizar[estadosActualizar.length - 1].fila;
+      const numFilas = maxFila - minFila + 1;
+
+      if (colIdPersonaIdx !== undefined && colIdPartIdx !== undefined && colEstadoIdx !== undefined && colDetalleIdx !== undefined) {
+        const minCol = Math.min(colIdPersonaIdx, colIdPartIdx, colEstadoIdx, colDetalleIdx) + 1;
+        const maxCol = Math.max(colIdPersonaIdx, colIdPartIdx, colEstadoIdx, colDetalleIdx) + 1;
+        const numCols = maxCol - minCol + 1;
+
+        const updateMap = {};
+        estadosActualizar.forEach(function(u) { updateMap[u.fila] = u; });
+
+        const rangoProceso = hoja.getRange(minFila, minCol, numFilas, numCols);
+        const valoresProceso = rangoProceso.getValues();
+
+        for (let r = 0; r < numFilas; r++) {
+          const fActual = minFila + r;
+          const u = updateMap[fActual];
+          if (u) {
+            valoresProceso[r][colIdPersonaIdx - (minCol - 1)] = u.idPersona;
+            valoresProceso[r][colIdPartIdx - (minCol - 1)] = u.idParticipacion;
+            valoresProceso[r][colEstadoIdx - (minCol - 1)] = u.estado;
+            valoresProceso[r][colDetalleIdx - (minCol - 1)] = u.detalle;
+          }
+        }
+        rangoProceso.setValues(valoresProceso);
+      } else {
+        estadosActualizar.forEach(function(u) {
+          registrarResultadoEnRespuesta_(hoja, u.fila, u.idPersona, u.idParticipacion, u.estado, u.detalle);
+        });
+      }
+    }
+
+    SpreadsheetApp.flush();
+    if (resueltas > 0) {
+      sigcInvalidarCache_();
+    }
+
+    return {
+      intentadas: intentadas,
+      resueltas: resueltas,
+      revision: revision,
+      restantes: restantes
+    };
+  } finally {
+    lock.releaseLock();
   }
-  return {
-    intentadas: intentadas,
-    resueltas: resueltas,
-    revision: revision,
-    restantes: restantes
-  };
 }
 
 function reprocesarRevisionesFormulario(idConfig) {
   prepararConfigFormularios();
-  const hoja = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.FORMULARIOS);
-  const datos = hoja.getDataRange().getValues();
-  const mapa = mapaEncabezados_(datos[0]);
-  let cfgFila = null;
-  for (let i = 1; i < datos.length; i++) {
-    if (String(datos[i][mapa['ID CONFIG']]) === String(idConfig)) {
-      cfgFila = datos[i];
-      break;
-    }
-  }
-  if (!cfgFila) throw new Error('No se encontró la vinculación indicada.');
-  const spreadsheetId = String(cfgFila[mapa['SPREADSHEET RESPUESTAS ID']]);
-  const nombreHoja = String(cfgFila[mapa['HOJA RESPUESTAS']]);
-  const idActividad = String(cfgFila[mapa['ID ACTIVIDAD']]);
-  const tipoFormulario = String(cfgFila[mapa['TIPO']] || 'INSCRIPCION');
-  const respuestas = SpreadsheetApp.openById(spreadsheetId).getSheetByName(nombreHoja);
-  if (!respuestas) throw new Error('No se encontró la hoja de respuestas vinculada.');
-  asegurarColumnasProceso_(respuestas);
-  const valores = respuestas.getDataRange().getValues();
-  const mr = mapaEncabezados_(valores[0]);
-  const colEstado = mr['ESTADO PROCESO'];
-  let intentadas = 0;
-  let resueltas = 0;
-  for (let i = 1; i < valores.length && intentadas < 250; i++) {
-    const estado = normalizarEncabezado_(valores[i][colEstado]);
-    if (estado !== 'REVISION' && estado !== 'ERROR' && estado !== '') continue;
-    intentadas++;
-    const resultado = procesarFilaFormularioSeguro_(respuestas, i + 1, {tipo: tipoFormulario, idActividad: idActividad});
-    if (resultado.ok) resueltas++;
-  }
+  const origen = resolverConfigFormularioPorId_(idConfig);
+  const resultado = procesarPendientesFormularioVinculado_(
+    origen.spreadsheetId,
+    origen.hoja,
+    origen.idActividad,
+    500,
+    true,
+    origen.tipo
+  );
+  sigcInvalidarCache_();
   return {
     ok: true,
-    mensaje: 'Revisión terminada: ' + resueltas + ' respuesta(s) resuelta(s) de ' + intentadas + ' revisada(s).'
+    mensaje: 'Revisión terminada: ' + resultado.resueltas + ' respuesta(s) resuelta(s) de ' + resultado.intentadas + ' revisada(s).'
   };
 }
 
@@ -1525,45 +1868,212 @@ function registroDesdeFila_(encabezados, valores) {
   encabezados.forEach(function(h, i) {
     mapa[normalizarEncabezado_(h)] = valores[i];
   });
-  const rut = valorAlternativo_(mapa, ['RUT', 'RUN']);
-  const tipoDocumento = valorAlternativo_(mapa, [
-    'TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'DOCUMENTO IDENTIDAD'
-  ]) || (rut ? 'RUT' : '');
-  const numeroDocumento = valorAlternativo_(mapa, [
-    'NUMERO DOCUMENTO', 'NÚMERO DOCUMENTO', 'NUMERO DE DOCUMENTO',
-    'NÚMERO DE DOCUMENTO', 'PASAPORTE'
-  ]) || rut;
-  // Un formulario puede usar "Nombre" o "Nombres" para el nombre de pila.
-  // Si existe además una columna "Apellidos", ambos componentes deben tener
-  // prioridad sobre los encabezados ambiguos. En 3.4, "Nombre" se trataba
-  // como si ya fuera el nombre completo y podía omitir los apellidos.
-  const nombres = valorAlternativo_(mapa, ['NOMBRES', 'NOMBRE']);
-  const apellidos = valorAlternativo_(mapa, ['APELLIDOS']);
-  const nombreCompleto = valorAlternativo_(mapa, [
-    'NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO'
-  ]);
+
+  // 1. Detectar si existe columna específica de Dígito Verificador y de Cuerpo
+  let dvCol = '';
+  let cuerpoCol = '';
+
+  const clavesMapa = Object.keys(mapa);
+  for (let i = 0; i < clavesMapa.length; i++) {
+    const k = clavesMapa[i];
+    const val = String(mapa[k] == null ? '' : mapa[k]).trim();
+    if (!val) continue;
+
+    // Buscar columna DV
+    if ((k.indexOf('DIGITO VERIFICADOR') >= 0 || k.indexOf('NUMERO DESPUES DEL GUION') >= 0 ||
+         k.indexOf('DIGITO DESPUES') >= 0 || k === 'DV' || k.indexOf('DIGITO') >= 0) &&
+        k.indexOf('SIN') < 0 && k.indexOf('HASTA') < 0 && !dvCol) {
+      dvCol = val;
+    }
+
+    // Buscar columna Cuerpo RUT
+    if ((k.indexOf('RUT SIN') >= 0 || k.indexOf('HASTA ANTES DEL GUION') >= 0 ||
+         k.indexOf('CUERPO DEL RUT') >= 0 || k.indexOf('CUERPO') >= 0 ||
+         k.indexOf('RUT SIN PUNTOS') >= 0) && !cuerpoCol) {
+      cuerpoCol = val;
+    }
+  }
+
+  let rut = '';
+  // Si encontramos cuerpo y dv por separado
+  if (cuerpoCol && dvCol) {
+    const cLimpio = cuerpoCol.replace(/\D/g, '');
+    const dvLimpio = dvCol.replace(/[^0-9Kk]/g, '').toUpperCase().charAt(0);
+    if (cLimpio && dvLimpio) {
+      rut = cLimpio + '-' + dvLimpio;
+    }
+  } else if (cuerpoCol && !rut) {
+    rut = sigcNormalizarRut(cuerpoCol);
+  }
+
+  // Si no se armó por columnas separadas, buscar columna de RUT directo
+  if (!rut) {
+    const rutDirecto = valorAlternativo_(
+      mapa,
+      [
+        'RUT', 'RUN', 'CEDULA DE IDENTIDAD', 'CEDULA', 'DOCUMENTO DE IDENTIDAD',
+        'NUMERO DE DOCUMENTO', 'NUMERO DOCUMENTO', 'NUMERO DE IDENTIFICACION',
+        'DOCUMENTO', 'PASAPORTE', 'DNI', 'IDENTIFICACION', 'RUT O DNI', 'RUT O PASAPORTE',
+        'RUT COMPLETO', 'INGRESE SU RUT', 'ESCRIBA SU RUT'
+      ],
+      ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'DIGITO VERIFICADOR', 'SIN DIGITO VERIFICADOR', 'SIN EL DIGITO VERIFICADOR', 'RUT SIN']
+    );
+    if (rutDirecto) {
+      // Si tenemos un DV suelto de otra columna, combinarlo
+      if (dvCol && rutDirecto.indexOf('-') < 0 && /^\d{6,8}$/.test(rutDirecto.replace(/\D/g, ''))) {
+        rut = rutDirecto.replace(/\D/g, '') + '-' + dvCol.replace(/[^0-9Kk]/g, '').toUpperCase().charAt(0);
+      } else {
+        rut = sigcNormalizarRut(rutDirecto);
+      }
+    }
+  }
+
+  const tipoDocumento = valorAlternativo_(
+    mapa,
+    ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'DOCUMENTO IDENTIDAD', 'TIPO DE IDENTIFICACION', 'USTED CUENTA CON']
+  ) || (rut ? (sigcValidarRut(rut) ? 'RUT' : 'Pasaporte') : '');
+
+  let numeroDocumento = valorAlternativo_(
+    mapa,
+    ['NUMERO DOCUMENTO', 'NÚMERO DOCUMENTO', 'NUMERO DE DOCUMENTO', 'NÚMERO DE DOCUMENTO', 'PASAPORTE', 'DNI', 'CEDULA', 'RUT', 'RUN'],
+    ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO']
+  ) || rut;
+
+  const rechazosNombre = ['EMPRESA', 'EMPRENDIMIENTO', 'FANTASIA', 'RESPONSABLE', 'ACTIVIDAD', 'TALLER', 'CURSO', 'DOCUMENTO', 'CALLE', 'BARRIO', 'CONTACTO', 'USUARIO', 'PROGRAMA', 'INSTITUCION', 'ORGANIZACION'];
+
+  const nombreCompleto = valorAlternativo_(
+    mapa,
+    [
+      'NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO', 'NOMBRE Y APELLIDOS',
+      'NOMBRES Y APELLIDO', 'NOMBRE DEL POSTULANTE', 'NOMBRE DEL PARTICIPANTE', 'NOMBRE DEL ALUMNO',
+      'NOMBRE DEL EMPRENDEDOR', 'NOMBRE DEL TITULAR', 'NOMBRE POSTULANTE', 'NOMBRE PARTICIPANTE',
+      'ESCRIBA SU NOMBRE', 'INDIQUE SU NOMBRE', 'INGRESE SU NOMBRE'
+    ],
+    rechazosNombre
+  );
+
+  const nombres = valorAlternativo_(
+    mapa,
+    ['NOMBRES', 'NOMBRE', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE'],
+    ['APELLIDO', 'APELLIDOS'].concat(rechazosNombre)
+  );
+
+  const apellidoPaterno = valorAlternativo_(
+    mapa,
+    ['APELLIDO PATERNO', 'PRIMER APELLIDO'],
+    rechazosNombre
+  );
+
+  const apellidoMaterno = valorAlternativo_(
+    mapa,
+    ['APELLIDO MATERNO', 'SEGUNDO APELLIDO'],
+    rechazosNombre
+  );
+
+  const apellidos = valorAlternativo_(
+    mapa,
+    ['APELLIDOS', 'APELLIDO'],
+    ['EMPRESA', 'EMPRENDIMIENTO', 'ACTIVIDAD', 'CURSO']
+  ) || [apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
+
+  let nombreFinal = nombreCompleto || [nombres, apellidos].filter(Boolean).join(' ');
+
+  let correo = valorAlternativo_(
+    mapa,
+    ['CORREO', 'CORREO ELECTRONICO', 'EMAIL', 'E MAIL', 'MAIL', 'DIRECCION DE CORREO', 'CASILLA', 'CORREO DE CONTACTO'],
+    ['CONFIRMAR', 'REPITA']
+  );
+
+  let telefono = valorAlternativo_(
+    mapa,
+    ['TELEFONO', 'CELULAR', 'WHATSAPP', 'FONO', 'MOVIL', 'TELEFONO DE CONTACTO', 'NUMERO DE CONTACTO', 'NUMERO TELEFONICO', 'TELEFONO MOVIL'],
+    ['EMERGENCIA', 'REFERENCIA', 'RESPONSABLE']
+  );
+
+  // Respaldo inteligente por escaneo de celdas si algún dato esencial no se reconoció por encabezado
+  if (Array.isArray(valores)) {
+    const tecnicos = typeof encabezadosTecnicosFormulario_ === 'function' ? encabezadosTecnicosFormulario_() : {};
+
+    // Si falta RUT / Documento, buscar celda con formato RUT chileno o documento
+    if (!rut && !numeroDocumento) {
+      for (let i = 0; i < valores.length; i++) {
+        const hNorm = normalizarEncabezado_(encabezados[i]);
+        if (tecnicos[hNorm]) continue;
+        const valStr = String(valores[i] || '').trim();
+        const rutLimpio = sigcNormalizarRut(valStr);
+        if (rutLimpio && (sigcValidarRut(rutLimpio) || /^\d{7,8}-[\dkK]$/i.test(rutLimpio))) {
+          rut = rutLimpio;
+          numeroDocumento = rutLimpio;
+          break;
+        }
+      }
+    }
+
+    // Si falta correo, buscar celda con formato de correo
+    if (!correo) {
+      for (let i = 0; i < valores.length; i++) {
+        const hNorm = normalizarEncabezado_(encabezados[i]);
+        if (tecnicos[hNorm]) continue;
+        const valStr = String(valores[i] || '').trim();
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valStr)) {
+          correo = valStr;
+          break;
+        }
+      }
+    }
+
+    // Si falta teléfono, buscar celda con formato telefónico chileno
+    if (!telefono) {
+      for (let i = 0; i < valores.length; i++) {
+        const hNorm = normalizarEncabezado_(encabezados[i]);
+        if (tecnicos[hNorm]) continue;
+        const valStr = String(valores[i] || '').trim();
+        const limpio = sigcNormalizarTelefono(valStr);
+        if (limpio && sigcValidarTelefono(limpio)) {
+          telefono = valStr;
+          break;
+        }
+      }
+    }
+
+    // Si falta nombre, buscar columna que contenga "NOMBRE" o texto alfabético no técnico
+    if (!nombreFinal) {
+      for (let i = 0; i < valores.length; i++) {
+        const hNorm = normalizarEncabezado_(encabezados[i]);
+        if (tecnicos[hNorm]) continue;
+        if (hNorm.indexOf('NOMBRE') >= 0 && !rechazosNombre.some(function(r) { return hNorm.indexOf(r) >= 0; })) {
+          const valStr = String(valores[i] || '').trim();
+          if (valStr && valStr.length > 2 && !/^\d+$/.test(valStr)) {
+            nombreFinal = valStr;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   return {
-    timestamp: valorAlternativo_(mapa, ['MARCA TEMPORAL', 'TIMESTAMP', 'FECHA REGISTRO']),
+    timestamp: valorAlternativo_(mapa, ['MARCA TEMPORAL', 'TIMESTAMP', 'FECHA REGISTRO', 'FECHA']),
     tipoDocumento: tipoDocumento,
     numeroDocumento: numeroDocumento,
     rut: rut,
-    nombre: nombreCompleto || [nombres, apellidos].filter(Boolean).join(' '),
-    correo: valorAlternativo_(mapa, ['CORREO', 'CORREO ELECTRONICO', 'EMAIL']),
-    telefono: valorAlternativo_(mapa, ['TELEFONO', 'CELULAR', 'TELEFONO DE CONTACTO']),
-    comuna: valorAlternativo_(mapa, ['COMUNA', 'COMUNA DE RESIDENCIA']),
-    barrio: valorAlternativo_(mapa, ['BARRIO']),
-    direccion: valorAlternativo_(mapa, ['DIRECCION', 'DOMICILIO']),
-    fechaNacimiento: valorAlternativo_(mapa, ['FECHA NACIMIENTO', 'FECHA DE NACIMIENTO']),
-    genero: valorAlternativo_(mapa, ['GENERO']),
-    nacionalidad: valorAlternativo_(mapa, ['NACIONALIDAD']),
+    nombre: nombreFinal,
+    correo: correo,
+    telefono: telefono,
+    comuna: valorAlternativo_(mapa, ['COMUNA', 'COMUNA DE RESIDENCIA', 'CIUDAD', 'MUNICIPIO']),
+    barrio: valorAlternativo_(mapa, ['BARRIO', 'SECTOR', 'POBLACION', 'VILLA', 'UNIDAD VECINAL']),
+    direccion: valorAlternativo_(mapa, ['DIRECCION', 'DOMICILIO', 'CALLE', 'DIRECCION PARTICULAR'], ['CORREO', 'ELECTRONICO', 'EMAIL', 'COMUNA']),
+    fechaNacimiento: valorAlternativo_(mapa, ['FECHA NACIMIENTO', 'FECHA DE NACIMIENTO', 'NACIMIENTO', 'CUMPLEANOS', 'EDAD']),
+    genero: valorAlternativo_(mapa, ['GENERO', 'SEXO', 'IDENTIDAD DE GENERO']),
+    nacionalidad: valorAlternativo_(mapa, ['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS']),
     participaPmjh: valorAlternativo_(mapa, [
-      'PARTICIPA PMJH', 'PARTICIPA EN PMJH', 'ES PMJH', 'FUE PMJH'
+      'PARTICIPA PMJH', 'PARTICIPA EN PMJH', 'ES PMJH', 'FUE PMJH', 'PROGRAMA MUJERES JEFAS DE HOGAR', 'MUJERES JEFAS DE HOGAR', 'PMJH', 'JEFAS DE HOGAR'
     ]),
     idActividad: valorAlternativo_(mapa, ['ID ACTIVIDAD', 'ID DE ACTIVIDAD', 'ID ACTIVIDAD CAPACITACION']),
-    actividad: valorAlternativo_(mapa, ['ACTIVIDAD', 'CAPACITACION', 'CURSO TALLER CHARLA']),
+    actividad: valorAlternativo_(mapa, ['ACTIVIDAD', 'CAPACITACION', 'CURSO TALLER CHARLA', 'CURSO', 'TALLER', 'CHARLA']),
     canal: valorAlternativo_(mapa, ['CANAL INSCRIPCION', 'CANAL', 'MEDIO DE INSCRIPCION']) || 'Formulario',
     cumpleRequisitos: valorAlternativo_(mapa, ['CUMPLE REQUISITOS']) || 'Pendiente',
-    autorizaContacto: valorAlternativo_(mapa, ['AUTORIZA CONTACTO', 'AUTORIZA ENVIO DE INFORMACION', 'AUTORIZA RECIBIR INFORMACION']) || 'No informado',
+    autorizaContacto: valorAlternativo_(mapa, ['AUTORIZA CONTACTO', 'AUTORIZA ENVIO DE INFORMACION', 'AUTORIZA RECIBIR INFORMACION', 'AUTORIZA']) || 'No informado',
     origen: valorAlternativo_(mapa, ['ORIGEN PROGRAMA', 'ORIGEN', 'PROGRAMA DE ORIGEN']) || 'Formulario',
     observaciones: valorAlternativo_(mapa, ['OBSERVACIONES', 'COMENTARIOS'])
   };
@@ -1617,13 +2127,12 @@ function obtenerOCrearPersona_(registro) {
     }
     const correoExistente = normalizarCorreo_(datos[i][mapa['CORREO']]);
     const telefonoExistente = normalizarTelefono_(datos[i][mapa['TELEFONO']]);
-    const nombreExistente = normalizarNombre_(datos[i][mapa['NOMBRE COMPLETO']]);
-    if (!documentoExistente && correo && correoExistente && correo === correoExistente &&
+    if (correo && correoExistente && correo === correoExistente &&
         nombresCompatibles_(nombre, nombreExistente)) {
       filaEncontrada = i + 1;
       break;
     }
-    if (!documentoExistente && telefono && telefonoExistente && telefono === telefonoExistente &&
+    if (telefono && telefonoExistente && telefono === telefonoExistente &&
         nombresCompatibles_(nombre, nombreExistente)) {
       filaEncontrada = i + 1;
       break;
@@ -2257,11 +2766,46 @@ function mapaEncabezados_(encabezados) {
   });
   return mapa;
 }
-function valorAlternativo_(mapa, alternativas) {
+function valorAlternativo_(mapa, alternativas, patronesRechazados) {
+  if (!mapa || !alternativas || !alternativas.length) return '';
+  // 1. Coincidencia exacta
   for (let i = 0; i < alternativas.length; i++) {
     const clave = normalizarEncabezado_(alternativas[i]);
-    if (mapa[clave] !== undefined && mapa[clave] !== null && mapa[clave] !== '') {
-      return mapa[clave];
+    if (mapa[clave] !== undefined && mapa[clave] !== null && String(mapa[clave]).trim() !== '') {
+      return String(mapa[clave]).trim();
+    }
+  }
+  // 2. Coincidencia por inclusión / tokens
+  const tecnicos = typeof encabezadosTecnicosFormulario_ === 'function' ? encabezadosTecnicosFormulario_() : {};
+  const clavesMapa = Object.keys(mapa);
+  const rechazados = (patronesRechazados || []).map(normalizarEncabezado_).filter(Boolean);
+
+  for (let i = 0; i < alternativas.length; i++) {
+    const alt = normalizarEncabezado_(alternativas[i]);
+    if (!alt) continue;
+    const tokensAlt = alt.split(' ').filter(Boolean);
+
+    for (let j = 0; j < clavesMapa.length; j++) {
+      const k = clavesMapa[j];
+      if (tecnicos[k]) continue;
+
+      let tieneRechazado = false;
+      for (let r = 0; r < rechazados.length; r++) {
+        if (k.indexOf(rechazados[r]) >= 0) {
+          tieneRechazado = true;
+          break;
+        }
+      }
+      if (tieneRechazado) continue;
+
+      const coincideSubcadena = k.indexOf(alt) >= 0 || (alt.length >= 4 && alt.indexOf(k) >= 0);
+      const coincideTokens = tokensAlt.length > 1 && tokensAlt.every(function(t) { return k.indexOf(t) >= 0; });
+
+      if (coincideSubcadena || coincideTokens) {
+        if (mapa[k] !== undefined && mapa[k] !== null && String(mapa[k]).trim() !== '') {
+          return String(mapa[k]).trim();
+        }
+      }
     }
   }
   return '';
@@ -2293,4 +2837,439 @@ function nombresCompatibles_(a, b) {
   const tb = nb.split(' ');
   const interseccion = ta.filter(function(x) { return tb.indexOf(x) >= 0; }).length;
   return interseccion / Math.min(ta.length, tb.length) >= 0.75;
+}
+
+/**
+ * Homogeneiza y repara las sesiones totales de las participaciones para que
+ * coincidan exactamente con las sesiones totales de su actividad respectiva.
+ */
+function corregirYSincronizarSesionesParticipaciones(idActividadFiltro) {
+  const ss = sigcSpreadsheetCentral_();
+  const hojaPart = ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+  const hojaAct = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+  if (!hojaPart || !hojaAct || hojaPart.getLastRow() < 2 || hojaAct.getLastRow() < 2) return { corregidas: 0 };
+
+  const datosAct = hojaAct.getDataRange().getValues();
+  const mapaAct = mapaEncabezados_(datosAct[0]);
+  const sesionesPorActividad = {};
+  for (let a = 1; a < datosAct.length; a++) {
+    const idAct = String(datosAct[a][mapaAct['ID ACTIVIDAD']] || '').trim();
+    if (idAct) {
+      sesionesPorActividad[idAct] = Math.max(1, Number(datosAct[a][mapaAct['SESIONES TOTALES']] || 1));
+    }
+  }
+
+  const rangoPart = hojaPart.getDataRange();
+  const datosPart = rangoPart.getValues();
+  const mapaPart = mapaEncabezados_(datosPart[0]);
+  const colIdAct = mapaPart['ID ACTIVIDAD'];
+  const colSesTot = mapaPart['SESIONES TOTALES'];
+  const colSesAsis = mapaPart['SESIONES ASISTIDAS'];
+  const colPctAsis = mapaPart['PORCENTAJE ASISTENCIA'];
+  const colUltAct = mapaPart['ULTIMA ACTUALIZACION'];
+
+  if (colIdAct === undefined || colSesTot === undefined) return { corregidas: 0 };
+
+  let corregidas = 0;
+  const ahora = new Date();
+
+  for (let p = 1; p < datosPart.length; p++) {
+    const idAct = String(datosPart[p][colIdAct] || '').trim();
+    if (!idAct || !sesionesPorActividad[idAct]) continue;
+    if (idActividadFiltro && idAct !== String(idActividadFiltro).trim()) continue;
+
+    const esperado = sesionesPorActividad[idAct];
+    const actual = Number(datosPart[p][colSesTot] || 0);
+
+    if (actual !== esperado) {
+      datosPart[p][colSesTot] = esperado;
+      if (colPctAsis !== undefined && colSesAsis !== undefined) {
+        const asistidas = Number(datosPart[p][colSesAsis] || 0);
+        datosPart[p][colPctAsis] = esperado > 0 ? asistidas / esperado : 0;
+      }
+      if (colUltAct !== undefined) {
+        datosPart[p][colUltAct] = ahora;
+      }
+      corregidas++;
+    }
+  }
+
+  if (corregidas > 0) {
+    rangoPart.setValues(datosPart);
+    SpreadsheetApp.flush();
+    if (typeof sigcInvalidarCacheTabla_ === 'function') {
+      sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PARTICIPACIONES);
+    }
+  }
+
+  return { corregidas: corregidas };
+}
+
+/**
+ * Detecta y unifica participantes duplicados en una actividad.
+ * Consolida el registro maestro (manteniendo estado de selección, confirmación y asistencia),
+ * rescata información faltante de contacto (teléfono, correo, RUT limpio) de los duplicados,
+ * y desactiva las participaciones redundantes.
+ */
+function depurarDuplicadosActividad(idActividad) {
+  if (!idActividad) throw new Error('Debe especificar el ID de la actividad a depurar.');
+  const idActStr = String(idActividad).trim();
+  const ss = sigcSpreadsheetCentral_();
+  const hojaPart = ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+  const hojaPer = ss.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+  const hojaAct = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+  if (!hojaPart || !hojaPer || hojaPart.getLastRow() < 2) {
+    return { ok: true, duplicadosEliminados: 0, mensaje: 'No hay participaciones para depurar.' };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    // 1. Obtener actividad y sesiones totales oficiales
+    let sesionesOficiales = 1;
+    if (hojaAct && hojaAct.getLastRow() >= 2) {
+      const datosAct = hojaAct.getDataRange().getValues();
+      const mAct = mapaEncabezados_(datosAct[0]);
+      for (let a = 1; a < datosAct.length; a++) {
+        if (String(datosAct[a][mAct['ID ACTIVIDAD']] || '').trim() === idActStr) {
+          sesionesOficiales = Math.max(1, Number(datosAct[a][mAct['SESIONES TOTALES']] || 1));
+          break;
+        }
+      }
+    }
+
+    // 2. Leer PERSONAS y mapear por ID_PERSONA
+    const rangoPer = hojaPer.getDataRange();
+    const datosPer = rangoPer.getValues();
+    const mPer = mapaEncabezados_(datosPer[0]);
+    const personasPorId = {};
+    const personasModificadas = new Set();
+
+    for (let p = 1; p < datosPer.length; p++) {
+      const filaP = datosPer[p];
+      const idP = String(filaP[mPer['ID PERSONA']] || '').trim();
+      if (!idP) continue;
+
+      let rutOriginal = String(filaP[mPer['RUT']] || '').trim();
+      let rutNorm = sigcNormalizarRut(rutOriginal);
+      // Auto-corregir RUT repetido en personas si difiere
+      if (rutNorm && rutOriginal && rutNorm !== rutOriginal && rutNorm.length < rutOriginal.length) {
+        filaP[mPer['RUT']] = rutNorm;
+        if (mPer['NUMERO DOCUMENTO'] !== undefined) filaP[mPer['NUMERO DOCUMENTO']] = rutNorm;
+        personasModificadas.add(p);
+      }
+
+      const tipoDoc = sigcNormalizarTipoDocumento(
+        mPer['TIPO DOCUMENTO'] !== undefined ? filaP[mPer['TIPO DOCUMENTO']] : '',
+        rutNorm
+      );
+      const numDoc = sigcNormalizarDocumento(
+        tipoDoc,
+        mPer['NUMERO DOCUMENTO'] !== undefined ? filaP[mPer['NUMERO DOCUMENTO']] : '',
+        rutNorm
+      );
+
+      personasPorId[idP] = {
+        indiceFila: p,
+        idP: idP,
+        nombre: sigcNormalizarNombre(mPer['NOMBRE COMPLETO'] !== undefined ? filaP[mPer['NOMBRE COMPLETO']] : ''),
+        rut: rutNorm,
+        tipoDoc: tipoDoc,
+        numDoc: numDoc,
+        correo: sigcNormalizarCorreo(mPer['CORREO'] !== undefined ? filaP[mPer['CORREO']] : ''),
+        telefono: sigcNormalizarTelefono(mPer['TELEFONO'] !== undefined ? filaP[mPer['TELEFONO']] : ''),
+        participaPmjh: sigcNormalizarSiNo(mPer['PARTICIPA PMJH'] !== undefined ? filaP[mPer['PARTICIPA PMJH']] : '', 'No informado')
+      };
+    }
+
+    // 3. Leer PARTICIPACIONES activas de la actividad
+    const rangoPart = hojaPart.getDataRange();
+    const datosPart = rangoPart.getValues();
+    const mPart = mapaEncabezados_(datosPart[0]);
+
+    const colIdAct = mPart['ID ACTIVIDAD'];
+    const colIdPart = mPart['ID PARTICIPACION'];
+    const colIdPer = mPart['ID PERSONA'];
+    const colActivo = mPart['REGISTRO ACTIVO'];
+    const colSel = mPart['ESTADO SELECCION'];
+    const colConf = mPart['CONFIRMA PARTICIPACION'];
+    const colReq = mPart['CUMPLE REQUISITOS'];
+    const colSesAsis = mPart['SESIONES ASISTIDAS'];
+    const colSesTot = mPart['SESIONES TOTALES'];
+    const colPctAsis = mPart['PORCENTAJE ASISTENCIA'];
+    const colResAsis = mPart['RESULTADO ASISTENCIA'];
+    const colResFin = mPart['RESULTADO FINAL'];
+    const colCert = mPart['CERTIFICADO'];
+    const colAsisSes = mPart['ASISTENCIA_SESIONES'];
+    const colObs = mPart['OBSERVACIONES'];
+    const colUltAct = mPart['ULTIMA ACTUALIZACION'];
+
+    // Filtrar participaciones activas de esta actividad
+    const items = [];
+    for (let i = 1; i < datosPart.length; i++) {
+      const fila = datosPart[i];
+      if (String(fila[colIdAct] || '').trim() !== idActStr) continue;
+      const activo = colActivo === undefined || sigcNormalizarSiNo(fila[colActivo], 'Sí') !== 'No';
+      if (!activo) continue;
+
+      const idP = String(fila[colIdPer] || '').trim();
+      const persona = personasPorId[idP] || {
+        indiceFila: -1,
+        idP: idP,
+        nombre: '',
+        rut: '',
+        tipoDoc: '',
+        numDoc: '',
+        correo: '',
+        telefono: '',
+        participaPmjh: 'No informado'
+      };
+
+      items.push({
+        indiceFilaPart: i,
+        fila: fila,
+        idPart: String(fila[colIdPart] || '').trim(),
+        idP: idP,
+        persona: persona
+      });
+    }
+
+    if (items.length <= 1) {
+      if (personasModificadas.size > 0) {
+        rangoPer.setValues(datosPer);
+        SpreadsheetApp.flush();
+        sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PERSONAS);
+      }
+      return { ok: true, duplicadosEliminados: 0, mensaje: 'No hay participantes duplicados en esta actividad.' };
+    }
+
+    // 4. Agrupar duplicados mediante Union-Find
+    const n = items.length;
+    const parent = [];
+    for (let i = 0; i < n; i++) parent[i] = i;
+    function find(x) {
+      if (parent[x] === x) return x;
+      parent[x] = find(parent[x]);
+      return parent[x];
+    }
+    function union(a, b) {
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parent[rootB] = rootA;
+    }
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = items[i];
+        const b = items[j];
+
+        let sonMismaPersona = false;
+
+        // Criterio 1: Mismo ID_PERSONA
+        if (a.idP && b.idP && a.idP === b.idP) {
+          sonMismaPersona = true;
+        }
+        // Criterio 2: Mismo RUT válido (normalizado sin repeticiones)
+        else if (a.persona.rut && b.persona.rut && a.persona.rut === b.persona.rut && sigcValidarRut(a.persona.rut)) {
+          sonMismaPersona = true;
+        }
+        // Criterio 3: Mismo Documento Extranjero / Pasaporte
+        else if (a.persona.numDoc && b.persona.numDoc && a.persona.numDoc === b.persona.numDoc &&
+                 a.persona.tipoDoc && a.persona.tipoDoc === b.persona.tipoDoc) {
+          sonMismaPersona = true;
+        }
+        // Criterio 4: Mismo Correo y Nombres Compatibles
+        else if (a.persona.correo && b.persona.correo && a.persona.correo === b.persona.correo &&
+                 nombresCompatibles_(a.persona.nombre, b.persona.nombre)) {
+          sonMismaPersona = true;
+        }
+        // Criterio 5: Mismo Teléfono y Nombres Compatibles
+        else if (a.persona.telefono && b.persona.telefono && a.persona.telefono === b.persona.telefono &&
+                 nombresCompatibles_(a.persona.nombre, b.persona.nombre)) {
+          sonMismaPersona = true;
+        }
+
+        if (sonMismaPersona) {
+          union(i, j);
+        }
+      }
+    }
+
+    // 5. Agrupar por raíz de grupo
+    const grupos = {};
+    for (let i = 0; i < n; i++) {
+      const root = find(i);
+      if (!grupos[root]) grupos[root] = [];
+      grupos[root].push(items[i]);
+    }
+
+    let duplicadosEliminados = 0;
+    const ahora = new Date();
+    const nombresUnificados = [];
+
+    function calcularPuntaje(item) {
+      const fila = item.fila;
+      let score = 0;
+      const sel = normalizarEncabezado_(fila[colSel] || '');
+      if (sel === 'SELECCIONADO') score += 1000;
+      else if (sel === 'LISTA DE ESPERA') score += 500;
+      else if (sel === 'PENDIENTE') score += 100;
+
+      const conf = sigcNormalizarSiNo(fila[colConf], 'No informado');
+      if (conf === 'Sí') score += 300;
+
+      const asistidas = Number(fila[colSesAsis] || 0);
+      score += asistidas * 50;
+
+      if (item.persona.telefono) score += 20;
+      if (item.persona.correo) score += 10;
+      if (item.persona.rut && sigcValidarRut(item.persona.rut)) score += 15;
+
+      score -= item.indiceFilaPart * 0.001;
+      return score;
+    }
+
+    Object.keys(grupos).forEach(function(rootKey) {
+      const grupo = grupos[rootKey];
+      if (grupo.length <= 1) return;
+
+      grupo.sort(function(a, b) {
+        return calcularPuntaje(b) - calcularPuntaje(a);
+      });
+
+      const maestro = grupo[0];
+      const filaM = maestro.fila;
+      const perM = maestro.persona;
+      const idxPerM = perM.indiceFila;
+
+      let sesionesSet = new Set();
+      function extraerSesiones(fila) {
+        if (colAsisSes !== undefined && fila[colAsisSes]) {
+          try {
+            const parsed = typeof fila[colAsisSes] === 'string' ? JSON.parse(fila[colAsisSes]) : fila[colAsisSes];
+            if (Array.isArray(parsed)) {
+              parsed.forEach(function(s) {
+                const num = Number(typeof s === 'object' ? s.numero : s);
+                if (num > 0) sesionesSet.add(num);
+              });
+            }
+          } catch(e) {}
+        }
+      }
+      extraerSesiones(filaM);
+
+      for (let s = 1; s < grupo.length; s++) {
+        const secundario = grupo[s];
+        const filaS = secundario.fila;
+        const perS = secundario.persona;
+        const idxPerS = perS.indiceFila;
+
+        extraerSesiones(filaS);
+
+        // Rescatar teléfono si al maestro le falta
+        if (!perM.telefono && perS.telefono && idxPerM > 0) {
+          perM.telefono = perS.telefono;
+          datosPer[idxPerM][mPer['TELEFONO']] = perS.telefono;
+          if (mPer['ESTADO CONTACTO'] !== undefined) {
+            datosPer[idxPerM][mPer['ESTADO CONTACTO']] = 'Activo';
+          }
+          personasModificadas.add(idxPerM);
+        }
+
+        // Rescatar correo si al maestro le falta
+        if (!perM.correo && perS.correo && idxPerM > 0) {
+          perM.correo = perS.correo;
+          datosPer[idxPerM][mPer['CORREO']] = perS.correo;
+          if (mPer['ESTADO CONTACTO'] !== undefined) {
+            datosPer[idxPerM][mPer['ESTADO CONTACTO']] = 'Activo';
+          }
+          personasModificadas.add(idxPerM);
+        }
+
+        // Rescatar RUT limpio si el maestro tenía cuerpo corrupto o faltaba
+        if ((!perM.rut || !sigcValidarRut(perM.rut)) && perS.rut && sigcValidarRut(perS.rut) && idxPerM > 0) {
+          perM.rut = perS.rut;
+          datosPer[idxPerM][mPer['RUT']] = perS.rut;
+          if (mPer['NUMERO DOCUMENTO'] !== undefined) datosPer[idxPerM][mPer['NUMERO DOCUMENTO']] = perS.rut;
+          personasModificadas.add(idxPerM);
+        }
+
+        // Confirmación
+        const confS = sigcNormalizarSiNo(filaS[colConf], 'No informado');
+        const confM = sigcNormalizarSiNo(filaM[colConf], 'No informado');
+        if (confM === 'No informado' && confS === 'Sí') {
+          filaM[colConf] = 'Sí';
+        }
+
+        // Requisitos
+        const reqS = sigcNormalizarCumple(filaS[colReq]);
+        const reqM = sigcNormalizarCumple(filaM[colReq]);
+        if (reqM === 'Pendiente' && reqS === 'Sí') {
+          filaM[colReq] = 'Sí';
+        }
+
+        // Desactivar la participación secundaria
+        filaS[colActivo] = 'No';
+        if (colObs !== undefined) {
+          const obsActual = String(filaS[colObs] || '').trim();
+          filaS[colObs] = (obsActual ? obsActual + ' | ' : '') + '[Duplicado fusionado en ' + maestro.idPart + ']';
+        }
+        if (colUltAct !== undefined) {
+          filaS[colUltAct] = ahora;
+        }
+
+        duplicadosEliminados++;
+      }
+
+      // Actualizar maestro con sesiones fusionadas
+      const arrSesiones = Array.from(sesionesSet).sort(function(a, b) { return a - b; });
+      if (colAsisSes !== undefined && arrSesiones.length > 0) {
+        filaM[colAsisSes] = JSON.stringify(arrSesiones.map(function(num) {
+          return { numero: num, presente: true };
+        }));
+      }
+      if (colSesTot !== undefined) {
+        filaM[colSesTot] = sesionesOficiales;
+      }
+      if (colSesAsis !== undefined) {
+        const asistidas = arrSesiones.length > 0 ? arrSesiones.length : Number(filaM[colSesAsis] || 0);
+        filaM[colSesAsis] = asistidas;
+        if (colPctAsis !== undefined) {
+          filaM[colPctAsis] = sesionesOficiales > 0 ? asistidas / sesionesOficiales : 0;
+        }
+      }
+      if (colUltAct !== undefined) {
+        filaM[colUltAct] = ahora;
+      }
+
+      nombresUnificados.push(perM.nombre || maestro.idPart);
+    });
+
+    // 6. Guardar cambios en hojas si hubo modificaciones
+    if (duplicadosEliminados > 0) {
+      rangoPart.setValues(datosPart);
+      SpreadsheetApp.flush();
+      if (typeof sigcInvalidarCacheTabla_ === 'function') {
+        sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PARTICIPACIONES);
+      }
+    }
+    if (personasModificadas.size > 0) {
+      rangoPer.setValues(datosPer);
+      SpreadsheetApp.flush();
+      if (typeof sigcInvalidarCacheTabla_ === 'function') {
+        sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PERSONAS);
+      }
+    }
+
+    return {
+      ok: true,
+      duplicadosEliminados: duplicadosEliminados,
+      nombresUnificados: nombresUnificados,
+      mensaje: duplicadosEliminados > 0
+        ? 'Se depuraron y unificaron con éxito ' + duplicadosEliminados + ' registro(s) duplicado(s).'
+        : 'No se detectaron duplicados en esta actividad.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }

@@ -57,8 +57,8 @@
             <div class="field"><label>Porcentaje de aprobación</label><input name="PORCENTAJE_APROBACION" type="number" min="0" max="100" step="0.1" placeholder="Ej.: 80"></div>
             <div class="field"><label>Requiere selección</label><select name="REQUIERE_SELECCION"><option>Sí</option><option>No</option></select></div>
             <div class="field"><label>Cupos</label><input name="CUPOS" type="number" min="0"></div>
-            <div class="field"><label>Fecha inicio</label><input id="editFechaInicio" name="FECHA_INICIO" type="date"></div>
-            <div class="field"><label>Fecha término</label><input id="editFechaTermino" name="FECHA_TERMINO" type="date"></div>
+            <div class="field"><label>Fecha inicio</label><input id="editFechaInicio" name="FECHA_INICIO" type="date" onchange="sincronizarFechaInicioFormulario('edit')"></div>
+            <div class="field"><label>Fecha término</label><input id="editFechaTermino" name="FECHA_TERMINO" type="date" onchange="sincronizarFechaTerminoFormulario('edit')"></div>
             <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Online</option><option>Híbrida</option></select></div>
 
             <!-- PLANIFICADOR DE CRONOGRAMA Y SESIONES EN EDICION -->
@@ -83,6 +83,7 @@
                   <button type="button" class="day-toggle-btn" data-dia="4" onclick="alternarDiaSemana('edit', 4)">Jue</button>
                   <button type="button" class="day-toggle-btn" data-dia="5" onclick="alternarDiaSemana('edit', 5)">Vie</button>
                   <button type="button" class="day-toggle-btn" data-dia="6" onclick="alternarDiaSemana('edit', 6)">Sáb</button>
+                  <button type="button" class="day-toggle-btn" data-dia="0" onclick="alternarDiaSemana('edit', 0)">Dom</button>
                 </div>
               </div>
 
@@ -117,10 +118,13 @@
             </div>
 
             <div class="field"><label>Estado</label><select name="ESTADO_ACTIVIDAD"><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Suspendida</option><option>Cerrada</option></select></div>
-            <div class="field"><label>Institución asociada</label><input name="INSTITUCION_ASOCIADA"></div>
-            <div class="field"><label>Responsable</label><input name="RESPONSABLE"></div>
+            <div class="field"><label>Institución asociada</label><input name="INSTITUCION_ASOCIADA" placeholder="Ej.: Centro de Negocios SERCOTEC"></div>
+            <div class="field"><label>Responsable</label><input name="RESPONSABLE" placeholder="Ej.: Nombre encargado"></div>
+            <div class="field full"><label>🔗 Enlace de inscripción (Formulario / Zoom / Externa)</label><input name="LINK_INSCRIPCION" placeholder="https://forms.gle/... o https://zoom.us/... (opcional si vincula formulario)"></div>
+            <div class="field full"><label>📋 Requisitos de postulación (para cartelera)</label><input name="REQUISITOS" placeholder="Ej.: Mayor de 18 años, cédula vigente, RSH hasta 60%..."></div>
+            <div class="field full"><label>📝 Breve descripción / Resumen (para cartelera)</label><textarea name="DESCRIPCION_CORTA" rows="2" placeholder="Resumen del curso o taller para el boletín de capacitaciones..."></textarea></div>
             <div class="field full"><label>Carpeta Drive</label><input name="CARPETA_DRIVE" placeholder="https://drive.google.com/..."></div>
-            <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
+            <div class="field full"><label>Observaciones internas</label><textarea name="OBSERVACIONES"></textarea></div>
             <div class="notice">Al guardar una actividad, el sistema sincronizará las sesiones totales de sus participaciones. Si el estado es Ejecutada o Cerrada, recalculará automáticamente los resultados de las personas seleccionadas.</div>
             <div class="form-actions">
               <button class="btn secondary" type="button" onclick="cerrarEdicionActividad()">Cancelar</button>

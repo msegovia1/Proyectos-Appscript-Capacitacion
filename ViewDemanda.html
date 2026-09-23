@@ -16,7 +16,7 @@
         <div class="table-tools">
           <select id="filtroDemandaEscuela" onchange="actualizarFiltroAreasDemanda(); renderDemanda()"><option value="">Todas las escuelas / líneas</option><option>Empleo</option><option>Emprendimiento</option><option>Transversal</option></select>
           <select id="filtroDemandaArea" onchange="renderDemanda()"><option value="">Todas las áreas temáticas</option></select>
-          <input id="buscarDemanda" placeholder="Buscar escuela o área..." oninput="renderDemanda()">
+          <input id="buscarDemanda" placeholder="Buscar escuela o área..." oninput="renderDemandaConPausa()">
         </div>
         <div class="notice" style="margin-bottom:14px">Inscritos, seleccionados y personas capacitadas se calculan solo entre quienes declararon demanda en esa misma temática. “Capacitada” requiere participación efectiva en una actividad con la misma escuela / línea y área temática.</div>
         <div class="table-container"><table><thead><tr><th>Escuela / línea</th><th>Área temática</th><th>Demandantes</th><th>Actividades ofertadas</th><th>Demandantes inscritos</th><th>Demandantes seleccionados</th><th>Demanda cubierta</th><th>Demanda pendiente</th><th>Cobertura</th><th>Detalle</th></tr></thead><tbody id="tablaDemanda"></tbody></table></div>

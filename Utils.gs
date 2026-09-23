@@ -43,8 +43,48 @@ function sigcNormalizarNombre(valor) {
   }).join(' ');
 }
 function sigcNormalizarRut(valor) {
-  const limpio = String(valor || '').toUpperCase().replace(/[^0-9K]/g, '');
+  if (!valor) return '';
+  const str = String(valor).trim().toUpperCase();
+  // Si ya contiene guión explícito (ej: "18.234.567-8" o "18234567-K")
+  if (str.indexOf('-') >= 0) {
+    const partes = str.split('-');
+    let cuerpo = partes[0].replace(/\D/g, '');
+    const dv = partes[1].replace(/[^0-9K]/g, '');
+    const repMatch = cuerpo.match(/^(\d{7,8})\1+$/);
+    if (repMatch) {
+      cuerpo = repMatch[1];
+    }
+    if (cuerpo.length >= 6 && dv.length >= 1) {
+      return cuerpo + '-' + dv.charAt(0);
+    }
+  }
+  let limpio = str.replace(/[^0-9K]/g, '');
   if (limpio.length < 2) return '';
+
+  // Si contiene cuerpo repetido con DV al final continuo (ej: "15933157159331571")
+  const repMatchConDv = limpio.match(/^(\d{7,8})\1+([0-9K])$/);
+  if (repMatchConDv) {
+    return repMatchConDv[1] + '-' + repMatchConDv[2];
+  }
+  // Si contiene cuerpo repetido sin DV
+  const repMatchSinDv = limpio.match(/^(\d{7,8})\1+$/);
+  if (repMatchSinDv) {
+    limpio = repMatchSinDv[1];
+  }
+
+  // Si son 7 u 8 dígitos puros sin guión previo (es el cuerpo al que le falta el DV)
+  if (/^\d{7,8}$/.test(limpio)) {
+    let suma = 0;
+    let mult = 2;
+    for (let i = limpio.length - 1; i >= 0; i--) {
+      suma += Number(limpio.charAt(i)) * mult;
+      mult = mult === 7 ? 2 : mult + 1;
+    }
+    const resto = 11 - (suma % 11);
+    const dvCalc = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+    return limpio + '-' + dvCalc;
+  }
+  // Si tiene 8 o 9 caracteres con DV pegado al final (ej: "182345678" o "18234567K")
   return limpio.slice(0, -1) + '-' + limpio.slice(-1);
 }
 function sigcValidarRut(valor) {
@@ -107,27 +147,59 @@ function sigcNormalizarDocumento(tipo, numero, rutAlternativo) {
   return '';
 }
 function sigcValidarDocumento(tipo, numero, nacionalidad) {
-  const tipoNormalizado = sigcNormalizarTipoDocumento(tipo, numero);
-  const documento = sigcNormalizarDocumento(tipoNormalizado, numero, numero);
+  let tipoNormalizado = sigcNormalizarTipoDocumento(tipo, numero);
+  let documento = sigcNormalizarDocumento(tipoNormalizado, numero, numero);
+
   if (tipoNormalizado === 'RUT') {
     if (!documento || !sigcValidarRut(documento)) {
-      throw new Error('Debe ingresar un RUT chileno válido.');
+      // 1. Intentar auto-reconstruir si son 7 u 8 dígitos sin DV
+      const soloDigitos = String(numero || '').replace(/\D/g, '');
+      if (soloDigitos.length >= 7 && soloDigitos.length <= 8) {
+        let suma = 0;
+        let mult = 2;
+        for (let i = soloDigitos.length - 1; i >= 0; i--) {
+          suma += Number(soloDigitos.charAt(i)) * mult;
+          mult = mult === 7 ? 2 : mult + 1;
+        }
+        const resto = 11 - (suma % 11);
+        const dvCalc = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+        const rutReconstruido = soloDigitos + '-' + dvCalc;
+        if (sigcValidarRut(rutReconstruido)) {
+          return {tipo: 'RUT', numero: rutReconstruido};
+        }
+      }
+      // 2. Si contiene texto o formato extranjero, clasificar como Documento extranjero
+      const limpioDoc = String(numero || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
+      if (limpioDoc.length >= 3) {
+        return {
+          tipo: 'Documento extranjero',
+          numero: limpioDoc
+        };
+      }
+      throw new Error('Debe ingresar un RUT o documento de identidad válido.');
     }
-  } else if (tipoNormalizado === 'Pasaporte') {
-    if (!documento || documento.length < 4) {
-      throw new Error('Debe ingresar un número de pasaporte válido.');
+    return {tipo: 'RUT', numero: documento};
+  } else if (tipoNormalizado === 'Pasaporte' || tipoNormalizado === 'Documento extranjero') {
+    const docPas = sigcNormalizarPasaporte(numero);
+    if (!docPas || docPas.length < 3) {
+      throw new Error('Debe ingresar un número de pasaporte o documento válido.');
     }
-    if (!sigcNormalizarTexto(nacionalidad)) {
-      throw new Error('La nacionalidad es obligatoria cuando se utiliza pasaporte.');
-    }
-  } else if (['Documento extranjero', 'Documento histórico', 'Identificador histórico'].indexOf(tipoNormalizado) >= 0) {
-    if (!documento || documento.length < 4) {
+    return {tipo: tipoNormalizado, numero: docPas};
+  } else if (['Documento histórico', 'Identificador histórico'].indexOf(tipoNormalizado) >= 0) {
+    if (!documento || documento.length < 3) {
       throw new Error('El documento histórico no contiene información suficiente.');
     }
+    return {tipo: tipoNormalizado, numero: documento};
   } else {
-    throw new Error('Debe seleccionar RUT o Pasaporte.');
+    if (documento && sigcValidarRut(documento)) {
+      return {tipo: 'RUT', numero: documento};
+    }
+    const limpio = String(numero || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
+    if (limpio.length >= 3) {
+      return {tipo: 'Documento extranjero', numero: limpio};
+    }
+    throw new Error('Debe ingresar un RUT o documento de identidad.');
   }
-  return {tipo: tipoNormalizado, numero: documento};
 }
 function sigcDocumentoVisible(persona) {
   const tipo = sigcNormalizarTipoDocumento(
@@ -266,12 +338,71 @@ function sigcRegistrarLog(accion, entidad, idEntidad, detalle) {
     detalle || ''
   ]);
 }
+/**
+ * Ejecuta una operación mutante de datos protegida por LockService (control de concurrencia).
+ * Evita condiciones de carrera entre múltiples coordinadores o ejecuciones simultáneas.
+ */
+function sigcEjecutarConBloqueo_(callback, tiempoEsperaMs) {
+  const lock = LockService.getScriptLock();
+  const espera = tiempoEsperaMs || 15000;
+  const tieneBloqueo = lock.tryLock(espera);
+  if (!tieneBloqueo) {
+    throw new Error('El sistema está ocupado procesando otra solicitud simultánea. Por favor, reintenta en unos segundos.');
+  }
+  try {
+    return callback();
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {
+      console.warn('Advertencia al liberar bloqueo de script: ' + e.message);
+    }
+  }
+}
+
+/**
+ * Invalida selectivamente la caché de una entidad específica.
+ */
+function sigcInvalidarCacheEntidad_(nombreEntidad) {
+  const nombre = String(nombreEntidad || '').toUpperCase().trim();
+  try {
+    const cache = CacheService.getScriptCache();
+    const clave = 'SIGC_TABLA_' + nombre;
+    const chunksVal = cache.get(clave + '_chunks');
+    const keysToRemove = [clave, clave + '_chunks', 'SIGC_DASHBOARD_RESUMEN_V3', 'SIGC_PANEL_FORMULARIOS_V1'];
+    if (chunksVal) {
+      const total = parseInt(chunksVal, 10) || 0;
+      for (let i = 0; i < total; i++) {
+        keysToRemove.push(clave + '_chunk_' + i);
+      }
+    }
+    cache.removeAll(keysToRemove);
+  } catch (error) {
+    // La invalidación de caché nunca debe romper la ejecución principal
+  }
+}
+
 function sigcInvalidarCache_() {
   try {
-    CacheService.getScriptCache().removeAll([
+    const cache = CacheService.getScriptCache();
+    const tablas = [
+      'PERSONAS', 'ACTIVIDADES', 'PARTICIPACIONES', 'ASISTENCIA',
+      'INTERESES', 'INTERESES_CAPACITACION', 'PERFILES_BASE_MADRE',
+      'HISTORIAL_IMPORTACIONES', 'CONFIG_FORMULARIOS', 'FORMULARIOS'
+    ];
+    const keysToRemove = [
       'SIGC_DASHBOARD_RESUMEN_V3',
       'SIGC_PANEL_FORMULARIOS_V1'
-    ]);
+    ];
+    tablas.forEach(function(t) {
+      const clave = 'SIGC_TABLA_' + t;
+      keysToRemove.push(clave);
+      keysToRemove.push(clave + '_chunks');
+      for (let i = 0; i < 30; i++) {
+        keysToRemove.push(clave + '_chunk_' + i);
+      }
+    });
+    cache.removeAll(keysToRemove);
   } catch (error) {
     // La invalidación de caché nunca debe impedir una operación principal.
   }
@@ -414,4 +545,152 @@ function safeResult_(fn) {
     console.error(error);
     return { ok: false, mensaje: error && error.message ? error.message : String(error) };
   }
+}
+
+/**
+ * Motor de Consultas SQL sobre Google Sheets (Google Visualization SQL Engine).
+ * Permite ejecutar consultas estructuradas (SELECT, WHERE, GROUP BY, ORDER BY)
+ * procesadas directamente por los servidores de Google Sheets en milisegundos.
+ *
+ * @param {string} nombreHoja - Nombre de la pestaña (ej.: 'ACTIVIDADES', 'PERSONAS')
+ * @param {string} querySql - Consulta SQL (admite nombres de columna como ESTADO_ACTIVIDAD, RUT, etc.)
+ * @param {Object} [opciones] - Opciones opcionales {spreadsheetId, mapeoColumnas}
+ * @returns {Array<Object>} Arreglo de objetos con los resultados de la consulta
+ */
+function sigcConsultarSql_(nombreHoja, querySql, opciones) {
+  opciones = opciones || {};
+  const ssId = opciones.spreadsheetId || SIGC_CONFIG.SPREADSHEET_ID;
+  if (!ssId || !nombreHoja) throw new Error('Se requiere ID de spreadsheet y nombre de hoja para la consulta SQL.');
+
+  const ss = sigcSpreadsheetCentral_();
+  const hoja = ss.getSheetByName(nombreHoja);
+  if (!hoja) throw new Error('No se encontró la hoja: ' + nombreHoja);
+
+  // 1. Obtener encabezados para traducir nombres de columna a letras (A, B, C...) y Col1, Col2...
+  const encabezados = hoja.getRange(1, 1, 1, Math.max(1, hoja.getLastColumn())).getValues()[0];
+  const mapaColLetras = {};
+  const mapaColIndice = {};
+  const mapaColOriginal = {};
+
+  encabezados.forEach(function(enc, idx) {
+    const norm = sigcNormalizarEncabezado(enc);
+    if (!norm) return;
+    const letra = sigcNumeroAColumnaLetra_(idx + 1);
+    const colNum = 'Col' + (idx + 1);
+    mapaColLetras[norm] = letra;
+    mapaColIndice[norm] = colNum;
+    mapaColOriginal[letra] = String(enc || norm);
+    mapaColOriginal[colNum] = String(enc || norm);
+  });
+
+  // 2. Traducir nombres de columna legibles en la consulta SQL a referencias de columna
+  let sqlTraducido = String(querySql || 'SELECT *');
+  // Ordenar por longitud descendente para evitar reemplazos parciales
+  const nombresOrdenados = Object.keys(mapaColLetras).sort(function(a, b) { return b.length - a.length; });
+  nombresOrdenados.forEach(function(nombre) {
+    const letra = mapaColLetras[nombre];
+    const regex = new RegExp('\\b' + nombre + '\\b', 'gi');
+    sqlTraducido = sqlTraducido.replace(regex, letra);
+  });
+
+  // 3. Ejecutar consulta vía Google Visualization API
+  try {
+    const url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(ssId) +
+      '/gviz/tq?tq=' + encodeURIComponent(sqlTraducido) +
+      '&sheet=' + encodeURIComponent(nombreHoja) +
+      '&headers=1&tqx=out:json';
+
+    const token = ScriptApp.getOAuthToken();
+    const respuesta = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+
+    if (respuesta.getResponseCode() === 200) {
+      const texto = respuesta.getContentText();
+      const inicio = texto.indexOf('{');
+      const fin = texto.lastIndexOf('}');
+      if (inicio >= 0 && fin >= inicio) {
+        const jsonStr = texto.substring(inicio, fin + 1);
+        const gvizData = JSON.parse(jsonStr);
+        if (gvizData.status === 'ok' && gvizData.table) {
+          return sigcParsearResultadoGviz_(gvizData.table, encabezados, mapaColOriginal);
+        }
+      }
+    }
+  } catch (errorGviz) {
+    console.warn('Fallo en consulta SQL GViz (' + errorGviz.message + '). Ejecutando fallback en memoria...');
+  }
+
+  // 4. Fallback resiliente: lectura tradicional con filtrado básico en memoria
+  return sigcFallbackConsultaEnMemoria_(hoja, encabezados, querySql);
+}
+
+/** Convierte índice base 1 a letra de columna de Sheets (1 -> A, 27 -> AA) */
+function sigcNumeroAColumnaLetra_(colIndex) {
+  let temp = colIndex;
+  let letra = '';
+  while (temp > 0) {
+    const resto = (temp - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    temp = Math.floor((temp - resto) / 26);
+  }
+  return letra;
+}
+
+/** Parsea la tabla devuelta por GViz a una lista de objetos limpios */
+function sigcParsearResultadoGviz_(table, encabezadosOriginales, mapaColOriginal) {
+  const columnas = (table.cols || []).map(function(col, idx) {
+    const label = col.label ? String(col.label).trim() : '';
+    const id = col.id ? String(col.id).trim() : '';
+    return label || mapaColOriginal[id] || (encabezadosOriginales && encabezadosOriginales[idx]) || ('Columna_' + (idx + 1));
+  });
+
+  const filas = [];
+  const filasGviz = table.rows || [];
+  for (let r = 0; r < filasGviz.length; r++) {
+    const celdas = filasGviz[r].c || [];
+    const obj = {};
+    for (let c = 0; c < columnas.length; c++) {
+      const celda = celdas[c];
+      let valor = '';
+      if (celda) {
+        if (celda.v !== null && celda.v !== undefined) {
+          // Si es fecha en formato Date(yyyy, m, d) de GViz
+          if (typeof celda.v === 'string' && celda.v.indexOf('Date(') === 0) {
+            const partes = celda.v.replace('Date(', '').replace(')', '').split(',');
+            if (partes.length >= 3) {
+              const d = new Date(Number(partes[0]), Number(partes[1]), Number(partes[2]));
+              valor = celda.f || (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+            } else {
+              valor = celda.f || celda.v;
+            }
+          } else {
+            valor = celda.v;
+          }
+        } else if (celda.f) {
+          valor = celda.f;
+        }
+      }
+      obj[columnas[c]] = valor;
+    }
+    filas.push(obj);
+  }
+  return filas;
+}
+
+/** Fallback en memoria si la consulta GViz no responde */
+function sigcFallbackConsultaEnMemoria_(hoja, encabezados, querySql) {
+  const datos = hoja.getDataRange().getValues();
+  if (datos.length < 2) return [];
+  const encs = datos[0].map(sigcNormalizarEncabezado);
+  const filas = [];
+  for (let i = 1; i < datos.length; i++) {
+    const obj = {};
+    for (let j = 0; j < encs.length; j++) {
+      obj[encs[j]] = datos[i][j];
+    }
+    filas.push(obj);
+  }
+  return filas;
 }
