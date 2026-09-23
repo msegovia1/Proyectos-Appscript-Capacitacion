@@ -4226,6 +4226,7 @@ ${filasActividadesHtml}
      ========================================================================== */
   let CAL_FECHA_ACTUAL = new Date();
   let CAL_MODO = 'mes';
+  let MAPA_CALENDARIO_EVENTOS = {};
 
   function cambiarModoCalendario(modo) {
     CAL_MODO = modo;
@@ -4391,6 +4392,7 @@ ${filasActividadesHtml}
       }
     });
 
+    MAPA_CALENDARIO_EVENTOS = mapaActividadesPorDia;
     const hoyClave = formatoClaveFecha(new Date());
     let html = '';
 
@@ -4459,14 +4461,15 @@ ${filasActividadesHtml}
     });
 
     if (extras > 0) {
-      chipsHtml += `<button class="cal-more-btn" onclick="event.stopPropagation(); cambiarModoCalendario('lista')">+${extras} más</button>`;
+      chipsHtml += `<button type="button" class="cal-more-btn" onclick="event.stopPropagation(); abrirModalDiaCalendario('${claveFecha}')" title="Ver todas las ${eventos.length} actividades de este día">+${extras} más</button>`;
     }
 
+    const clickCelda = eventos.length > 0 ? `onclick="abrirModalDiaCalendario('${claveFecha}')"` : '';
+
     return `
-      <div class="${clases.join(' ')}" data-fecha="${claveFecha}">
+      <div class="${clases.join(' ')}" data-fecha="${claveFecha}" ${clickCelda}>
         <div class="cal-day-header">
           <span class="cal-day-num">${numDia}</span>
-          ${eventos.length > 0 ? `<span class="badge neutral" style="font-size:9.5px;padding:1px 5px">${eventos.length}</span>` : ''}
         </div>
         <div class="cal-events-list">
           ${chipsHtml}
@@ -4637,6 +4640,89 @@ ${filasActividadesHtml}
 
   function cerrarDetalleActividadCalendario() {
     const modal = document.getElementById('modalDetalleActividadCalendario');
+    if (modal) {
+      modal.hidden = true;
+      modal.style.display = 'none';
+    }
+  }
+
+  function abrirModalDiaCalendario(claveFecha) {
+    const eventos = (MAPA_CALENDARIO_EVENTOS && MAPA_CALENDARIO_EVENTOS[claveFecha]) || [];
+    if (!eventos.length) return;
+
+    // Formatear fecha legible: ej. "Jueves 1 de Octubre de 2026"
+    const partes = String(claveFecha).split('-');
+    const anio = Number(partes[0]);
+    const mes = Number(partes[1]) - 1;
+    const dia = Number(partes[2]);
+    const fObj = new Date(anio, mes, dia);
+    const nombresDias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const diaSemana = nombresDias[fObj.getDay()] || '';
+    const nombreMes = nombresMeses[mes] || '';
+
+    const elTitulo = document.getElementById('modalDiaTitulo');
+    const elSub = document.getElementById('modalDiaSubtitulo');
+    const elLista = document.getElementById('modalDiaListaActividades');
+
+    if (elTitulo) elTitulo.textContent = `📅 ${diaSemana} ${dia} de ${nombreMes}, ${anio}`;
+    if (elSub) elSub.textContent = `${eventos.length} actividades programadas para este día`;
+
+    const ordenados = [...eventos].sort((x, y) => (x.horaInicio || '99:99').localeCompare(y.horaInicio || '99:99'));
+
+    let html = '';
+    ordenados.forEach((item, index) => {
+      const a = item.actividad || item;
+      let claseBadge = 'badge-blue';
+      if (a.ESCUELA_LINEA === 'Emprendimiento') claseBadge = 'badge-green';
+      else if (a.ESCUELA_LINEA === 'Transversal') claseBadge = 'badge-purple';
+
+      const horarioStr = item.horaInicio ? (item.horaFin ? `${item.horaInicio} - ${item.horaFin}` : item.horaInicio) : (a.HORARIO || 'Horario por confirmar');
+      const sesionBadge = item.numeroSesion ? `<span class="badge neutral" style="font-size:11px">Sesión ${item.numeroSesion} de ${item.totalSesiones}</span>` : '';
+      const noCabeTag = index >= 3 ? `<span class="badge warning" style="font-size:10px;margin-left:auto;font-weight:600">⚠ No cabía en casilla</span>` : '';
+
+      html += `
+        <div class="cal-modal-dia-item">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="badge ${claseBadge}" style="font-weight: 700; font-size: 11px;">${esc(a.ESCUELA_LINEA || 'General')}</span>
+              <span class="badge neutral" style="font-size: 11px;">⏰ ${esc(horarioStr)}</span>
+              ${sesionBadge}
+            </div>
+            ${noCabeTag}
+          </div>
+          <div>
+            <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: var(--texto);">${esc(a.NOMBRE_ACTIVIDAD)}</h4>
+            <div style="font-size: 12px; color: var(--gris); display: flex; gap: 12px; flex-wrap: wrap;">
+              <span>📍 <strong>Modalidad:</strong> ${esc(a.MODALIDAD || 'Presencial')}</span>
+              <span>🏷️ <strong>Estado:</strong> ${esc(a.ESTADO_ACTIVIDAD || 'Planificada')}</span>
+              ${a.LUGAR ? `<span>🏢 <strong>Lugar:</strong> ${esc(a.LUGAR)}</span>` : ''}
+              ${a.DOCENTE_RELATOR ? `<span>👤 <strong>Docente:</strong> ${esc(a.DOCENTE_RELATOR)}</span>` : ''}
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--borde);">
+            <button type="button" class="btn secondary compact" onclick="cerrarModalDiaCalendario(); abrirDetalleActividadCalendario('${esc(a.ID_ACTIVIDAD)}')" title="Ver ficha completa">
+              🔍 Ver detalle
+            </button>
+            <button type="button" class="btn compact" onclick="cerrarModalDiaCalendario(); irAGestionDesdeCalendario('${esc(a.ID_ACTIVIDAD)}')" title="Gestionar participantes">
+              👥 Participantes
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    if (elLista) elLista.innerHTML = html;
+
+    const modal = document.getElementById('modalDiaCalendario');
+    if (modal) {
+      modal.hidden = false;
+      modal.style.display = 'flex';
+    }
+  }
+
+  function cerrarModalDiaCalendario() {
+    const modal = document.getElementById('modalDiaCalendario');
     if (modal) {
       modal.hidden = true;
       modal.style.display = 'none';
