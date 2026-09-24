@@ -3838,9 +3838,21 @@ ${filasActividadesHtml}
   function filasReporteAsistenciasFiltradas_() {
     const q = normalizar(document.getElementById('buscarAsistencias')?.value || '');
     const filtroConf = document.getElementById('asisConfirmacion')?.value || '';
+    const tipoAsis = document.getElementById('asisTipo')?.value || 'todos';
+    const filtroRes = document.getElementById('asisResultado')?.value || '';
     let filas = REPORTE_ASISTENCIAS?.filas || [];
     if (filtroConf) {
-      filas = filas.filter(f => sigcNormalizarClave(f.CONFIRMA_PARTICIPACION || 'No informado') === sigcNormalizarClave(filtroConf));
+      filas = filas.filter(f => normalizar(f.CONFIRMA_PARTICIPACION || 'No informado') === normalizar(filtroConf));
+    }
+    if (tipoAsis === 'solo_confirmados') {
+      filas = filas.filter(f => normalizar(f.CONFIRMA_PARTICIPACION || '').includes('si'));
+    } else if (tipoAsis === 'con_asistencia') {
+      filas = filas.filter(f => Number(f.SESIONES_ASISTIDAS || 0) > 0);
+    } else if (tipoAsis === 'sin_asistencia') {
+      filas = filas.filter(f => Number(f.SESIONES_ASISTIDAS || 0) === 0);
+    }
+    if (filtroRes) {
+      filas = filas.filter(f => normalizar(f.RESULTADO_FINAL || f.RESULTADO_ASISTENCIA || '') === normalizar(filtroRes));
     }
     if (!q) return filas;
     return filas.filter(f => normalizar([
@@ -3920,12 +3932,22 @@ ${filasActividadesHtml}
   }
   function exportarAsistenciasCsv(soloConfirmados = false) {
     if (!REPORTE_ASISTENCIAS) {
-      notificar('Primero genere la nómina de asistencias.', true);
+      const idAct = document.getElementById('gestionActividad')?.value;
+      if (idAct) {
+        cargarReporteAsistenciasYExportar_(soloConfirmados);
+        return;
+      }
+      notificar('Seleccione una actividad en la parte superior antes de descargar.', true);
+      const sel = document.getElementById('gestionActividad');
+      if (sel) {
+        sel.focus();
+        sel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
     let filas = filasReporteAsistenciasFiltradas_();
     if (soloConfirmados) {
-      filas = filas.filter(f => String(f.CONFIRMA_PARTICIPACION || '').trim().toLowerCase() === 'sí');
+      filas = filas.filter(f => normalizar(f.CONFIRMA_PARTICIPACION || '').includes('si'));
       if (!filas.length) {
         notificar('No se encontraron participantes confirmados (Confirmación = Sí) para exportar.', true);
         return;
@@ -4008,6 +4030,33 @@ ${filasActividadesHtml}
     enlace.download = `nomina_asistencias${nombreAct}${sufijoConfirmados}_${new Date().toISOString().slice(0,10)}.csv`;
     enlace.click();
     URL.revokeObjectURL(enlace.href);
+  }
+  function cargarReporteAsistenciasYExportar_(soloConfirmados) {
+    const selectorActividad = document.getElementById('gestionActividad');
+    const idActividad = selectorActividad?.value || '';
+    if (!idActividad) {
+      notificar('Seleccione una actividad en Gestión de participantes.', true);
+      selectorActividad?.focus();
+      return;
+    }
+    mostrarCarga(true, 'Generando nómina para Excel…');
+    const filtros = {
+      idActividad,
+      tipoAsistencia: document.getElementById('asisTipo')?.value || 'todos',
+      confirmacion: document.getElementById('asisConfirmacion')?.value || '',
+      resultado: document.getElementById('asisResultado')?.value || ''
+    };
+    google.script.run.withSuccessHandler(datos => {
+      REPORTE_ASISTENCIAS = datos || {resumen:{}, filas:[]};
+      PAGINA_ASISTENCIAS = 1;
+      renderReporteAsistencias();
+      mostrarCarga(false);
+      exportarAsistenciasCsv(soloConfirmados);
+    }).withFailureHandler(error => {
+      mostrarCarga(false);
+      texto('estadoReporteAsistencias', 'No fue posible generar el listado de asistencias.');
+      notificar(error.message || String(error), true);
+    }).obtenerReporteAsistencias(filtros);
   }
   function exportarReporteExcel() {
     if (!REPORTE) { notificar('Primero genere el reporte.', true); return; }
