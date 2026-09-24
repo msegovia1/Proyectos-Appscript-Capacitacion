@@ -182,6 +182,25 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       } catch (e) {
         return null;
       }
+    },
+    async clear() {
+      try {
+        const db = await this.getDb();
+        if (db) {
+          await new Promise((resolve) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).clear();
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+          });
+        }
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('SIGC_')) localStorage.removeItem(key);
+        });
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
   };
 
@@ -224,7 +243,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const inicioCarga = performance.now();
     let localDataLoaded = false;
 
-    if (!forzar) {
+    if (forzar) {
+      await SIGC_STORE.clear();
+    } else {
       // 1. Carga ultra-rápida desde IndexedDB/localStorage en 0.0 segundos
       const [resumenLocal, personasLocal, actividadesLocal, partLocal] = await Promise.all([
         SIGC_STORE.get('dashboard'),
@@ -761,7 +782,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       dropdown.innerHTML = `
         <div style="padding:14px; text-align:center; color:#555;">
           <p style="margin:0 0 8px 0; font-size:13px;">No se encontró a nadie que coincida con "<strong>${esc(input.value)}</strong>".</p>
-          <button type="button" class="btn compact" onclick="irARegistrarPersonaDesdeBusqueda('${esc(input.value)}')">＋ Registrar a esta persona ahora</button>
+          <button type="button" class="btn compact" onclick="irARegistrarPersonaDesdeBusqueda()">＋ Registrar a esta persona ahora</button>
         </div>
       `;
       dropdown.style.display = 'block';
@@ -832,6 +853,10 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
   }
 
   function irARegistrarPersonaDesdeBusqueda(termino) {
+    if (!termino) {
+      const input = document.getElementById('inputBuscarPersonaParticipacion');
+      termino = input ? input.value.trim() : '';
+    }
     irAVista('registro-personas');
     setTimeout(() => {
       const form = document.getElementById('formPersona');
@@ -3148,7 +3173,7 @@ ${filasActividadesHtml}
           ? '56' + soloDigitos
           : (soloDigitos.startsWith('569') ? soloDigitos : (soloDigitos.length === 8 ? '569' + soloDigitos : ''));
         if (numWp) {
-          wpHtml = `<a href="https://wa.me/${numWp}" target="_blank" class="wp-link" title="Abrir chat de WhatsApp con ${esc(p.NOMBRE_COMPLETO)}">💬</a>`;
+          wpHtml = `<a href="https://wa.me/${numWp}" target="_blank" rel="noopener noreferrer" class="wp-link" title="Abrir chat de WhatsApp con ${esc(p.NOMBRE_COMPLETO)}">💬</a>`;
         }
       }
       const telHtml = tel

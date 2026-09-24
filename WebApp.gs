@@ -11,7 +11,7 @@ function doGet(e) {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Sistema de Gestión de Capacitaciones — SIGC')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -56,6 +56,10 @@ function probarConexionSIGC() {
 function ejecutarConsultaSqlSIGC(datos) {
   datos = datos || {};
   const nombreHoja = String(datos.hoja || WEBAPP_CONFIG.HOJAS.ACTIVIDADES).trim();
+  const hojasPermitidas = Object.values(WEBAPP_CONFIG.HOJAS);
+  if (!hojasPermitidas.includes(nombreHoja)) {
+    throw new Error('Hoja no autorizada para consulta: ' + nombreHoja);
+  }
   const sql = String(datos.sql || 'SELECT *').trim();
   const inicio = new Date().getTime();
   const resultado = sigcConsultarSql_(nombreHoja, sql);
@@ -77,6 +81,10 @@ function ejecutarConsultaSqlSIGC(datos) {
 function obtenerTablaPaginadaSql(opciones) {
   opciones = opciones || {};
   const nombreHoja = String(opciones.hoja || WEBAPP_CONFIG.HOJAS.ACTIVIDADES).trim();
+  const hojasPermitidas = Object.values(WEBAPP_CONFIG.HOJAS);
+  if (!hojasPermitidas.includes(nombreHoja)) {
+    throw new Error('Hoja no autorizada para consulta: ' + nombreHoja);
+  }
   const pagina = Math.max(1, parseInt(opciones.pagina, 10) || 1);
   const tamano = Math.max(1, Math.min(200, parseInt(opciones.tamano, 10) || 50));
   const offset = (pagina - 1) * tamano;
