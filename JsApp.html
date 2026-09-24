@@ -3807,6 +3807,7 @@ ${filasActividadesHtml}
     const filtros = {
       idActividad,
       tipoAsistencia: document.getElementById('asisTipo')?.value || 'todos',
+      confirmacion: document.getElementById('asisConfirmacion')?.value || '',
       resultado: document.getElementById('asisResultado')?.value || ''
     };
     google.script.run.withSuccessHandler(datos => {
@@ -3828,26 +3829,31 @@ ${filasActividadesHtml}
     texto('asisActividadSeleccionada', etiqueta);
     REPORTE_ASISTENCIAS = null;
     PAGINA_ASISTENCIAS = 1;
-    ['asisRegistros','asisPersonas','asisActividades','asisCertificados'].forEach(id => texto(id, 0));
+    ['asisRegistros','asisPersonas','asisConfirmados','asisActividades','asisCertificados'].forEach(id => texto(id, 0));
     texto('asisPromedio', '0%');
     texto('paginaAsistenciasInfo', '');
     const tabla = document.getElementById('tablaReporteAsistencias');
-    if (tabla) tabla.innerHTML = '<tr><td colspan="17" class="empty-state">Seleccione una actividad y genere la nómina.</td></tr>';
+    if (tabla) tabla.innerHTML = '<tr><td colspan="18" class="empty-state">Seleccione una actividad y genere la nómina.</td></tr>';
   }
   function filasReporteAsistenciasFiltradas_() {
     const q = normalizar(document.getElementById('buscarAsistencias')?.value || '');
-    const filas = REPORTE_ASISTENCIAS?.filas || [];
+    const filtroConf = document.getElementById('asisConfirmacion')?.value || '';
+    let filas = REPORTE_ASISTENCIAS?.filas || [];
+    if (filtroConf) {
+      filas = filas.filter(f => sigcNormalizarClave(f.CONFIRMA_PARTICIPACION || 'No informado') === sigcNormalizarClave(filtroConf));
+    }
     if (!q) return filas;
     return filas.filter(f => normalizar([
       f.NOMBRE_COMPLETO, f.DOCUMENTO, f.CORREO, f.TELEFONO,
       f.NOMBRE_ACTIVIDAD, f.ESCUELA_LINEA, f.AREA_TEMATICA,
-      f.INSTITUCION_ASOCIADA, f.RESULTADO_FINAL
+      f.INSTITUCION_ASOCIADA, f.RESULTADO_FINAL, f.CONFIRMA_PARTICIPACION
     ].join(' ')).includes(q));
   }
   function renderReporteAsistencias() {
     const resumen = REPORTE_ASISTENCIAS?.resumen || {};
     texto('asisRegistros', resumen.registros || 0);
     texto('asisPersonas', resumen.personasUnicas || 0);
+    texto('asisConfirmados', resumen.confirmados || 0);
     texto('asisActividades', resumen.actividades || 0);
     texto('asisPromedio', formatoPorcentaje(resumen.asistenciaPromedio || 0));
     texto('asisCertificados', resumen.certificados || 0);
@@ -3887,6 +3893,7 @@ ${filasActividadesHtml}
         <td>${esc(f.ESCUELA_LINEA)}<br><span class="muted">${esc(f.AREA_TEMATICA)}</span></td>
         <td>${esc(f.INSTITUCION_ASOCIADA)}</td>
         <td><span class="badge">${esc(f.ESTADO_SELECCION)}</span></td>
+        <td><span class="badge ${f.CONFIRMA_PARTICIPACION === 'Sí' ? 'success' : (f.CONFIRMA_PARTICIPACION === 'No' ? 'danger' : 'neutral')}">${esc(f.CONFIRMA_PARTICIPACION || 'No informado')}</span></td>
         <td>
           <strong>${esc(f.SESIONES_ASISTIDAS)} / ${esc(f.SESIONES_TOTALES)}</strong>
           ${pillsSesionesHtml}
@@ -3898,7 +3905,7 @@ ${filasActividadesHtml}
         <td>${esc(f.CERTIFICADO)}</td>
         <td>${esc(f.ULTIMA_ACTUALIZACION)}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="17" class="empty-state">No se encontraron registros para los filtros seleccionados.</td></tr>';
+    }).join('') : '<tr><td colspan="18" class="empty-state">No se encontraron registros para los filtros seleccionados.</td></tr>';
   }
   function cambiarPaginaAsistencias(delta) {
     PAGINA_ASISTENCIAS += delta;
@@ -3911,12 +3918,19 @@ ${filasActividadesHtml}
       renderReporteAsistencias();
     }, 220);
   }
-  function exportarAsistenciasCsv() {
+  function exportarAsistenciasCsv(soloConfirmados = false) {
     if (!REPORTE_ASISTENCIAS) {
-      notificar('Primero genere el listado de asistencias.', true);
+      notificar('Primero genere la nómina de asistencias.', true);
       return;
     }
-    const filas = filasReporteAsistenciasFiltradas_();
+    let filas = filasReporteAsistenciasFiltradas_();
+    if (soloConfirmados) {
+      filas = filas.filter(f => String(f.CONFIRMA_PARTICIPACION || '').trim().toLowerCase() === 'sí');
+      if (!filas.length) {
+        notificar('No se encontraron participantes confirmados (Confirmación = Sí) para exportar.', true);
+        return;
+      }
+    }
     if (!filas.length) {
       notificar('No hay registros para descargar.', true);
       return;
@@ -3942,6 +3956,7 @@ ${filasActividadesHtml}
       ['Institución', 'INSTITUCION_ASOCIADA'],
       ['Modalidad', 'MODALIDAD'],
       ['Estado selección', 'ESTADO_SELECCION'],
+      ['Confirmación', 'CONFIRMA_PARTICIPACION'],
       ['Sesiones asistidas', 'SESIONES_ASISTIDAS'],
       ['Sesiones totales', 'SESIONES_TOTALES'],
       ['Detalle sesiones asistidas', 'SESIONES_DETALLE_TEXTO']
@@ -3987,9 +4002,10 @@ ${filasActividadesHtml}
     const nombreAct = REPORTE_ASISTENCIAS?.filas?.[0]?.NOMBRE_ACTIVIDAD
       ? `_${normalizar(REPORTE_ASISTENCIAS.filas[0].NOMBRE_ACTIVIDAD).replace(/[^a-z0-9]/gi, '_')}`
       : '';
+    const sufijoConfirmados = soloConfirmados ? '_solo_confirmados' : '';
     const enlace = document.createElement('a');
     enlace.href = URL.createObjectURL(new Blob(['\ufeff' + lineas.join('\r\n')], {type:'text/csv;charset=utf-8'}));
-    enlace.download = `nomina_asistencias${nombreAct}_${new Date().toISOString().slice(0,10)}.csv`;
+    enlace.download = `nomina_asistencias${nombreAct}${sufijoConfirmados}_${new Date().toISOString().slice(0,10)}.csv`;
     enlace.click();
     URL.revokeObjectURL(enlace.href);
   }

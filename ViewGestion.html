@@ -215,21 +215,27 @@
         <div class="card panel" style="margin-bottom:18px">
           <div class="form-grid">
             <div class="notice field full"><strong>Actividad seleccionada:</strong> <span id="asisActividadSeleccionada">Ninguna. Seleccione una actividad en la parte superior.</span></div>
-            <div class="field"><label>Registros a mostrar</label><select id="asisTipo"><option value="todos">Todos los participantes</option><option value="con_asistencia">Solo con asistencia (1 o más sesiones)</option><option value="sin_asistencia">Sin asistencia registrada</option></select></div>
+            <div class="field"><label>Registros a mostrar</label><select id="asisTipo"><option value="todos">Todos los participantes</option><option value="solo_confirmados">Solo confirmados (Confirmación: Sí)</option><option value="con_asistencia">Solo con asistencia (1 o más sesiones)</option><option value="sin_asistencia">Sin asistencia registrada</option></select></div>
+            <div class="field"><label>Confirmación</label><select id="asisConfirmacion" onchange="buscarAsistenciasConPausa()"><option value="">Todas las confirmaciones</option><option value="Sí">Solo confirmados (Sí)</option><option value="No">No confirmados (No)</option><option value="No informado">No informado / Pendiente</option></select></div>
             <div class="field"><label>Resultado final</label><select id="asisResultado"><option value="">Todos</option><option>Participó</option><option>No participó</option><option>Aprobado</option><option>Desaprobado</option><option>Pendiente</option></select></div>
             <div class="field full"><label>Buscar en el listado</label><input id="buscarAsistencias" placeholder="Nombre, documento o institución..." oninput="buscarAsistenciasConPausa()"></div>
-            <div class="form-actions"><button class="btn" type="button" onclick="cargarReporteAsistencias()">Generar nómina</button><button class="btn secondary" type="button" onclick="exportarAsistenciasCsv()">Descargar para Excel</button></div>
+            <div class="form-actions" style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn" type="button" onclick="cargarReporteAsistencias()">Generar nómina</button>
+              <button class="btn secondary" type="button" onclick="exportarAsistenciasCsv(false)" title="Descargar todos los participantes de la nómina en Excel">📥 Descargar para Excel</button>
+              <button class="btn secondary" type="button" onclick="exportarAsistenciasCsv(true)" style="border-color:#10b981;color:#047857;background:#ecfdf5;font-weight:600" title="Descargar en Excel únicamente participantes con Confirmación = Sí">✅ Descargar solo confirmados</button>
+            </div>
           </div>
         </div>
         <div id="estadoReporteAsistencias" class="notice" style="margin-bottom:14px">Seleccione una actividad en la parte superior. La nómina incluirá sus participantes y mostrará cuántas sesiones asistieron. Contiene datos personales de uso institucional.</div>
         <div class="module-kpis">
           <div class="card module-kpi accent-blue"><span>Registros</span><strong id="asisRegistros">0</strong></div>
           <div class="card module-kpi accent-indigo"><span>Personas únicas</span><strong id="asisPersonas">0</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Confirmados</span><strong id="asisConfirmados">0</strong></div>
           <div class="card module-kpi accent-teal"><span>Actividades</span><strong id="asisActividades">0</strong></div>
-          <div class="card module-kpi accent-emerald"><span>Asistencia promedio</span><strong id="asisPromedio">0%</strong></div>
+          <div class="card module-kpi accent-amber"><span>Asistencia promedio</span><strong id="asisPromedio">0%</strong></div>
           <div class="card module-kpi accent-purple"><span>Certificados</span><strong id="asisCertificados">0</strong></div>
         </div>
-        <div class="table-container"><table><thead><tr><th>Persona</th><th>Documento</th><th>Correo</th><th>Teléfono</th><th>Comuna</th><th>PMJH</th><th>Capacitación</th><th>Año</th><th>Escuela / área</th><th>Institución</th><th>Selección</th><th>Sesiones asistidas</th><th>Sesiones totales</th><th>% asistencia</th><th>Resultado</th><th>Certificado</th><th>Actualización</th></tr></thead><tbody id="tablaReporteAsistencias"><tr><td colspan="17" class="empty-state">Seleccione una actividad y genere la nómina.</td></tr></tbody></table></div>
+        <div class="table-container"><table><thead><tr><th>Persona</th><th>Documento</th><th>Correo</th><th>Teléfono</th><th>Comuna</th><th>PMJH</th><th>Capacitación</th><th>Año</th><th>Escuela / área</th><th>Institución</th><th>Selección</th><th>Confirmación</th><th>Sesiones asistidas</th><th>Sesiones totales</th><th>% asistencia</th><th>Resultado</th><th>Certificado</th><th>Actualización</th></tr></thead><tbody id="tablaReporteAsistencias"><tr><td colspan="18" class="empty-state">Seleccione una actividad y genere la nómina.</td></tr></tbody></table></div>
         <div class="pager"><span id="paginaAsistenciasInfo"></span><button class="btn secondary" type="button" onclick="cambiarPaginaAsistencias(-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPaginaAsistencias(1)">Siguiente</button></div>
 
         <!-- MODAL DE DETALLE DE ASISTENCIA POR ALUMNO -->

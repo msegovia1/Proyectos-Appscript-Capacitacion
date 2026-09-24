@@ -477,9 +477,11 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
       if (filtros.idActividad && String(p.ID_ACTIVIDAD) !== String(filtros.idActividad)) return false;
       if (filtros.ano && String(actividad.ANO || '') !== String(filtros.ano)) return false;
       if (filtros.resultado && sigcNormalizarClave(p.RESULTADO_FINAL) !== sigcNormalizarClave(filtros.resultado)) return false;
+      if (filtros.confirmacion && sigcNormalizarClave(p.CONFIRMA_PARTICIPACION || 'No informado') !== sigcNormalizarClave(filtros.confirmacion)) return false;
       const asistidas = Number(p.SESIONES_ASISTIDAS || 0);
       if (filtros.tipoAsistencia === 'sin_asistencia' && asistidas > 0) return false;
-      if ((!filtros.tipoAsistencia || filtros.tipoAsistencia === 'con_asistencia') && asistidas <= 0) return false;
+      if (filtros.tipoAsistencia === 'con_asistencia' && asistidas <= 0) return false;
+      if (filtros.tipoAsistencia === 'solo_confirmados' && sigcNormalizarSiNo(p.CONFIRMA_PARTICIPACION, 'No') !== 'Sí') return false;
       return true;
     })
     .map(function(p) {
@@ -523,6 +525,7 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
         INSTITUCION_ASOCIADA: p.INSTITUCION_ASOCIADA || '',
         MODALIDAD: p.MODALIDAD || '',
         ESTADO_SELECCION: p.ESTADO_SELECCION || '',
+        CONFIRMA_PARTICIPACION: sigcNormalizarSiNo(p.CONFIRMA_PARTICIPACION, 'No informado'),
         SESIONES_ASISTIDAS: asistidas,
         SESIONES_TOTALES: totales,
         ASISTENCIA_SESIONES: p.ASISTENCIA_SESIONES || JSON.stringify(sesionesArray),
@@ -552,6 +555,9 @@ function webConstruirReporteAsistencias_(personas, actividades, participaciones,
     resumen: {
       registros: enriquecidas.length,
       personasUnicas: new Set(enriquecidas.map(function(f) { return String(f.ID_PERSONA || ''); }).filter(Boolean)).size,
+      confirmados: enriquecidas.filter(function(f) {
+        return sigcNormalizarSiNo(f.CONFIRMA_PARTICIPACION, 'No') === 'Sí';
+      }).length,
       actividades: new Set(enriquecidas.map(function(f) { return String(f.ID_ACTIVIDAD || ''); }).filter(Boolean)).size,
       asistenciaPromedio: porcentajes.length
         ? porcentajes.reduce(function(s, n) { return s + n; }, 0) / porcentajes.length
