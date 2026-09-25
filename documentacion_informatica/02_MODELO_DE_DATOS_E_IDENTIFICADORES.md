@@ -188,9 +188,9 @@ flowchart LR
 
 ---
 
-## 4. Estructura SQL Sugerida para el Equipo de Informática (DDL PostgreSQL)
+## 4. Estructura de Base de Datos Relacional (DDL PostgreSQL)
 
-Para facilitar la implementación en base de datos relacional estándar, se adjunta el esquema DDL recomendado:
+Para la implementación en un motor de base de datos relacional estándar, se detalla el esquema DDL estructurado:
 
 ```sql
 -- 1. Tabla Maestra de Personas

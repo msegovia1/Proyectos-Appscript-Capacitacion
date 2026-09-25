@@ -1,5 +1,5 @@
 # Guía Técnica de Despliegue — Scripts del Sistema SIGC
-### Para el Equipo de Informática — Municipalidad de Santiago
+### Sistema de Gestión de Capacitaciones — Municipalidad de Santiago
 
 Esta subcarpeta contiene la totalidad de los archivos fuente del **Sistema de Gestión de Capacitaciones (SIGC)** en su versión modular de alto rendimiento (v3.10.6).
 
@@ -35,7 +35,7 @@ Esta subcarpeta contiene la totalidad de los archivos fuente del **Sistema de Ge
 
 ## 2. Opción A: Despliegue Rápido vía Clasp (Recomendada)
 
-Si el equipo de Informática utiliza la terminal con **Google Clasp** (`@google/clasp`), el despliegue toma menos de 2 minutos:
+Para un despliegue automatizado por terminal utilizando **Google Clasp** (`@google/clasp`):
 
 ```bash
 # 1. Instalar Clasp globalmente (si no lo tienen)
@@ -51,7 +51,7 @@ clasp create --title "SIGC - Capacitaciones Santiago" --type webapp --rootDir .
 clasp push -f
 
 # 5. Desplegar una versión de prueba
-clasp deploy --description "SIGC v3.10.6 - Despliegue Inicial Informática"
+clasp deploy --description "SIGC v3.10.6 - Despliegue Institucional"
 ```
 
 ---

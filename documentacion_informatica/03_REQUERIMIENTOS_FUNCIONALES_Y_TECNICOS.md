@@ -1,6 +1,6 @@
 # Requerimientos Funcionales y Técnicos del Sistema
 
-Este documento establece la especificación de requerimientos de software (SRS) para que el **Equipo de Informática** desarrolle, mantenga o migre el sistema institucional de capacitaciones.
+Este documento establece la especificación formal de requerimientos de software (SRS) del sistema institucional de capacitaciones, cubriendo necesidades funcionales, no funcionales y de arquitectura tecnológica.
 
 ---
 
@@ -62,9 +62,9 @@ Este documento establece la especificación de requerimientos de software (SRS) 
 
 ---
 
-## 3. Sugerencia de Arquitectura Técnica y Stack para Informática
+## 3. Arquitectura Técnica y Stack Sugerido
 
-Si el equipo de Informática decide modernizar la infraestructura actual (hoy soportada eficientemente en Google Workspace / Apps Script) hacia un stack corporativo municipal independiente, se sugiere la siguiente arquitectura:
+En caso de evolucionar la infraestructura actual hacia un stack corporativo independiente sobre base de datos relacional, la arquitectura recomendada es la siguiente:
 
 ```mermaid
 flowchart TD

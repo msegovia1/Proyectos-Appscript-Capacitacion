@@ -5,7 +5,7 @@
 
 ### 1. Propósito de este Documento
 
-Este documento ha sido preparado por el **Departamento de Capacitación** para el **Equipo de Informática y Desarrollo**. Su propósito es entregar la especificación operativa, el modelo de datos y las reglas de negocio necesarias para el desarrollo o evolución del sistema informático institucional de gestión de capacitaciones.
+Este documento describe la especificación operativa, el modelo de datos y las reglas de negocio del Sistema de Gestión de Capacitaciones (SIGC) de la Municipalidad de Santiago, estableciendo las bases funcionales y técnicas para su operación, mantención y evolución tecnológica.
 
 El objetivo central es dotar a la Municipalidad de una herramienta tecnológica estandarizada que permita:
 1. Terminar con el uso de planillas Excel dispersas y desconectadas.
@@ -35,7 +35,7 @@ flowchart LR
     F["Funcionario de Capacitación\n(Operador / Coordinador)"] -->|Selecciona, Pasa Lista, Gestiona| SIS
     R["Relator / Docente\n(Interno / Externo)"] -->|Informa asistencias y contenidos| SIS
     J["Jefatura / Dirección\n(DIDECO / Fomento)"] -->|Monitorea KPIs y Aprueba Nóminas| SIS
-    I["Equipo de Informática\n(Administrador Técnico)"] -->|Mantiene Infraestructura y Seguridad| SIS
+    I["Administrador del Sistema\n(Soporte y Seguridad)"] -->|Mantiene Infraestructura y Seguridad| SIS
 ```
 
 #### Descripción de Perfiles:
@@ -51,7 +51,7 @@ flowchart LR
    - Visualiza la nómina de su curso y reporta el cumplimiento de contenidos y asistencia.
 4. **Jefatura y Dirección:**
    - Consulta el cuadro de mando (Dashboard) con estadísticas de cobertura comunal, género, grupos prioritarios (ej. PMJH) y tasas de aprobación.
-5. **Administrador de Informática:**
+5. **Administrador del Sistema:**
    - Gestiona permisos, integraciones de base de datos, respaldos y auditoría de seguridad.
 
 ---
@@ -71,7 +71,7 @@ flowchart TD
 
 ### 5. Estructura de esta Carpeta de Documentación
 
-Esta carpeta contiene todos los insumos necesarios para el equipo técnico:
+Esta carpeta contiene la documentación y especificaciones del sistema:
 * **`scripts_sistema/`**: Subcarpeta con la totalidad del código fuente (`.gs`, `.html`, `appsscript.json`) y la guía técnica de despliegue (`INSTRUCCIONES_DESPLIEGUE.md`).
 * **`01_FLUJOGRAMA_PROCESOS_OPERATIVOS.md`**: Detalle paso a paso del flujo de trabajo de los funcionarios con diagramas visuales.
 * **`02_MODELO_DE_DATOS_E_IDENTIFICADORES.md`**: Diagrama Entidad-Relación, lógica de generación de IDs únicos y reglas del cruce de datos para participación real.

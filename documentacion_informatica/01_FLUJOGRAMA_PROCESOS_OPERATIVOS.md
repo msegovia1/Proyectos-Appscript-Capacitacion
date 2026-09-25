@@ -55,7 +55,7 @@ flowchart TD
 
 ## 2. Matriz de Estados de la Actividad y de la Participación
 
-Para que el equipo de desarrollo programe las transiciones de forma limpia, se especifican las máquinas de estado:
+A continuación se especifican las transiciones y máquinas de estado que rigen las actividades y participantes:
 
 ### A. Estados de la Actividad (`ACTIVIDADES.ESTADO`)
 
