@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión de Capacitaciones — SIGC</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Inclusión de Estilos Centralizados y Responsivos -->
+  <?!= incluir('Styles'); ?>
+</head>
+<body>
+<!-- Overlay para menú móvil -->
+<div class="sidebar-overlay" onclick="toggleMobileSidebar(true)"></div>
+
+<div class="app">
+  <!-- Barra lateral / Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">🏛️</div>
+      <div class="brand-text">
+        <small>Municipalidad de Santiago</small>
+        <strong>Capacitaciones</strong>
+      </div>
+    </div>
+    <nav class="menu">
+      <div class="nav-section-title">Principal</div>
+      <button class="active" data-view="dashboard" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">▦</span> Dashboard
+      </button>
+      <button data-view="calendario" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">📅</span> Calendario
+      </button>
+      <button data-view="personas" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">●</span> Personas
+      </button>
+      <button data-view="actividades" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">◆</span> Actividades
+      </button>
+      <button data-view="participaciones" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">✓</span> Participaciones
+      </button>
+      <button data-view="gestion" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">☑</span> Gestión de participantes
+      </button>
+
+      <div class="nav-section-title">Nuevos Registros</div>
+      <button data-view="registro-personas" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar persona
+      </button>
+      <button data-view="registro-actividades" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar actividad
+      </button>
+      <button data-view="registro-participaciones" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">＋</span> Registrar participación
+      </button>
+
+      <div class="nav-section-title">Gestión y Datos</div>
+      <button data-view="demanda" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">◎</span> Demanda
+      </button>
+      <button data-view="reportes" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">▥</span> Reportes
+      </button>
+      <button data-view="comunicaciones" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">✉</span> Comunicaciones
+      </button>
+      <button data-view="formularios" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">▤</span> Formularios
+      </button>
+      <button data-view="importaciones" onclick="toggleMobileSidebar(true)">
+        <span class="nav-icon">⇩</span> Importaciones
+      </button>
+      <a id="linkSidebarPlanilla" href="#" target="_blank" rel="noopener noreferrer" style="display:flex; align-items:center; gap:8px; padding:7px 12px; margin:8px 10px; border-radius:6px; background:rgba(30,58,138,0.08); color:var(--azul,#1e3a8a); text-decoration:none; font-size:12px; font-weight:600;" title="Abrir planilla en Google Sheets">
+        <span>📊</span> Abrir Google Sheet ↗
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span>Versión</span>
+      <span class="badge-version" id="versionBadge">v3.9.0</span>
+    </div>
+  </aside>
+
+  <!-- Contenido principal -->
+  <main>
+    <header class="topbar">
+      <div class="topbar-title-wrap">
+        <button class="menu-toggle" onclick="toggleMobileSidebar()" aria-label="Abrir menú">☰</button>
+        <h1 id="tituloVista">Dashboard institucional</h1>
+      </div>
+      <div class="top-actions">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span id="ultimaActualizacion">Sin actualizar</span>
+        </div>
+        <a id="btnAbrirPlanilla" class="btn secondary compact" href="#" target="_blank" rel="noopener noreferrer" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Abrir la planilla activa en Google Sheets">📊 Planilla ↗</a>
+        <button class="btn secondary compact" onclick="abrirModalConfiguracion()">⚙️ Configurar</button>
+        <button class="btn compact" onclick="cargarDatos(true)">↻ Actualizar</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- Vistas Modulares del Sistema -->
+      <?!= incluir('ViewDashboard'); ?>
+      <?!= incluir('ViewCalendario'); ?>
+      <?!= incluir('ViewPersonas'); ?>
+      <?!= incluir('ViewActividades'); ?>
+      <?!= incluir('ViewParticipaciones'); ?>
+      <?!= incluir('ViewGestion'); ?>
+      <?!= incluir('ViewRegistroPersonas'); ?>
+      <?!= incluir('ViewRegistroActividades'); ?>
+      <?!= incluir('ViewRegistroParticipaciones'); ?>
+      <?!= incluir('ViewDemanda'); ?>
+      <?!= incluir('ViewReportes'); ?>
+      <?!= incluir('ViewComunicaciones'); ?>
+      <?!= incluir('ViewFormularios'); ?>
+      <?!= incluir('ViewImportaciones'); ?>
+    </div>
+  </main>
+</div>
+
+<!-- Elementos de carga y notificaciones flotantes -->
+<div id="loading" class="loading"><div class="spinner"></div><span id="loadingTexto">Cargando…</span></div>
+<div id="toast" class="toast" style="display:none;"></div>
+<div class="toast-container"></div>
+
+<!-- Modal de Configuración -->
+<?!= incluir('ModalConfig'); ?>
+
+<!-- Inclusión de Scripts de Cliente -->
+<?!= incluir('JsUI'); ?>
+<?!= incluir('JsApp'); ?>
+
+</body>
+</html>

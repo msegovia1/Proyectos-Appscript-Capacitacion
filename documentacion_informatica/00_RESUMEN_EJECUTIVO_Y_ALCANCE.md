@@ -72,7 +72,8 @@ flowchart TD
 ### 5. Estructura de esta Carpeta de Documentación
 
 Esta carpeta contiene todos los insumos necesarios para el equipo técnico:
+* **`scripts_sistema/`**: Subcarpeta con la totalidad del código fuente (`.gs`, `.html`, `appsscript.json`) y la guía técnica de despliegue (`INSTRUCCIONES_DESPLIEGUE.md`).
 * **`01_FLUJOGRAMA_PROCESOS_OPERATIVOS.md`**: Detalle paso a paso del flujo de trabajo de los funcionarios con diagramas visuales.
 * **`02_MODELO_DE_DATOS_E_IDENTIFICADORES.md`**: Diagrama Entidad-Relación, lógica de generación de IDs únicos y reglas del cruce de datos para participación real.
 * **`03_REQUERIMIENTOS_FUNCIONALES_Y_TECNICOS.md`**: Lista exhaustiva de requerimientos (RF/RNF) para desarrollo de software y base de datos.
-* **`04_VISUALIZADOR_INTERACTIVO.html`**: Interfaz web visual ejecutable en cualquier navegador para revisar y proyectar los flujogramas en reuniones.
+* **`README.md`**: Índice general de contenidos y recomendaciones de uso.

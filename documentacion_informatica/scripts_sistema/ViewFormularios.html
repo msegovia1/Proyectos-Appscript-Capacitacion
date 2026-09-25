@@ -1,0 +1,62 @@
+<section id="formularios" class="view">
+        <div class="section-head">
+          <div><h2>Formularios</h2><p>Administre el registro público de intereses, formularios de inscripción y respuestas que requieran revisión.</p></div>
+          <button class="btn secondary" type="button" onclick="cargarFormularios(true)">Actualizar conteos</button>
+        </div>
+        <div class="card panel" style="margin-bottom:18px">
+          <h3>Formulario público de registro e intereses</h3>
+          <p>Comparta este formulario para incorporar personas a la base y conocer sus intereses de capacitación. Sus respuestas actualizan <strong>PERSONAS</strong> e <strong>INTERESES_CAPACITACION</strong>; no crean participaciones.</p>
+          <div id="estadoFormularioIntereses" class="notice" style="margin:14px 0">Comprobando si el formulario institucional ya fue creado…</div>
+          <div class="form-actions">
+            <button id="btnCrearFormularioIntereses" class="btn" type="button" onclick="crearFormularioInteresesWeb()">Crear formulario institucional</button>
+            <button id="btnCopiarFormularioIntereses" class="btn secondary" type="button" onclick="copiarEnlaceFormularioIntereses()" hidden>Copiar enlace público</button>
+            <a id="linkAbrirFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Abrir formulario</a>
+            <a id="linkEditarFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Editar formulario</a>
+            <a id="linkRespuestasFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Abrir respuestas</a>
+          </div>
+        </div>
+        <div class="card panel" style="margin-bottom:18px">
+          <h3>Vincular formulario de inscripción</h3>
+          <div class="form-grid">
+            <div class="field"><label>Actividad para vincular *</label><select id="formularioActividad"><option value="">Seleccione una actividad...</option></select></div>
+            <div class="field full"><label>URL de la hoja de respuestas *</label><input id="formularioUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit?...gid=..."></div>
+            <div class="notice">Pegue el enlace de la <strong>Google Sheet de respuestas</strong>, no el enlace público del Form. El ID interno de la actividad nunca se pregunta al ciudadano.</div>
+            <div class="form-actions"><button class="btn" type="button" onclick="vincularFormularioWeb()">Vincular formulario</button></div>
+          </div>
+        </div>
+        <div class="module-kpis">
+          <div class="card module-kpi accent-emerald"><span>Formularios activos</span><strong id="fActivos">0</strong></div>
+          <div class="card module-kpi accent-blue"><span>Archivos de respuesta</span><strong id="fArchivosActivos">0</strong></div>
+          <div class="card module-kpi accent-indigo"><span>Activadores en uso</span><strong id="fTriggers">0 / 20</strong></div>
+          <div class="card module-kpi accent-teal"><span>Activadores disponibles</span><strong id="fDisponibles">20</strong></div>
+          <div class="card module-kpi accent-purple"><span>Forms por activador</span><strong id="fFormsPorTrigger">0</strong></div>
+          <div class="card module-kpi accent-blue"><span>Respuestas procesadas</span><strong id="fProcesadas">0</strong></div>
+          <div class="card module-kpi accent-amber"><span>Con advertencia</span><strong id="fAdvertencias">0</strong></div>
+          <div class="card module-kpi accent-rose"><span>Requieren revisión</span><strong id="fRevision">0</strong></div>
+        </div>
+        <div id="alertaCapacidadFormularios" class="notice" style="margin-bottom:14px" hidden></div>
+        <div id="estadoActualizacionFormularios" class="muted" style="margin-bottom:10px"></div>
+        <div class="notice" style="margin-bottom:14px"><strong>Capacidad:</strong> el límite se consume por archivo de Google Sheets, no por formulario ni por pestaña. Varios Forms pueden guardar sus respuestas en pestañas diferentes de una misma Sheet institucional y compartir un solo activador.</div>
+        <div class="notice" style="margin-bottom:14px">Una respuesta incorrecta ya no detiene el sistema. Los errores de formato corregibles se normalizan automáticamente; si un dato esencial no puede validarse con seguridad, solo esa respuesta queda marcada para revisión. Si aparecen pendientes o falta el activador, use <strong>Reparar y recuperar</strong>.</div>
+        <div class="table-container"><table><thead><tr><th>Actividad</th><th>Hoja de respuestas</th><th>Estado</th><th>Automatización</th><th>Total</th><th>Procesadas</th><th>Advertencias</th><th>Revisión</th><th>Detalle</th><th>Acciones</th></tr></thead><tbody id="tablaFormularios"><tr><td colspan="10" class="empty-state">Cargando vinculaciones...</td></tr></tbody></table></div>
+        <div id="panelCasosRevision" class="card panel review-panel" hidden>
+          <div class="edit-head">
+            <div><h3>Casos por revisar</h3><p id="casosRevisionContexto">Seleccione una vinculación para ver sus casos.</p></div>
+            <div style="display:flex;gap:6px">
+              <button class="btn compact" type="button" onclick="reprocesarTodosCasosRevisionWeb()">⚡ Reprocesar casos</button>
+              <button class="btn secondary compact" type="button" onclick="cerrarCasosRevision()">Cerrar</button>
+            </div>
+          </div>
+          <div class="table-container"><table><thead><tr><th>Fila</th><th>Fecha</th><th>Persona</th><th>Documento</th><th>Contacto</th><th>Motivo</th><th>Acción</th></tr></thead><tbody id="tablaCasosRevision"></tbody></table></div>
+          <div id="editorCasoRevision" class="card panel review-panel" hidden>
+            <div class="edit-head">
+              <div><h3>Corregir respuesta</h3><p id="editorCasoContexto"></p></div>
+              <button class="btn secondary compact" type="button" onclick="cerrarEditorCasoRevision()">Cancelar</button>
+            </div>
+            <div id="editorCasoError" class="notice review-error" style="margin-bottom:14px"></div>
+            <div id="camposCasoRevision" class="form-grid review-fields"></div>
+            <div class="notice" style="margin-top:14px">Antes de modificar la respuesta, el SIGC conservará una copia de sus valores originales y registrará la corrección realizada.</div>
+            <div class="form-actions"><button class="btn" type="button" onclick="guardarCorreccionCasoRevision()">Corregir y reprocesar</button></div>
+          </div>
+        </div>
+      </section>

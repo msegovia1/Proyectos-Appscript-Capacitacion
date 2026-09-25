@@ -1,0 +1,28 @@
+<!-- Modal de Configuración del Sistema -->
+<div id="modalConfiguracion" class="modal-overlay" style="display: none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>⚙️ Configuración del Sistema SIGC</h3>
+      <button class="modal-close" onclick="cerrarModalConfiguracion()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size: 13px; color: var(--gris); margin-top: 0;">
+        Puedes cambiar la planilla de Google Sheets vinculada sin modificar el código fuente. La configuración se guarda de forma segura en las propiedades del proyecto.
+      </p>
+      
+      <div class="field full">
+        <label for="cfgSpreadsheetId">ID de Planilla Google Sheets (Spreadsheet ID)</label>
+        <input id="cfgSpreadsheetId" placeholder="Ej: 1gT0135EeC1MTzLSfcfJOHuJl5yODFyDtL7eXRfTRmuo">
+        <small style="color: var(--gris); margin-top: 4px;">
+          El ID se encuentra en la URL de tu Google Sheet: <code>https://docs.google.com/spreadsheets/d/<b>ID_AQUI</b>/edit</code>
+        </small>
+      </div>
+
+      <div id="cfgStatusMsg" style="margin-top: 14px; display: none;" class="notice"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn secondary" type="button" onclick="probarConexionModal()">Probar Conexión</button>
+      <button class="btn" type="button" onclick="guardarConfiguracionModal()">Guardar Cambios</button>
+    </div>
+  </div>
+</div>

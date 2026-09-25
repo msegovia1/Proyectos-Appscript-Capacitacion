@@ -1,0 +1,112 @@
+<section id="importaciones" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Importaciones</h2>
+            <p>Integre listados históricos con formatos diferentes y migre una sola vez la base madre.</p>
+          </div>
+          <button class="btn secondary" type="button" onclick="cargarImportaciones()">Actualizar historial</button>
+        </div>
+        <div class="import-steps">
+          <div class="import-step">
+            <span class="step-badge">1</span>
+            <div>
+              <strong>Seleccionar actividad</strong>
+              <p>Elija la capacitación que recibirá el listado.</p>
+            </div>
+          </div>
+          <div class="import-step">
+            <span class="step-badge">2</span>
+            <div>
+              <strong>Pegar datos</strong>
+              <p>Copie la tabla completa desde Excel o Google Sheets.</p>
+            </div>
+          </div>
+          <div class="import-step">
+            <span class="step-badge">3</span>
+            <div>
+              <strong>Relacionar columnas</strong>
+              <p>Confirme qué columna corresponde a cada dato.</p>
+            </div>
+          </div>
+          <div class="import-step">
+            <span class="step-badge">4</span>
+            <div>
+              <strong>Revisar e importar</strong>
+              <p>Verifique el resumen antes de guardar en la base.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="import-grid">
+          <div class="card panel">
+            <h3>Nueva importación de capacitación histórica</h3>
+            <div class="form-grid">
+              <div class="field full">
+                <label>Capacitación *</label>
+                <select id="importActividad"><option value="">Seleccione una actividad...</option></select>
+              </div>
+              <div class="field full">
+                <label>Pegue la tabla incluyendo la fila de encabezados *</label>
+                <textarea id="importTexto" style="min-height:170px" placeholder="Nombre completo&#9;RUT&#9;Correo&#9;Teléfono&#10;Persona de ejemplo&#9;12.345.678-5&#9;correo@ejemplo.cl&#9;912345678"></textarea>
+              </div>
+              <div class="notice">Puede copiar directamente desde Excel o Google Sheets. La prueba procesa hasta 250 filas por lote.</div>
+              <div class="form-actions"><button class="btn" type="button" onclick="leerTablaImportacion()">Leer columnas</button></div>
+            </div>
+          </div>
+
+          <div class="card panel">
+            <h3>Valores aplicables a todo el listado</h3>
+            <div class="form-grid">
+              <div class="field"><label>Tipo de documento por defecto</label><select id="importTipoDocumento"><option>RUT</option><option>Pasaporte</option></select></div>
+              <div class="field"><label>Sesiones totales</label><input id="importSesionesTotales" type="number" min="1" value="1"></div>
+              <div class="field"><label>Sesiones asistidas</label><input id="importSesionesAsistidas" type="number" min="0" value="0"></div>
+              <div class="field"><label>Confirma participación</label><select id="importConfirma"><option>No informado</option><option>Sí</option><option>No</option></select></div>
+              <div class="field"><label>Certificado</label><select id="importCertificado"><option>No informado</option><option>Sí</option><option>No</option></select></div>
+              <div class="field"><label>Resultado definitivo</label><select id="importFinalizar"><option value="false">Mantener pendiente</option><option value="true">Calcular con asistencia</option></select></div>
+              <div class="notice">Use estos valores cuando el archivo no tenga esas columnas. “Confirmó” no se interpreta automáticamente como asistencia.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="panelMapeoImportacion" class="card panel import-preview" hidden>
+          <div class="edit-head">
+            <div><h3>Relación de columnas</h3><p id="importColumnasDetectadas">Confirme los campos reconocidos.</p></div>
+            <button class="btn secondary compact" type="button" onclick="cerrarMapeoImportacion()">Cerrar</button>
+          </div>
+          <div id="mapeoImportacion" class="mapping-grid"></div>
+          <div class="form-actions">
+            <button class="btn secondary" type="button" onclick="analizarImportacionPegada()">Analizar sin guardar</button>
+          </div>
+          <div id="resumenImportacion" class="import-summary" hidden>
+            <div class="card"><span>Filas</span><strong id="impFilas">0</strong></div>
+            <div class="card"><span>Personas nuevas</span><strong id="impNuevas">0</strong></div>
+            <div class="card"><span>Personas existentes</span><strong id="impExistentes">0</strong></div>
+            <div class="card"><span>Duplicados</span><strong id="impDuplicadas">0</strong></div>
+            <div class="card"><span>Revisión</span><strong id="impRevision">0</strong></div>
+          </div>
+          <div class="table-container"><table><thead><tr><th>Fila</th><th>Persona</th><th>Documento</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="tablaVistaPreviaImportacion"><tr><td colspan="5" class="empty-state">Relacione las columnas y analice el listado.</td></tr></tbody></table></div>
+          <div class="sticky-actions"><button id="btnConfirmarImportacion" class="btn" type="button" onclick="confirmarImportacionPegada()" disabled>Confirmar importación</button></div>
+        </div>
+
+        <div class="card panel" style="margin-top:18px">
+          <h3>Base madre: migración histórica única</h3>
+          <div class="form-grid">
+            <div class="field full"><label>URL de la pestaña de respuestas *</label><input id="baseMadreUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit?...gid=..."></div>
+            <div class="notice">El SIGC reconstruye RUT y dígito verificador, conserva documentos históricos no validados, limpia datos y consolida PERSONAS, PERFILES_BASE_MADRE e INTERESES_CAPACITACION. Esta operación no crea participaciones.</div>
+            <div class="form-actions">
+              <button class="btn secondary" type="button" onclick="analizarBaseMadreWeb()">Analizar base</button>
+              <button class="btn" type="button" onclick="vincularBaseMadreWeb()">Vincular formulario</button>
+            </div>
+          </div>
+          <div id="estadoBaseMadre" class="notice" style="margin-top:14px">Todavía no se ha consultado una base madre.</div>
+          <div class="form-actions" style="margin-top:10px">
+            <button id="btnProbarBaseMadre" class="btn secondary" type="button" onclick="probarBaseMadreWeb()" disabled>Probar con 100 registros</button>
+            <button id="btnMigrarBaseMadre" class="btn" type="button" onclick="procesarBaseMadreCompletaWeb()" disabled>Procesar base completa</button>
+          </div>
+        </div>
+
+        <div class="card panel" style="margin-top:18px">
+          <h3>Historial reciente</h3>
+          <div class="table-container"><table><thead><tr><th>ID</th><th>Fecha</th><th>Tipo</th><th>Referencia</th><th>Filas</th><th>Personas creadas</th><th>Personas actualizadas</th><th>Revisión</th><th>Estado</th></tr></thead><tbody id="tablaHistorialImportaciones"><tr><td colspan="9" class="empty-state">No hay importaciones registradas.</td></tr></tbody></table></div>
+        </div>
+      </section>

@@ -1,0 +1,9 @@
+<section id="participaciones" class="view">
+        <div class="section-head">
+          <div><h2>Participaciones</h2><p>Inscripción, asistencia y resultados.</p></div>
+          <button class="btn" type="button" onclick="irAVista('registro-participaciones')">＋ Registrar participación</button>
+        </div>
+        <div class="table-tools"><input id="buscarParticipaciones" placeholder="Buscar persona o actividad..." oninput="renderConPausa('participaciones')"></div>
+        <div class="table-container"><table><thead><tr><th>ID</th><th>Persona</th><th>Documento</th><th>Edad</th><th>PMJH</th><th>Actividad</th><th>Selección</th><th>Asistencia</th><th>Resultado</th><th>Actualización</th></tr></thead><tbody id="tablaParticipaciones"></tbody></table></div>
+        <div class="pager"><span id="paginaParticipacionesInfo"></span><button class="btn secondary" type="button" onclick="cambiarPagina('participaciones',-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPagina('participaciones',1)">Siguiente</button></div>
+      </section>

@@ -1,0 +1,88 @@
+<section id="dashboard" class="view active">
+        <div class="section-head">
+          <div><h2>Resumen general</h2><p>Indicadores consolidados del sistema.</p></div>
+        </div>
+        <div class="kpis">
+          <div class="card kpi"><span>Personas registradas</span><strong id="kpiPersonas">0</strong></div>
+          <div class="card kpi"><span>Actividades</span><strong id="kpiActividades">0</strong></div>
+          <div class="card kpi"><span>Actividades activas</span><strong id="kpiActivas">0</strong></div>
+          <div class="card kpi"><span>Participaciones</span><strong id="kpiParticipaciones">0</strong></div>
+          <div class="card kpi"><span>Participación efectiva</span><strong id="kpiEfectiva">0</strong></div>
+          <div class="card kpi"><span>Tasa aprobación</span><strong id="kpiAprobacion">0%</strong></div>
+          <div class="card kpi"><span>Tasa participación</span><strong id="kpiTasaParticipacion">0%</strong></div>
+          <div class="card kpi"><span>Cupos ofrecidos</span><strong id="kpiCupos">0</strong></div>
+          <div class="card kpi"><span>Tasa de selección</span><strong id="kpiSeleccion">0%</strong></div>
+          <div class="card kpi"><span>Tasa de asistencia</span><strong id="kpiAsistencia">0%</strong></div>
+          <div class="card kpi"><span>Tasa de certificación</span><strong id="kpiCertificacion">0%</strong></div>
+          <div class="card kpi"><span>Brecha demanda</span><strong id="kpiBrecha">0</strong></div>
+        </div>
+        <details class="card kpi-guide">
+          <summary>¿Qué calcula cada indicador?</summary>
+          <div class="kpi-guide-grid">
+            <div class="kpi-guide-item">
+              <strong>Personas registradas</strong>
+              <p>Total de fichas existentes en la base de personas. Una persona se cuenta una sola vez, aunque participe en varias actividades.</p>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Actividades</strong>
+              <p>Total histórico de cursos, talleres, programas, charlas y jornadas registrados en el sistema.</p>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Actividades activas</strong>
+              <p>Actividades en estado Planificada, Difusión, Inscripción abierta o En ejecución.</p>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Participaciones</strong>
+              <p>Total de inscripciones o vínculos persona–actividad cuyo registro permanece activo.</p>
+              <span class="kpi-formula">REGISTRO_ACTIVO distinto de “No”</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Participación efectiva</strong>
+              <p>Personas seleccionadas que finalizaron con un resultado positivo.</p>
+              <span class="kpi-formula">Participó + Aprobado</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Tasa de aprobación</strong>
+              <p>Solo considera personas seleccionadas de actividades con regla de resultado Porcentaje y resultado definitivo.</p>
+              <span class="kpi-formula">Aprobados ÷ (Aprobados + Desaprobados)</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Tasa de participación</strong>
+              <p>Mide qué proporción de las personas seleccionadas con resultado definitivo tuvo participación efectiva, aunque haya desaprobado.</p>
+              <span class="kpi-formula">(Participó + Aprobado + Desaprobado) ÷ (Participó + No participó + Aprobado + Desaprobado)</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Cupos ofrecidos</strong>
+              <p>Suma de los cupos registrados en todas las actividades del sistema.</p>
+              <span class="kpi-formula">Σ CUPOS de actividades</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Tasa de selección</strong>
+              <p>Proporción de participaciones activas que fueron clasificadas como seleccionadas.</p>
+              <span class="kpi-formula">Seleccionados ÷ participaciones activas</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Tasa de asistencia</strong>
+              <p>Proporción de personas seleccionadas con al menos una sesión asistida o con resultado final que acredita participación.</p>
+              <span class="kpi-formula">Seleccionados asistentes ÷ seleccionados</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Tasa de certificación</strong>
+              <p>Proporción de asistentes cuyo campo Certificado está registrado como “Sí”.</p>
+              <span class="kpi-formula">Certificados ÷ asistentes</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Brecha de demanda</strong>
+              <p>Diferencia no negativa entre personas únicas con intereses activos y personas únicas capacitadas.</p>
+              <span class="kpi-formula">máx.(0, demanda registrada − personas capacitadas)</span>
+            </div>
+          </div>
+        </details>
+        <div class="charts">
+          <div class="card chart-card"><h3>Actividades por estado</h3><div class="chart-wrap"><canvas id="chartEstados"></canvas></div></div>
+          <div class="card chart-card"><h3>Resultados de participación</h3><div class="chart-wrap"><canvas id="chartResultados"></canvas></div></div>
+          <div class="card chart-card"><h3>Áreas temáticas</h3><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>
+          <div class="card chart-card"><h3>Inscripciones por actividad</h3><div class="chart-wrap"><canvas id="chartParticipaciones"></canvas></div></div>
+          <div class="card chart-card wide"><h3>Participación efectiva por actividad</h3><div class="chart-wrap"><canvas id="chartEfectiva"></canvas></div></div>
+        </div>
+      </section>

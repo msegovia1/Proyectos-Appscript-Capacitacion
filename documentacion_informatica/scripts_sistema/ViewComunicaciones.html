@@ -1,0 +1,113 @@
+<section id="comunicaciones" class="view">
+  <div class="section-head">
+    <div>
+      <h2>Comunicaciones</h2>
+      <p>Segmentación de destinatarios para CCO y generador de cartelera de capacitaciones en HTML.</p>
+    </div>
+    <!-- Selector de Sub-Pestañas -->
+    <div class="asis-view-switcher" style="margin-left:auto;">
+      <button type="button" class="asis-view-btn active" id="btnSubTabComDestinatarios" onclick="cambiarSubTabComunicaciones('destinatarios')">👥 Segmentación CCO</button>
+      <button type="button" class="asis-view-btn" id="btnSubTabComCartelera" onclick="cambiarSubTabComunicaciones('cartelera')">📰 Cartelera de Capacitaciones</button>
+    </div>
+  </div>
+
+  <!-- SUB-PESTAÑA 1: SEGMENTACIÓN DE DESTINATARIOS -->
+  <div id="subtabComDestinatarios">
+    <div class="card panel" style="margin-bottom:18px">
+      <div class="form-grid">
+        <div class="field"><label>Origen del público</label><select id="comFuente" onchange="actualizarControlesComunicacion()"><option value="actividad">Actividad</option><option value="interes">Interés de capacitación</option><option value="base">Base general</option></select></div>
+        <div class="field com-actividad"><label>Actividad</label><select id="comActividad"></select></div>
+        <div class="field com-actividad"><label>Grupo</label><select id="comGrupo"><option>Seleccionados</option><option>Inscritos</option><option>Confirmados</option><option>Asistentes</option></select></div>
+        <div class="field com-interes" hidden><label>Escuela / línea</label><select id="comEscuela" onchange="actualizarAreasComunicacion()"><option value="">Todas</option><option>Empleo</option><option>Emprendimiento</option><option>Transversal</option></select></div>
+        <div class="field com-interes" hidden><label>Área temática</label><select id="comArea"><option value="">Todas</option></select></div>
+        <div class="field"><label>Comuna</label><input id="comComuna" placeholder="Todas"></div>
+        <div class="field com-interes" hidden><label class="checkline"><input id="comSoloPendientes" type="checkbox" checked> Solo demanda pendiente</label></div>
+        <div class="field"><label class="checkline"><input id="comSoloAutorizados" type="checkbox"> Solo quienes autorizan contacto</label><span class="muted">Recomendado para difusión general y campañas.</span></div>
+        <div class="form-actions"><button class="btn" type="button" onclick="buscarDestinatarios()">Buscar destinatarios</button></div>
+      </div>
+    </div>
+    <div class="module-kpis">
+      <div class="card module-kpi"><span>Personas encontradas</span><strong id="cPersonas">0</strong></div>
+      <div class="card module-kpi"><span>Con correo</span><strong id="cConCorreo">0</strong></div>
+      <div class="card module-kpi"><span>Sin correo</span><strong id="cSinCorreo">0</strong></div>
+    </div>
+    <div class="bulkbar">
+      <button class="btn secondary" type="button" onclick="marcarTodosComunicacion(true)">Seleccionar visibles</button>
+      <button class="btn secondary" type="button" onclick="marcarTodosComunicacion(false)">Desmarcar</button>
+      <label for="comCantidad" class="muted">Cantidad de personas (más recientes primero)</label>
+      <input id="comCantidad" type="number" min="1" step="1" placeholder="Ej.: 50" aria-label="Cantidad de personas a seleccionar">
+      <button class="btn secondary" type="button" onclick="seleccionarCantidadComunicacion()">Seleccionar más recientes</button>
+      <button class="btn" type="button" onclick="copiarCorreosCCO()">Copiar correos para CCO</button>
+      <span id="comSeleccionInfo" class="muted">0 correos seleccionados</span>
+    </div>
+    <div class="table-tools"><input id="buscarComunicacion" placeholder="Buscar nombre, correo o comuna..." oninput="renderComunicacionesConPausa()"></div>
+    <div class="table-container"><table><thead><tr><th>✓</th><th>Persona</th><th>Correo</th><th>Comuna</th><th>Autoriza contacto</th><th>Demanda pendiente</th></tr></thead><tbody id="tablaComunicaciones"><tr><td colspan="6" class="empty-state">Configure un segmento y presione Buscar destinatarios.</td></tr></tbody></table></div>
+  </div>
+
+  <!-- SUB-PESTAÑA 2: GENERADOR DE CARTELERA HTML -->
+  <div id="subtabComCartelera" style="display:none">
+    <div class="card panel" style="margin-bottom:18px">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">📰 Generador de Cartelera / Boletín HTML</h3>
+          <p class="muted" style="margin:0;">Selecciona las actividades que deseas promocionar y genera el correo con diseño institucional y enlaces directos a sus formularios.</p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn secondary compact" type="button" onclick="seleccionarActividadesCartelera('activas')">⚡ Convocatoria abierta / Difusión</button>
+          <button class="btn secondary compact" type="button" onclick="seleccionarActividadesCartelera('todas')">Seleccionar todas</button>
+          <button class="btn secondary compact" type="button" onclick="seleccionarActividadesCartelera('ninguna')">Deseleccionar</button>
+        </div>
+      </div>
+
+      <!-- Configuración del encabezado del correo -->
+      <div class="form-grid" style="margin-bottom:16px; background:rgba(0,59,112,0.03); padding:14px; border-radius:8px; border:1px solid rgba(0,59,112,0.1);">
+        <div class="field"><label>Título de la cartelera</label><input id="carteleraTitulo" value="Cartelera de Capacitaciones" oninput="actualizarVistaPreviaCartelera()"></div>
+        <div class="field"><label>Subtítulo / Bajada</label><input id="carteleraSubtitulo" value="Talleres, cursos y charlas gratuitos para tu negocio y carrera" oninput="actualizarVistaPreviaCartelera()"></div>
+        <div class="field full"><label>Texto introductorio para el vecino/a</label><input id="carteleraIntro" value="Haz clic en &quot;Inscribirme&quot; en el curso que te interese. Todos los programas son gratuitos y están disponibles para vecinos y vecinas de Santiago." oninput="actualizarVistaPreviaCartelera()"></div>
+      </div>
+
+      <!-- Filtro y Lista de Selección de Actividades -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; align-items:center; flex:1; min-width:260px;">
+          <select id="filtroCarteleraEscuela" onchange="renderListaSeleccionCartelera()" style="width:200px;">
+            <option value="">Todas las escuelas</option>
+            <option value="Empleo">Empleo</option>
+            <option value="Emprendimiento">Emprendimiento</option>
+            <option value="Transversal">Transversal</option>
+          </select>
+          <input id="buscarActividadCartelera" placeholder="🔍 Filtrar actividades por nombre o área..." oninput="renderListaSeleccionCartelera()" style="flex:1;">
+        </div>
+        <span id="carteleraConteoSeleccionadas" style="font-size:13px; font-weight:700; color:var(--azul);">0 actividades seleccionadas</span>
+      </div>
+
+      <!-- Lista con checkboxes de actividades -->
+      <div id="listaActividadesCartelera" style="max-height:260px; overflow-y:auto; border:1px solid var(--borde,#e4e1da); border-radius:8px; padding:8px; background:#fff; margin-bottom:16px;">
+        <!-- Filas de selección generadas dinámicamente -->
+      </div>
+
+      <!-- Barra de Acciones y Descarga -->
+      <div class="bulkbar" style="justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button class="btn" type="button" onclick="copiarHtmlCartelera()">📋 Copiar código HTML</button>
+          <button class="btn secondary" type="button" onclick="copiarDisenoCartelera()">📄 Copiar para Gmail / Outlook</button>
+          <button class="btn secondary" type="button" onclick="enviarPruebaCartelera()">✉️ Enviar prueba a mi correo</button>
+        </div>
+        <span class="muted" style="font-size:12px;">Compatible 100% con móviles y computadores</span>
+      </div>
+    </div>
+
+    <!-- Contenedor de Vista Previa en Vivo -->
+    <div class="card panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+        <h3 style="margin:0;">👁️ Vista Previa del Correo</h3>
+        <span class="badge" style="background:#e6f1fb; color:#003b70; font-weight:700;">Ancho estándar 600px (Responsive)</span>
+      </div>
+      <div id="contenedorVistaPreviaCartelera" style="background:#f4f6f9; padding:24px 10px; border-radius:10px; display:flex; justify-content:center; width:100%; box-sizing:border-box; overflow-x:auto;">
+        <div id="previewEmailIframeWrapper" style="width:100%; max-width:600px; margin:0 auto; box-shadow:0 4px 18px rgba(0,0,0,0.07); border-radius:12px; overflow:hidden; background:#ffffff;">
+          <!-- HTML generado en vivo -->
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+

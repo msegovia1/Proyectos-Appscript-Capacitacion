@@ -1,0 +1,41 @@
+<section id="personas" class="view">
+        <div class="section-head">
+          <div><h2>Personas</h2><p>Registro consolidado de usuarios y participantes.</p></div>
+          <button class="btn" type="button" onclick="irAVista('registro-personas')">＋ Registrar persona</button>
+        </div>
+        <div class="table-tools"><input id="buscarPersonas" placeholder="Buscar por nombre, RUT, correo..." oninput="renderConPausa('personas')"></div>
+        <div class="table-container"><table><thead><tr><th>ID</th><th>Documento</th><th>Nombre</th><th>Fecha nacimiento</th><th>Edad</th><th>Correo</th><th>Teléfono</th><th>Comuna</th><th>Barrio</th><th>PMJH</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaPersonas"></tbody></table></div>
+        <div class="pager"><span id="paginaPersonasInfo"></span><button class="btn secondary" type="button" onclick="cambiarPagina('personas',-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPagina('personas',1)">Siguiente</button></div>
+        <div id="panelEditarPersona" class="card panel edit-panel" hidden>
+          <div class="edit-head">
+            <div>
+              <h3>Editar persona</h3>
+              <p>Puede corregir o completar la ficha. El ID de persona es permanente.</p>
+            </div>
+            <button class="btn secondary compact" type="button" onclick="cerrarEdicionPersona()">Cerrar</button>
+          </div>
+          <form id="formEditarPersona" class="form-grid">
+            <div class="field"><label>ID persona</label><input name="ID_PERSONA" readonly></div>
+            <div class="field"><label>Tipo de documento *</label><select id="editarTipoDocumentoPersona" name="TIPO_DOCUMENTO" onchange="actualizarDocumentoEdicionPersona()" required><option>RUT</option><option>Pasaporte</option></select></div>
+            <div class="field"><label>Número de documento *</label><input id="editarNumeroDocumentoPersona" name="NUMERO_DOCUMENTO" required></div>
+            <div class="field full"><label>Nombre completo *</label><input name="NOMBRE_COMPLETO" required></div>
+            <div class="field"><label>Correo</label><input name="CORREO" type="email"></div>
+            <div class="field"><label>Teléfono</label><input name="TELEFONO"></div>
+            <div class="field"><label>Comuna</label><input name="COMUNA"></div>
+            <div class="field"><label>Barrio</label><input name="BARRIO"></div>
+            <div class="field"><label>Dirección</label><input name="DIRECCION"></div>
+            <div class="field"><label>Fecha de nacimiento</label><input id="editarFechaNacimientoPersona" name="FECHA_NACIMIENTO" type="date" onchange="actualizarEdadEdicionPersona()"></div>
+            <div class="field"><label>Edad actual</label><input id="editarEdadPersona" readonly placeholder="Se calcula automáticamente"></div>
+            <div class="field"><label>Género</label><input name="GENERO"></div>
+            <div class="field"><label>Nacionalidad</label><input id="editarNacionalidadPersona" name="NACIONALIDAD"></div>
+            <div class="field"><label>Autoriza contacto</label><select name="AUTORIZA_CONTACTO"><option>No informado</option><option>Sí</option><option>No</option></select></div>
+            <div class="field"><label>Participa o participó en PMJH</label><select name="PARTICIPA_PMJH"><option>No informado</option><option>Sí</option><option>No</option></select></div>
+            <div class="field full"><label>Observaciones</label><textarea name="OBSERVACIONES"></textarea></div>
+            <div class="notice">Los campos vacíos se guardarán como vacíos. Antes de actualizar, el sistema verificará que el documento no pertenezca a otra persona.</div>
+            <div class="form-actions">
+              <button class="btn secondary" type="button" onclick="cerrarEdicionPersona()">Cancelar</button>
+              <button class="btn" type="submit">Guardar cambios</button>
+            </div>
+          </form>
+        </div>
+      </section>

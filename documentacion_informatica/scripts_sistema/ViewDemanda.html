@@ -1,0 +1,34 @@
+<section id="demanda" class="view">
+        <div class="section-head">
+          <div><h2>Demanda de capacitación</h2><p>Análisis de los intereses declarados y de la cobertura efectiva lograda en la misma escuela / línea y área temática.</p></div>
+        </div>
+        <div class="module-kpis">
+          <div class="card module-kpi accent-blue"><span>Personas con demanda</span><strong id="dPersonas">0</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Demandas registradas</span><strong id="dIntereses">0</strong></div>
+          <div class="card module-kpi accent-teal"><span>Demanda cubierta</span><strong id="dAtendidas">0</strong></div>
+          <div class="card module-kpi accent-amber"><span>Demanda pendiente</span><strong id="dPendientes">0</strong></div>
+          <div class="card module-kpi accent-purple"><span>Cobertura</span><strong id="dCobertura">0%</strong></div>
+        </div>
+        <div class="charts" style="margin-bottom:18px">
+          <div class="card chart-card"><h3>Demanda por escuela / línea</h3><div class="chart-wrap"><canvas id="chartDemandaEscuela"></canvas></div></div>
+          <div class="card chart-card"><h3>Áreas temáticas más demandadas</h3><div class="chart-wrap"><canvas id="chartDemandaAreas"></canvas></div></div>
+        </div>
+        <div class="table-tools">
+          <select id="filtroDemandaEscuela" onchange="actualizarFiltroAreasDemanda(); renderDemanda()"><option value="">Todas las escuelas / líneas</option><option>Empleo</option><option>Emprendimiento</option><option>Transversal</option></select>
+          <select id="filtroDemandaArea" onchange="renderDemanda()"><option value="">Todas las áreas temáticas</option></select>
+          <input id="buscarDemanda" placeholder="Buscar escuela o área..." oninput="renderDemandaConPausa()">
+        </div>
+        <div class="notice" style="margin-bottom:14px">Inscritos, seleccionados y personas capacitadas se calculan solo entre quienes declararon demanda en esa misma temática. “Capacitada” requiere participación efectiva en una actividad con la misma escuela / línea y área temática.</div>
+        <div class="table-container"><table><thead><tr><th>Escuela / línea</th><th>Área temática</th><th>Demandantes</th><th>Actividades ofertadas</th><th>Demandantes inscritos</th><th>Demandantes seleccionados</th><th>Demanda cubierta</th><th>Demanda pendiente</th><th>Cobertura</th><th>Detalle</th></tr></thead><tbody id="tablaDemanda"></tbody></table></div>
+        <div id="detalleDemanda" class="card panel edit-panel" hidden>
+          <div class="edit-head">
+            <div><h3 id="detalleDemandaTitulo">Detalle</h3><p>Personas que declararon interés en esta área.</p></div>
+            <div class="bulkbar">
+              <button id="copiarCorreosDemandaBtn" class="btn compact" type="button" onclick="copiarCorreosDetalleDemanda()">Copiar correos</button>
+              <button class="btn secondary compact" type="button" onclick="cerrarDetalleDemanda()">Cerrar</button>
+            </div>
+          </div>
+          <div id="resumenCorreosDemanda" class="notice" style="margin-bottom:12px">Abra una temática para preparar sus correos.</div>
+          <div class="table-container"><table><thead><tr><th>Persona</th><th>Correo</th><th>Comuna</th><th>Estado de la demanda</th></tr></thead><tbody id="tablaDetalleDemanda"></tbody></table></div>
+        </div>
+      </section>

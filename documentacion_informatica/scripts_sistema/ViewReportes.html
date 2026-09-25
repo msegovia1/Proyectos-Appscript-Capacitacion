@@ -1,0 +1,38 @@
+<section id="reportes" class="view">
+        <div class="section-head"><div><h2>Reportes y estadísticas</h2><p>Indicadores consolidados con filtros institucionales. Personas únicas y participaciones se presentan por separado.</p></div></div>
+        <div class="card panel" style="margin-bottom:18px">
+          <div class="form-grid">
+            <div class="field"><label>Año</label><input id="repAno" type="number" min="2000" max="2100" placeholder="Todos"></div>
+            <div class="field"><label>Escuela / línea</label><select id="repEscuela" onchange="actualizarAreasReporte()"><option value="">Todas</option><option value="Empleo">Empleo</option><option value="Emprendimiento">Emprendimiento</option><option value="Transversal">Transversal</option></select></div>
+            <div class="field"><label>Área temática</label><select id="repArea"><option value="">Todas</option></select></div>
+            <div class="field"><label>Institución</label><input id="repInstitucion" placeholder="Todas"></div>
+            <div class="field"><label>Modalidad</label><select id="repModalidad"><option value="">Todas</option><option>Presencial</option><option>Virtual</option><option>Híbrida</option></select></div>
+            <div class="field"><label>Estado</label><select id="repEstado"><option value="">Todos</option><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Cerrada</option><option>Suspendida</option></select></div>
+            <div class="form-actions"><button class="btn" type="button" onclick="cargarReporte()">Generar reporte</button><button class="btn secondary" type="button" onclick="exportarReporteExcel()">Descargar Excel</button></div>
+          </div>
+        </div>
+        <div id="estadoReporte" class="notice" style="margin-bottom:14px">Configure los filtros y presione <strong>Generar reporte</strong>. El cálculo se ejecutará solo cuando lo solicite.</div>
+        <div class="module-kpis">
+          <div class="card module-kpi accent-blue"><span>Actividades</span><strong id="repActividades">0</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Personas únicas</span><strong id="repPersonas">0</strong></div>
+          <div class="card module-kpi accent-teal"><span>Participaciones</span><strong id="repInscripciones">0</strong></div>
+          <div class="card module-kpi accent-indigo"><span>Seleccionadas</span><strong id="repSeleccionadas">0</strong></div>
+          <div class="card module-kpi accent-cyan"><span>Asistentes</span><strong id="repAsistentes">0</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Tasa asistencia</span><strong id="repTasaAsistencia">0%</strong></div>
+          <div class="card module-kpi accent-blue"><span>Tasa selección</span><strong id="repTasaSeleccion">0%</strong></div>
+          <div class="card module-kpi accent-rose"><span>Tasa inasistencia</span><strong id="repTasaInasistencia">0%</strong></div>
+          <div class="card module-kpi accent-amber"><span>Tasa aprobación</span><strong id="repTasaAprobacion">0%</strong></div>
+          <div class="card module-kpi accent-purple"><span>Tasa certificación</span><strong id="repTasaCertificacion">0%</strong></div>
+          <div class="card module-kpi accent-orange"><span>Brecha demanda</span><strong id="repBrechaDemanda">0</strong></div>
+          <div class="card module-kpi accent-slate"><span>Edad promedio</span><strong id="repEdadPromedio">—</strong></div>
+        </div>
+        <div class="charts" style="margin-bottom:18px">
+          <div class="card chart-card"><h3>Actividades por temática</h3><div class="chart-wrap"><canvas id="chartRepTematica"></canvas></div></div>
+          <div class="card chart-card"><h3>Actividades por institución</h3><div class="chart-wrap"><canvas id="chartRepInstitucion"></canvas></div></div>
+          <div class="card chart-card"><h3>Actividades por modalidad</h3><div class="chart-wrap"><canvas id="chartRepModalidad"></canvas></div></div>
+          <div class="card chart-card"><h3>Participantes por género</h3><div class="chart-wrap"><canvas id="chartRepGenero"></canvas></div></div>
+          <div class="card chart-card"><h3>Participantes por tramo de edad</h3><div class="chart-wrap"><canvas id="chartRepEdad"></canvas></div></div>
+          <div class="card chart-card"><h3>Participantes por comuna</h3><div class="chart-wrap"><canvas id="chartRepComuna"></canvas></div></div>
+        </div>
+        <div class="table-container"><table><thead><tr><th>Actividad</th><th>Año</th><th>Escuela / línea</th><th>Área temática</th><th>Institución</th><th>Modalidad</th><th>Estado</th><th>Cupos</th><th>Inscripciones</th><th>Seleccionadas</th><th>Asistentes</th></tr></thead><tbody id="tablaReportes"><tr><td colspan="11" class="empty-state">Seleccione filtros y genere el reporte.</td></tr></tbody></table></div>
+      </section>
