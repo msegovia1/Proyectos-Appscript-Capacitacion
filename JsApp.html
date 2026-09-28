@@ -930,6 +930,10 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         '<option value="">Seleccione una actividad...</option>' + opcionesActividadesGestion;
     }
     actualizarActividadAsistenciaSeleccionada();
+    const actActual = document.getElementById('gestionActividad')?.value;
+    if (!actActual) {
+      actualizarBannerActividadGestion(null, 'vacio');
+    }
   }
   function esActividadArchivada_(actividad) {
     return normalizar(actividad?.ESTADO_ACTIVIDAD) === 'archivada';
@@ -2562,40 +2566,150 @@ ${filasActividadesHtml}
       })[funcion](datos);
   }
 
-  function cargarGestionActividad() {
-    const idActividad = document.getElementById('gestionActividad').value;
+  let GESTION_PETICION_TOKEN = 0;
+
+  function alCambiarActividadGestion(idActividad) {
+    actualizarActividadAsistenciaSeleccionada();
     if (!idActividad) {
-      notificar('Debe seleccionar una actividad.', true);
+      limpiarVistaGestionVacia();
       return;
     }
-    // Pre-render instantáneo desde índices locales O(1)
-    const actLocal = SIGC_INDEX.actividadesPorId.get(idActividad);
-    const partsLocales = SIGC_INDEX.participacionesPorActividad.get(idActividad);
-    if (actLocal && partsLocales && partsLocales.length > 0) {
-      GESTION.actividad = actLocal;
-      GESTION.participaciones = partsLocales.map(p => ({...p}));
-      GESTION_SELECCIONADOS.clear();
-      GESTION_MODIFICADOS.clear();
-      actualizarKpisGestion();
-      renderGestion();
-      actualizarEstadoSincronizacion('syncing', 'Verificando con Google Sheets…');
-    } else {
-      mostrarCarga(true, 'Cargando gestión de participantes…');
+    cargarGestionActividad(false);
+  }
+
+  function limpiarVistaGestionVacia() {
+    GESTION_PETICION_TOKEN = Date.now();
+    GESTION = {actividad:null, participaciones:[], resumen:{}};
+    GESTION_SELECCIONADOS.clear();
+    GESTION_MODIFICADOS.clear();
+    ['gInscritos','gCupos','gSeleccionados','gVacantes','gConfirmados','gAsistentes','gAprobados'].forEach(id => texto(id, 0));
+    actualizarBannerActividadGestion(null, 'vacio');
+    const tbody = document.getElementById('tablaGestion');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="15" class="empty-state">Seleccione una actividad en el selector superior para ver y gestionar sus participantes.</td></tr>';
     }
+    const contadorEl = document.getElementById('contadorGestionFiltrados');
+    if (contadorEl) contadorEl.textContent = '';
+  }
+
+  function actualizarBannerActividadGestion(actividad, estado, totalParticipantes = 0, mensajeError = '') {
+    const banner = document.getElementById('bannerActividadEnGestion');
+    const nombreEl = document.getElementById('gestionActividadNombreBanner');
+    const idBadge = document.getElementById('gestionActividadIdBadge');
+    const subBanner = document.getElementById('gestionActividadSubBanner');
+    const syncText = document.getElementById('gestionSyncStatusText');
+    if (!banner || !nombreEl) return;
+
+    banner.className = 'gestion-active-card ' + (estado || 'vacio');
+
+    if (estado === 'vacio' || !actividad || !actividad.ID_ACTIVIDAD) {
+      nombreEl.textContent = 'Ninguna actividad seleccionada';
+      if (idBadge) idBadge.style.display = 'none';
+      if (subBanner) subBanner.textContent = 'Seleccione una actividad en el selector superior para ver y gestionar a sus participantes.';
+      if (syncText) syncText.textContent = 'Sin actividad';
+      return;
+    }
+
+    const nombre = actividad.NOMBRE_ACTIVIDAD || actividad.ID_ACTIVIDAD || 'Actividad';
+    const id = actividad.ID_ACTIVIDAD || '';
+
+    nombreEl.textContent = nombre;
+    if (idBadge) {
+      idBadge.textContent = id;
+      idBadge.style.display = id ? 'inline-block' : 'none';
+    }
+
+    const ahora = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (estado === 'cargando') {
+      if (subBanner) subBanner.innerHTML = '<span style="color:#b45309">⏳ Descargando participantes actualizados desde Google Sheets... Por favor espere.</span>';
+      if (syncText) syncText.textContent = 'Cargando datos...';
+    } else if (estado === 'error') {
+      if (subBanner) subBanner.innerHTML = `<span style="color:#b91c1c">❌ Error de carga: ${esc(mensajeError || 'No se pudieron obtener los datos')}</span>`;
+      if (syncText) syncText.textContent = 'Error de carga';
+    } else {
+      const cupos = Number(actividad.CUPOS || actividad.CUPOS_TOTALES || GESTION.resumen?.cupos || 0);
+      const cuposTexto = cupos > 0 ? `${cupos} cupos totales` : 'Cupos sin límite';
+      const sesionesTexto = actividad.SESIONES_TOTALES ? ` · ${actividad.SESIONES_TOTALES} sesión(es)` : '';
+      if (subBanner) {
+        subBanner.innerHTML = `<strong>${totalParticipantes}</strong> participante(s) en nómina · ${cuposTexto}${sesionesTexto} · <span style="color:#047857;font-weight:600">✓ Sincronizado ${ahora}</span>`;
+      }
+      if (syncText) syncText.textContent = `Actualizado ${ahora}`;
+    }
+  }
+
+  function cargarGestionActividad(forzarServidor = false) {
+    const selector = document.getElementById('gestionActividad');
+    const idActividad = selector?.value;
+    if (!idActividad) {
+      notificar('Debe seleccionar una actividad.', true);
+      limpiarVistaGestionVacia();
+      return;
+    }
+
+    const opcion = selector.selectedOptions?.[0];
+    const nombreOpcion = opcion ? opcion.textContent.replace(/^ACT-\d+\s*—\s*/, '').trim() : idActividad;
+
+    // Generar un token único para esta petición (evita condiciones de carrera / race conditions)
+    GESTION_PETICION_TOKEN = Date.now();
+    const currentToken = GESTION_PETICION_TOKEN;
+
+    // 1. INMEDIATAMENTE LIMPIAR LA GESTIÓN ANTERIOR para que jamás se vean participantes de otra actividad
+    GESTION = {
+      actividad: { ID_ACTIVIDAD: idActividad, NOMBRE_ACTIVIDAD: nombreOpcion },
+      participaciones: [],
+      resumen: {}
+    };
+    GESTION_SELECCIONADOS.clear();
+    GESTION_MODIFICADOS.clear();
+    ['gInscritos','gCupos','gSeleccionados','gVacantes','gConfirmados','gAsistentes','gAprobados'].forEach(id => texto(id, '—'));
+
+    // 2. Mostrar estado de carga explícito en el banner y en la tabla
+    actualizarBannerActividadGestion({ ID_ACTIVIDAD: idActividad, NOMBRE_ACTIVIDAD: nombreOpcion }, 'cargando');
+
+    const tbody = document.getElementById('tablaGestion');
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="15" class="empty-state" style="padding:42px 20px;">
+            <div style="display:inline-flex;flex-direction:column;align-items:center;gap:10px;">
+              <span class="spinner" style="width:30px;height:30px;border-width:3px;"></span>
+              <strong style="font-size:15px;color:var(--azul);">Cargando participantes de "${esc(nombreOpcion)}"...</strong>
+              <span style="font-size:12px;color:var(--gris);">Obteniendo la lista oficial más reciente desde Google Sheets (ID: ${esc(idActividad)}).</span>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    actualizarEstadoSincronizacion('syncing', 'Cargando ' + idActividad + '…');
 
     google.script.run
       .withSuccessHandler(datos => {
-        mostrarCarga(false);
-        GESTION = datos;
+        // Descartar si el usuario ya cambió a otra actividad mientras esta cargaba
+        if (currentToken !== GESTION_PETICION_TOKEN || document.getElementById('gestionActividad')?.value !== idActividad) {
+          console.warn('Respuesta de actividad descartada porque la selección cambió:', idActividad);
+          return;
+        }
+
+        GESTION = datos || { actividad: { ID_ACTIVIDAD: idActividad, NOMBRE_ACTIVIDAD: nombreOpcion }, participaciones: [], resumen: {} };
         GESTION_SELECCIONADOS.clear();
         GESTION_MODIFICADOS.clear();
+
+        // Actualizar caché de índice local para esta actividad específica
+        if (typeof SIGC_INDEX !== 'undefined' && SIGC_INDEX.participacionesPorActividad) {
+          SIGC_INDEX.participacionesPorActividad.set(idActividad, GESTION.participaciones || []);
+        }
+
         actualizarKpisGestion();
         renderGestion();
+        actualizarBannerActividadGestion(GESTION.actividad, 'listo', (GESTION.participaciones || []).length);
         actualizarEstadoSincronizacion('saved', 'Gestión al día');
       })
       .withFailureHandler(error => {
-        mostrarCarga(false);
-        notificar(error.message || String(error), true);
+        if (currentToken !== GESTION_PETICION_TOKEN) return;
+        actualizarBannerActividadGestion({ ID_ACTIVIDAD: idActividad, NOMBRE_ACTIVIDAD: nombreOpcion }, 'error', 0, error.message);
+        notificar('Error al cargar participantes: ' + (error.message || String(error)), true);
         actualizarEstadoSincronizacion('error', 'Error al cargar gestión');
       })
       .obtenerGestionActividad(idActividad);
@@ -3103,11 +3217,13 @@ ${filasActividadesHtml}
     const colSpanTotal = 13 + (GESTION_MODO_VISTA === 'sesiones' ? sesionesActividad.length : 0);
 
     if (!filas.length) {
-      const mensajeVacio = GESTION.actividad
+      const nombreAct = GESTION.actividad?.NOMBRE_ACTIVIDAD || '';
+      const idAct = GESTION.actividad?.ID_ACTIVIDAD || '';
+      const mensajeVacio = idAct
         ? ((GESTION.participaciones && GESTION.participaciones.length > 0)
-          ? 'No hay participantes que coincidan con los filtros seleccionados.<br><button type="button" class="btn secondary compact" onclick="limpiarFiltrosGestion()" style="margin-top:8px">✕ Quitar filtros</button>'
-          : 'No hay participantes registrados para esta capacitación.<br><small style="color:var(--text-muted);margin-top:6px;display:inline-block">Si vinculaste un formulario de Google, ve a la sección <strong>Formularios</strong> y haz clic en <strong>⚡ Reprocesar</strong>.</small>')
-        : 'Seleccione una actividad para comenzar.';
+          ? `No hay participantes de <strong>"${esc(nombreAct)}"</strong> (${esc(idAct)}) que coincidan con los filtros seleccionados.<br><button type="button" class="btn secondary compact" onclick="limpiarFiltrosGestion()" style="margin-top:8px">✕ Quitar filtros</button>`
+          : `No hay participantes registrados para la capacitación <strong>"${esc(nombreAct)}"</strong> (${esc(idAct)}).<br><small style="color:var(--text-muted);margin-top:6px;display:inline-block">Si vinculaste un formulario de Google, ve a la sección <strong>Formularios</strong> y haz clic en <strong>⚡ Reprocesar</strong>.</small>`)
+        : 'Seleccione una actividad en el selector superior para ver y gestionar sus participantes.';
       tbody.innerHTML = `<tr><td colspan="${colSpanTotal}" class="empty-state">${mensajeVacio}</td></tr>`;
       actualizarCheckPrincipalGestion();
       return;
@@ -4925,7 +5041,7 @@ ${filasActividadesHtml}
     const selector = document.getElementById('gestionActividad');
     if (selector) {
       selector.value = idActividad;
-      cargarGestionActividad();
+      alCambiarActividadGestion(idActividad);
     }
   }
 

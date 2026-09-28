@@ -9,11 +9,11 @@
           <div class="gestion-selector">
             <div class="field">
               <label>Actividad de capacitación</label>
-              <select id="gestionActividad" onchange="actualizarActividadAsistenciaSeleccionada(); if(this.value) cargarGestionActividad();">
+              <select id="gestionActividad" onchange="alCambiarActividadGestion(this.value)">
                 <option value="">Seleccione una actividad...</option>
               </select>
             </div>
-            <button class="btn" type="button" onclick="cargarGestionActividad()">Cargar participantes</button>
+            <button class="btn" type="button" onclick="cargarGestionActividad(true)" title="Forzar recarga fresca desde Google Sheets">↻ Cargar participantes</button>
             <button class="btn secondary" type="button" onclick="depurarDuplicadosGestion()" title="Detectar y unificar participantes duplicados en esta actividad">🧹 Depurar duplicados</button>
           </div>
           <div class="module-kpis">
@@ -172,6 +172,26 @@
               </button>
             </div>
           </div>
+
+          <!-- BANNER INDICADOR DE ACTIVIDAD ACTIVA EN GESTIÓN (EVITA CONFUSIÓN DE CACHÉ) -->
+          <div id="bannerActividadEnGestion" class="gestion-active-card vacio">
+            <div class="gestion-active-info">
+              <div class="gestion-active-title-line">
+                <span class="gestion-active-icon">📍</span>
+                <span class="gestion-active-label">Actividad en gestión:</span>
+                <strong id="gestionActividadNombreBanner" class="gestion-active-name">Ninguna actividad seleccionada</strong>
+                <span id="gestionActividadIdBadge" class="badge-id" style="display:none">ACT-000000</span>
+              </div>
+              <div id="gestionActividadSubBanner" class="gestion-active-meta">
+                Seleccione una actividad en el selector superior para ver y gestionar a sus participantes.
+              </div>
+            </div>
+            <div id="gestionSyncStatusBadge" class="gestion-sync-badge">
+              <span class="sync-dot"></span>
+              <span id="gestionSyncStatusText">Sin actividad</span>
+            </div>
+          </div>
+
           <p class="gestion-scroll-hint">↔ Desplácese horizontalmente dentro de la tabla para consultar resultados, certificación y observaciones.</p>
           <div class="table-container gestion-scroll" tabindex="0" aria-label="Tabla desplazable de gestión de participantes">
             <table class="gestion-table">

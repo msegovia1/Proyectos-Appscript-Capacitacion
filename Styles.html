@@ -875,6 +875,103 @@
     padding: 0 20px;
   }
 
+  /* BANNER INDICADOR DE ACTIVIDAD ACTIVA EN GESTIÓN (EVITA CONFUSIÓN DE CACHÉ) */
+  .gestion-active-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 13px 18px;
+    margin: 14px 0 12px 0;
+    border-radius: var(--radius-lg);
+    background: #f0f7ff;
+    border: 1px solid #bae6fd;
+    border-left: 5px solid #0284c7;
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.08);
+    transition: all 0.25s ease;
+  }
+  .gestion-active-card.vacio {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    border-left-color: #94a3b8;
+    box-shadow: none;
+  }
+  .gestion-active-card.cargando {
+    background: #fffbeb;
+    border-color: #fde68a;
+    border-left-color: #f59e0b;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.12);
+  }
+  .gestion-active-card.listo {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    border-left-color: #10b981;
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.08);
+  }
+  .gestion-active-card.error {
+    background: #fef2f2;
+    border-color: #fecaca;
+    border-left-color: #ef4444;
+  }
+  .gestion-active-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 260px;
+  }
+  .gestion-active-title-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .gestion-active-icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+  .gestion-active-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #64748b);
+  }
+  .gestion-active-name {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--azul, #003b70);
+  }
+  .gestion-active-meta {
+    font-size: 12.5px;
+    color: #475569;
+    line-height: 1.4;
+  }
+  .gestion-sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--border-color, #e2e8f0);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+  }
+  .gestion-active-card.listo .gestion-sync-badge {
+    background: #ffffff;
+    border-color: #86efac;
+    color: #166534;
+  }
+  .gestion-active-card.cargando .gestion-sync-badge {
+    background: #ffffff;
+    border-color: #fde047;
+    color: #854d0e;
+  }
+
   /* PANEL DE ACCIONES MASIVAS */
   .bulk-panel {
     background: #fffdf5;
