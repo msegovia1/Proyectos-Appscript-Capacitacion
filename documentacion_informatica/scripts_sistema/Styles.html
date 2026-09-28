@@ -2318,19 +2318,23 @@
     box-shadow: 0 1px 2px rgba(16, 185, 129, 0.15);
   }
 
-  .sesion-toggle-pill.pendiente-toggle {
-    opacity: 0.75;
-    background: #f8fafc;
-    border: 1px dashed #cbd5e1;
+  .sesion-toggle-pill.disabled-toggle,
+  .sesion-toggle-pill.pendiente-toggle,
+  .sesion-toggle-pill:disabled {
+    opacity: 0.4;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
     color: #94a3b8;
-    cursor: pointer;
+    cursor: not-allowed;
   }
-  .sesion-toggle-pill.pendiente-toggle:hover {
-    opacity: 1;
-    background: #ecfdf5;
-    border-color: #10b981;
-    color: #059669;
-    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.2);
+  .sesion-toggle-pill.disabled-toggle:hover,
+  .sesion-toggle-pill.pendiente-toggle:hover,
+  .sesion-toggle-pill:disabled:hover {
+    opacity: 0.4;
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #94a3b8;
+    box-shadow: none;
   }
 
   .btn-abrir-detalle-asis {

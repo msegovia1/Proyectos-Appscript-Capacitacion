@@ -2807,8 +2807,8 @@ ${filasActividadesHtml}
     const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(idParticipacion));
     if (!p) return;
     if (p.ESTADO_SELECCION !== 'Seleccionado') {
-      p.ESTADO_SELECCION = 'Seleccionado';
-      notificar(`${p.NOMBRE_COMPLETO} pasó a "Seleccionado" y se registró su asistencia.`);
+      notificar('Solo se puede registrar asistencia a participantes en estado "Seleccionado". Cambie su estado en la columna Selección.', true);
+      return;
     }
     let asistidas = obtenerSesionesAsistidasParticipacion(p);
     numSesion = Number(numSesion);
@@ -2829,17 +2829,9 @@ ${filasActividadesHtml}
   }
 
   function marcarSesionCompleta(numSesion) {
-    let seleccionados = (GESTION.participaciones || []).filter(p => p.ESTADO_SELECCION === 'Seleccionado');
+    const seleccionados = (GESTION.participaciones || []).filter(p => p.ESTADO_SELECCION === 'Seleccionado');
     if (!seleccionados.length) {
-      const visibles = obtenerParticipantesFiltradosGestion();
-      if (!visibles.length) return notificar('No hay personas visibles en la tabla.', true);
-      const confirmacion = confirm(`No hay personas en estado "Seleccionado". ¿Deseas pasar a todos los participantes visibles (${visibles.length}) a "Seleccionado" y registrar su asistencia en la Sesión ${numSesion}?`);
-      if (!confirmacion) return;
-      visibles.forEach(p => {
-        p.ESTADO_SELECCION = 'Seleccionado';
-        GESTION_MODIFICADOS.add(String(p.ID_PARTICIPACION));
-      });
-      seleccionados = visibles;
+      return notificar('No hay personas en estado "Seleccionado". La asistencia por sesión solo aplica a participantes seleccionados.', true);
     }
     numSesion = Number(numSesion);
 
@@ -2865,7 +2857,7 @@ ${filasActividadesHtml}
 
     actualizarKpisGestion();
     renderGestion(false);
-    notificar(nuevoEstado ? `Sesión ${numSesion} marcada para todos (${seleccionados.length} personas).` : `Sesión ${numSesion} desmarcada.`);
+    notificar(nuevoEstado ? `Sesión ${numSesion} marcada para participantes seleccionados (${seleccionados.length} personas).` : `Sesión ${numSesion} desmarcada.`);
   }
 
   function renderHeaderGestion_(sesionesActividad) {
@@ -2916,6 +2908,9 @@ ${filasActividadesHtml}
   function abrirModalAsistenciaAlumno(idParticipacion) {
     const p = (GESTION.participaciones || []).find(x => String(x.ID_PARTICIPACION) === String(idParticipacion));
     if (!p) return;
+    if (p.ESTADO_SELECCION !== 'Seleccionado') {
+      return notificar('Solo se puede gestionar la asistencia de participantes en estado "Seleccionado".', true);
+    }
     MODAL_ASIS_PARTICIPACION_ID = idParticipacion;
     MODAL_ASIS_SESIONES_TEMP = [...obtenerSesionesAsistidasParticipacion(p)];
 
@@ -3251,17 +3246,18 @@ ${filasActividadesHtml}
       const totalAsistidas = asistidasNums.length;
 
       let celdasSesionesHtml = '';
+      const noSeleccionado = p.ESTADO_SELECCION !== 'Seleccionado';
       if (esModoSesiones) {
         celdasSesionesHtml = sesionesActividad.map(s => {
           const presente = asistidasNums.includes(Number(s.numero));
-          const deshabilitado = p.ESTADO_SELECCION !== 'Seleccionado';
           return `
             <td class="col-sesion td-center">
               <button
                 type="button"
-                class="sesion-toggle-pill ${presente ? 'presente' : ''} ${deshabilitado ? 'pendiente-toggle' : ''}"
+                class="sesion-toggle-pill ${presente ? 'presente' : ''} ${noSeleccionado ? 'disabled-toggle' : ''}"
+                ${noSeleccionado ? 'disabled' : ''}
                 onclick="alternarAsistenciaSesion('${esc(id)}', ${s.numero})"
-                title="${deshabilitado ? 'Actualmente en Pendiente. Haz clic para pasarlo a Seleccionado y marcar asistencia en ' : ''}Sesión ${s.numero}${s.fecha ? ' (' + fechaActividadCorta(s.fecha) + ')' : ''}: ${presente ? 'Presente' : 'Ausente'}"
+                title="${noSeleccionado ? 'Participante no seleccionado (estado: ' + (p.ESTADO_SELECCION || 'Pendiente') + '). Seleccione a la persona para registrar asistencia.' : 'Sesión ' + s.numero + (s.fecha ? ' (' + fechaActividadCorta(s.fecha) + ')' : '') + ': ' + (presente ? 'Presente' : 'Ausente')}"
               >
                 ${presente ? '✓' : '—'}
               </button>
@@ -3272,12 +3268,12 @@ ${filasActividadesHtml}
 
       const campoAsistidasHtml = esModoSesiones
         ? `<div style="display:flex;align-items:center;justify-content:center;gap:6px">
-             <strong style="font-size:14px;color:var(--primario)">${totalAsistidas}</strong>
-             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" title="Ver detalle de sesiones">📋</button>
+             <strong style="font-size:14px;color:${noSeleccionado ? 'var(--texto-mudo)' : 'var(--primario)'}">${totalAsistidas}</strong>
+             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" ${noSeleccionado ? 'disabled title="Participante no seleccionado"' : 'title="Ver detalle de sesiones"'}>📋</button>
            </div>`
         : `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
-             <input data-campo="SESIONES_ASISTIDAS" type="number" min="0" value="${esc(numeroPlano(p.SESIONES_ASISTIDAS,0))}" onchange="registrarCambioGestion(this)" style="width:50px">
-             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" title="Ver desglose por sesión">📋</button>
+             <input data-campo="SESIONES_ASISTIDAS" type="number" min="0" value="${esc(numeroPlano(p.SESIONES_ASISTIDAS,0))}" onchange="registrarCambioGestion(this)" ${noSeleccionado ? 'disabled title="Participante no seleccionado"' : ''} style="width:50px">
+             <button type="button" class="btn-abrir-detalle-asis" onclick="abrirModalAsistenciaAlumno('${esc(id)}')" ${noSeleccionado ? 'disabled title="Participante no seleccionado"' : 'title="Ver desglose por sesión"'}>📋</button>
            </div>`;
 
       const tel = String(p.TELEFONO || '').trim();

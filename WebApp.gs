@@ -1620,13 +1620,6 @@ function obtenerGestionActividad(idActividad) {
   );
   if (!actividad) throw new Error('No se encontró la actividad seleccionada.');
 
-  // Depurar y unificar duplicados para esta actividad automáticamente
-  try {
-    depurarDuplicadosActividad(idActividad);
-  } catch (eDup) {
-    console.warn('Advertencia al depurar duplicados de participaciones: ' + eDup.message);
-  }
-
   // Homogeneizar y reparar sesiones de las participaciones para esta actividad
   try {
     corregirYSincronizarSesionesParticipaciones(idActividad);
