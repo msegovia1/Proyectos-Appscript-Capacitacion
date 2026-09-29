@@ -1254,10 +1254,49 @@
     display: none;
   }
 
+  .gestion-table-toolbar-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0 8px;
+  }
+
+  .btn-toggle-pin {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--borde);
+    background: #ffffff;
+    color: var(--texto);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn-toggle-pin:hover {
+    border-color: var(--azul-2);
+    background: #f8fafc;
+  }
+  .btn-toggle-pin.active {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: var(--azul-2);
+    box-shadow: 0 1px 3px rgba(30, 58, 138, 0.1);
+  }
+  .btn-toggle-pin.inactive {
+    background: #f8fafc;
+    border-color: var(--borde);
+    color: var(--gris);
+  }
+
   .gestion-scroll-hint {
     font-size: 12px;
     color: var(--gris);
-    margin: 12px 0 8px;
+    margin: 0;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1282,6 +1321,14 @@
     min-width: 1750px;
     border-collapse: separate;
     border-spacing: 0;
+  }
+
+  /* Cabecera pegajosa vertical (sticky top) */
+  .gestion-scroll .gestion-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #f8fafc;
   }
 
   .gestion-table th {
@@ -1312,8 +1359,71 @@
     background: #f1f5f9;
   }
 
-  .gestion-table .col-check { width: 44px; text-align: center; }
-  .gestion-table .col-persona { min-width: 230px; max-width: 280px; }
+  .gestion-table .col-check {
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    padding: 10px 6px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  .gestion-table .col-persona {
+    min-width: 240px;
+    max-width: 280px;
+    box-sizing: border-box;
+  }
+
+  /* Comportamiento cuando la columna de nombres está FIJADA */
+  .gestion-scroll.columna-fijada .gestion-table th.col-check,
+  .gestion-scroll.columna-fijada .gestion-table td.col-check {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+  }
+  .gestion-scroll.columna-fijada .gestion-table th.col-check {
+    top: 0;
+    z-index: 30;
+    background: #f8fafc;
+  }
+  .gestion-scroll.columna-fijada .gestion-table td.col-check {
+    background: #ffffff;
+  }
+
+  .gestion-scroll.columna-fijada .gestion-table th.col-persona,
+  .gestion-scroll.columna-fijada .gestion-table td.col-persona {
+    position: sticky;
+    left: 48px;
+    z-index: 15;
+    border-right: 2px solid #cbd5e1;
+    box-shadow: 4px 0 8px -3px rgba(15, 23, 42, 0.12);
+  }
+  .gestion-scroll.columna-fijada .gestion-table th.col-persona {
+    top: 0;
+    z-index: 30;
+    background: #f8fafc;
+  }
+  .gestion-scroll.columna-fijada .gestion-table td.col-persona {
+    background: #ffffff;
+  }
+
+  /* Preservar fondo al hacer hover sobre celdas fijadas */
+  .gestion-scroll.columna-fijada .gestion-table tr:hover td.col-check,
+  .gestion-scroll.columna-fijada .gestion-table tr:hover td.col-persona {
+    background: #f1f5f9;
+  }
+
+  /* Filas marcadas / seleccionadas */
+  .gestion-table tr.fila-marcada td {
+    background: #eff6ff;
+  }
+  .gestion-scroll.columna-fijada .gestion-table tr.fila-marcada td.col-check,
+  .gestion-scroll.columna-fijada .gestion-table tr.fila-marcada td.col-persona {
+    background: #eff6ff;
+  }
+  .gestion-scroll.columna-fijada .gestion-table tr.fila-marcada:hover td.col-check,
+  .gestion-scroll.columna-fijada .gestion-table tr.fila-marcada:hover td.col-persona {
+    background: #dbeafe;
+  }
   .gestion-table .col-telefono { min-width: 140px; text-align: center; white-space: nowrap; }
   .tel-link {
     display: inline-flex;

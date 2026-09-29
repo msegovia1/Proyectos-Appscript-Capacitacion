@@ -192,8 +192,13 @@
             </div>
           </div>
 
-          <p class="gestion-scroll-hint">↔ Desplácese horizontalmente dentro de la tabla para consultar resultados, certificación y observaciones.</p>
-          <div class="table-container gestion-scroll" tabindex="0" aria-label="Tabla desplazable de gestión de participantes">
+          <div class="gestion-table-toolbar-bar">
+            <p class="gestion-scroll-hint">↔ Desplácese horizontalmente dentro de la tabla para registrar asistencia en las sesiones y consultar resultados.</p>
+            <button type="button" id="btnToggleFijarColumna" class="btn-toggle-pin active" onclick="alternarFijarColumnaNombre()" title="Fijar o liberar la columna de nombres al desplazarse horizontalmente">
+              📌 Columna de nombres: <strong>Fijada</strong>
+            </button>
+          </div>
+          <div class="table-container gestion-scroll columna-fijada" tabindex="0" aria-label="Tabla desplazable de gestión de participantes">
             <table class="gestion-table">
               <thead id="headTablaGestion">
                 <tr>

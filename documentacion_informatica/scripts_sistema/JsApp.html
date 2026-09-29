@@ -419,6 +419,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       asegurarModulo('actividades', () => {
         llenarSelectores();
         if (typeof actualizarKpisGestion === 'function') actualizarKpisGestion();
+        if (typeof inicializarFijarColumnaNombre === 'function') inicializarFijarColumnaNombre();
       });
       return;
     }
@@ -3292,7 +3293,7 @@ ${filasActividadesHtml}
         ? `<div style="display:inline-flex;align-items:center;justify-content:center"><a href="tel:${esc(telLimpio)}" class="tel-link" title="Llamar a ${esc(p.NOMBRE_COMPLETO)}">📞 ${esc(tel)}</a>${wpHtml}</div>`
         : `<span class="muted">—</span>`;
 
-      return `<tr data-idx="${idx}" data-id="${esc(id)}">
+      return `<tr data-idx="${idx}" data-id="${esc(id)}" class="${marcado ? 'fila-marcada' : ''}">
         <td class="col-check td-center"><input type="checkbox" class="gestion-check" data-id="${esc(id)}" ${marcado} onchange="cambiarSeleccionGestion(this)"></td>
         <td class="col-persona nombre"><strong>${esc(p.NOMBRE_COMPLETO)}</strong><small>${esc(p.CORREO || 'Sin correo')}</small></td>
         <td class="col-doc">${esc(p.DOCUMENTO || p.RUT || '—')}</td>
@@ -3321,10 +3322,13 @@ ${filasActividadesHtml}
   function cambiarSeleccionGestion(checkbox) {
     const id = String(checkbox.dataset.id || '').trim();
     if (!id) return;
+    const tr = checkbox.closest('tr');
     if (checkbox.checked) {
       GESTION_SELECCIONADOS.add(id);
+      if (tr) tr.classList.add('fila-marcada');
     } else {
       GESTION_SELECCIONADOS.delete(id);
+      if (tr) tr.classList.remove('fila-marcada');
     }
     actualizarCheckPrincipalGestion();
   }
@@ -3416,13 +3420,58 @@ ${filasActividadesHtml}
       const id = String(check.dataset.id || '').trim();
       if (!id) return;
       check.checked = estado;
+      const tr = check.closest('tr');
       if (estado) {
         GESTION_SELECCIONADOS.add(id);
+        if (tr) tr.classList.add('fila-marcada');
       } else {
         GESTION_SELECCIONADOS.delete(id);
+        if (tr) tr.classList.remove('fila-marcada');
       }
     });
     actualizarCheckPrincipalGestion();
+  }
+
+  function alternarFijarColumnaNombre() {
+    const contenedor = document.querySelector('.gestion-scroll');
+    if (!contenedor) return;
+    const estaFijada = contenedor.classList.toggle('columna-fijada');
+    try {
+      localStorage.setItem('sigc_gestion_columna_fija', estaFijada ? '1' : '0');
+    } catch (e) {}
+    actualizarBotonFijarColumna(estaFijada);
+  }
+
+  function actualizarBotonFijarColumna(estaFijada) {
+    const btn = document.getElementById('btnToggleFijarColumna');
+    if (!btn) return;
+    if (estaFijada) {
+      btn.innerHTML = '📌 Columna de nombres: <strong>Fijada</strong>';
+      btn.className = 'btn-toggle-pin active';
+      btn.title = 'Haga clic para liberar la columna de nombres y permitir que se desplace con la tabla';
+    } else {
+      btn.innerHTML = '📌 Columna de nombres: <strong>Móvil</strong>';
+      btn.className = 'btn-toggle-pin inactive';
+      btn.title = 'Haga clic para fijar la columna de nombres a la izquierda al desplazarse';
+    }
+  }
+
+  function inicializarFijarColumnaNombre() {
+    let preferencia = '1';
+    try {
+      const guardado = localStorage.getItem('sigc_gestion_columna_fija');
+      if (guardado !== null) preferencia = guardado;
+    } catch (e) {}
+    const contenedor = document.querySelector('.gestion-scroll');
+    const estaFijada = preferencia === '1';
+    if (contenedor) {
+      if (estaFijada) {
+        contenedor.classList.add('columna-fijada');
+      } else {
+        contenedor.classList.remove('columna-fijada');
+      }
+    }
+    actualizarBotonFijarColumna(estaFijada);
   }
 
   function aplicarMasivo(campo, idSelector) {
@@ -5043,6 +5092,7 @@ ${filasActividadesHtml}
 
   actualizarAreasReporte();
   document.addEventListener('DOMContentLoaded', function() {
+    inicializarFijarColumnaNombre();
     cargarDatos();
   });
   window.addEventListener('load', function() {
