@@ -3097,6 +3097,32 @@ ${filasActividadesHtml}
       .depurarDuplicadosActividadWeb(idActividad);
   }
 
+  function depurarDuplicadosPersonasUI() {
+    const confirmar = confirm(
+      '¿Desea analizar y unificar automáticamente las personas duplicadas en el sistema?\n\n' +
+      '• Se consolidarán fichas con mismo RUT (con o sin dígito verificador), mismo teléfono o correo con nombre coincidente.\n' +
+      '• Se mantendrá la información más completa y se transferirán todas las capacitaciones y asistencias al registro principal.\n\n' +
+      '¿Desea continuar?'
+    );
+    if (!confirmar) return;
+    mostrarCarga(true, 'Analizando y unificando personas duplicadas...');
+    google.script.run
+      .withSuccessHandler(function(r) {
+        mostrarCarga(false);
+        if (r && r.ok) {
+          notificar(r.mensaje || 'Depuración de personas completada con éxito.');
+          cargarDatos(true);
+        } else {
+          notificar((r && r.mensaje) || 'No se pudieron unificar las personas.', true);
+        }
+      })
+      .withFailureHandler(function(error) {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .depurarDuplicadosPersonasWeb();
+  }
+
   function obtenerParticipantesFiltradosGestion() {
     const q = normalizar(document.getElementById('buscarGestion')?.value || '');
     const filtroSeleccion = document.getElementById('filtroGestionSeleccion')?.value || '';

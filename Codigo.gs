@@ -2102,38 +2102,28 @@ function obtenerOCrearPersona_(registro) {
   if (!sigcValidarCorreo(correo)) throw new Error('El correo electrónico no es válido.');
   if (!sigcValidarTelefono(telefono)) throw new Error('El teléfono no tiene un formato chileno válido.');
   let filaEncontrada = -1;
+  const perNueva = {
+    rut: rut,
+    tipoDocumento: documentoValidado.tipo,
+    numeroDocumento: documentoValidado.numero,
+    nombre: nombre,
+    correo: correo,
+    telefono: telefono,
+    nacionalidad: nacionalidad
+  };
   for (let i = 1; i < datos.length; i++) {
-    const tipoExistente = sigcNormalizarTipoDocumento(
-      mapa['TIPO DOCUMENTO'] !== undefined ? datos[i][mapa['TIPO DOCUMENTO']] : '',
-      mapa['RUT'] !== undefined ? datos[i][mapa['RUT']] : ''
-    );
-    const documentoExistente = sigcNormalizarDocumento(
-      tipoExistente,
-      mapa['NUMERO DOCUMENTO'] !== undefined ? datos[i][mapa['NUMERO DOCUMENTO']] : '',
-      mapa['RUT'] !== undefined ? datos[i][mapa['RUT']] : ''
-    );
-    const nacionalidadExistente = sigcNormalizarClave(
-      mapa['NACIONALIDAD'] !== undefined ? datos[i][mapa['NACIONALIDAD']] : ''
-    );
-    const coincideDocumento = documentoValidado.tipo === 'RUT'
-      ? tipoExistente === 'RUT' && documentoExistente === documentoValidado.numero
-      : tipoExistente === documentoValidado.tipo &&
-        documentoExistente === documentoValidado.numero &&
-        (documentoValidado.tipo === 'Identificador histórico' ||
-          nacionalidadExistente === sigcNormalizarClave(nacionalidad));
-    if (coincideDocumento) {
-      filaEncontrada = i + 1;
-      break;
-    }
-    const correoExistente = normalizarCorreo_(datos[i][mapa['CORREO']]);
-    const telefonoExistente = normalizarTelefono_(datos[i][mapa['TELEFONO']]);
-    if (correo && correoExistente && correo === correoExistente &&
-        nombresCompatibles_(nombre, nombreExistente)) {
-      filaEncontrada = i + 1;
-      break;
-    }
-    if (telefono && telefonoExistente && telefono === telefonoExistente &&
-        nombresCompatibles_(nombre, nombreExistente)) {
+    const filaD = datos[i];
+    const perExistente = {
+      id: mapa['ID PERSONA'] !== undefined ? filaD[mapa['ID PERSONA']] : '',
+      rut: mapa['RUT'] !== undefined ? filaD[mapa['RUT']] : '',
+      tipoDocumento: mapa['TIPO DOCUMENTO'] !== undefined ? filaD[mapa['TIPO DOCUMENTO']] : '',
+      numeroDocumento: mapa['NUMERO DOCUMENTO'] !== undefined ? filaD[mapa['NUMERO DOCUMENTO']] : '',
+      nombre: mapa['NOMBRE COMPLETO'] !== undefined ? filaD[mapa['NOMBRE COMPLETO']] : '',
+      correo: mapa['CORREO'] !== undefined ? filaD[mapa['CORREO']] : '',
+      telefono: mapa['TELEFONO'] !== undefined ? filaD[mapa['TELEFONO']] : '',
+      nacionalidad: mapa['NACIONALIDAD'] !== undefined ? filaD[mapa['NACIONALIDAD']] : ''
+    };
+    if (sigcSonMismaPersona(perExistente, perNueva)) {
       filaEncontrada = i + 1;
       break;
     }
@@ -3064,28 +3054,9 @@ function depurarDuplicadosActividad(idActividad) {
         const b = items[j];
 
         let sonMismaPersona = false;
-
-        // Criterio 1: Mismo ID_PERSONA
         if (a.idP && b.idP && a.idP === b.idP) {
           sonMismaPersona = true;
-        }
-        // Criterio 2: Mismo RUT válido (normalizado sin repeticiones)
-        else if (a.persona.rut && b.persona.rut && a.persona.rut === b.persona.rut && sigcValidarRut(a.persona.rut)) {
-          sonMismaPersona = true;
-        }
-        // Criterio 3: Mismo Documento Extranjero / Pasaporte
-        else if (a.persona.numDoc && b.persona.numDoc && a.persona.numDoc === b.persona.numDoc &&
-                 a.persona.tipoDoc && a.persona.tipoDoc === b.persona.tipoDoc) {
-          sonMismaPersona = true;
-        }
-        // Criterio 4: Mismo Correo y Nombres Compatibles
-        else if (a.persona.correo && b.persona.correo && a.persona.correo === b.persona.correo &&
-                 nombresCompatibles_(a.persona.nombre, b.persona.nombre)) {
-          sonMismaPersona = true;
-        }
-        // Criterio 5: Mismo Teléfono y Nombres Compatibles
-        else if (a.persona.telefono && b.persona.telefono && a.persona.telefono === b.persona.telefono &&
-                 nombresCompatibles_(a.persona.nombre, b.persona.nombre)) {
+        } else if (sigcSonMismaPersona(a.persona, b.persona)) {
           sonMismaPersona = true;
         }
 
@@ -3268,6 +3239,339 @@ function depurarDuplicadosActividad(idActividad) {
       mensaje: duplicadosEliminados > 0
         ? 'Se depuraron y unificaron con éxito ' + duplicadosEliminados + ' registro(s) duplicado(s).'
         : 'No se detectaron duplicados en esta actividad.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Detecta y unifica personas duplicadas en toda la base de datos (hoja PERSONAS).
+ * Reasigna todas las participaciones e intereses asociados al registro maestro
+ * y elimina de forma segura las filas secundarias redundantes.
+ */
+function depurarDuplicadosPersonas() {
+  const ss = sigcSpreadsheetCentral_();
+  const hojaPer = ss.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+  const hojaPart = ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+  const hojaIntereses = ss.getSheetByName('INTERESES_CAPACITACION');
+
+  if (!hojaPer || hojaPer.getLastRow() < 2) {
+    return {
+      ok: true,
+      personasUnificadas: 0,
+      participacionesActualizadas: 0,
+      mensaje: 'No hay personas registradas para depurar.'
+    };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(45000);
+  try {
+    const rangoPer = hojaPer.getDataRange();
+    const datosPer = rangoPer.getValues();
+    const mPer = mapaEncabezados_(datosPer[0]);
+
+    const colId = mPer['ID PERSONA'];
+    const colRut = mPer['RUT'];
+    const colTipoDoc = mPer['TIPO DOCUMENTO'];
+    const colNumDoc = mPer['NUMERO DOCUMENTO'];
+    const colNom = mPer['NOMBRE COMPLETO'];
+    const colCorreo = mPer['CORREO'];
+    const colTel = mPer['TELEFONO'];
+    const colComuna = mPer['COMUNA'];
+    const colBarrio = mPer['BARRIO'];
+    const colDir = mPer['DIRECCION'];
+    const colFecNac = mPer['FECHA NACIMIENTO'];
+    const colGen = mPer['GENERO'];
+    const colNac = mPer['NACIONALIDAD'];
+    const colPmjh = mPer['PARTICIPA PMJH'];
+    const colContacto = mPer['ESTADO CONTACTO'];
+    const colObs = mPer['OBSERVACIONES'];
+    const colUltAct = mPer['ULTIMA ACTUALIZACION'];
+
+    // Mapear conteo de participaciones por ID de persona
+    const participacionesPorPersona = {};
+    let datosPart = null;
+    let mPart = null;
+    let rangoPart = null;
+    let colPartIdPer = undefined;
+
+    if (hojaPart && hojaPart.getLastRow() >= 2) {
+      rangoPart = hojaPart.getDataRange();
+      datosPart = rangoPart.getValues();
+      mPart = mapaEncabezados_(datosPart[0]);
+      colPartIdPer = mPart['ID PERSONA'];
+      if (colPartIdPer !== undefined) {
+        for (let pt = 1; pt < datosPart.length; pt++) {
+          const idP = String(datosPart[pt][colPartIdPer] || '').trim();
+          if (idP) {
+            participacionesPorPersona[idP] = (participacionesPorPersona[idP] || 0) + 1;
+          }
+        }
+      }
+    }
+
+    const items = [];
+    for (let p = 1; p < datosPer.length; p++) {
+      const fila = datosPer[p];
+      const id = String(fila[colId] || '').trim();
+      if (!id) continue;
+
+      let rut = colRut !== undefined ? String(fila[colRut] || '').trim() : '';
+      let numDoc = colNumDoc !== undefined ? String(fila[colNumDoc] || '').trim() : '';
+      let tipoDoc = colTipoDoc !== undefined ? String(fila[colTipoDoc] || '').trim() : '';
+
+      let rutNorm = sigcNormalizarRut(rut || (tipoDoc === 'RUT' ? numDoc : ''));
+      if (!rutNorm && numDoc && /^\d{7,8}$/.test(numDoc.replace(/\D/g, ''))) {
+        rutNorm = sigcNormalizarRut(numDoc);
+      }
+
+      items.push({
+        indiceFila: p, // 0-based en datosPer (fila = p + 1)
+        id: id,
+        rut: rutNorm || rut,
+        tipoDocumento: tipoDoc || (rutNorm ? 'RUT' : ''),
+        numeroDocumento: numDoc || rutNorm,
+        nombre: sigcNormalizarNombre(colNom !== undefined ? fila[colNom] : ''),
+        correo: sigcNormalizarCorreo(colCorreo !== undefined ? fila[colCorreo] : ''),
+        telefono: sigcNormalizarTelefono(colTel !== undefined ? fila[colTel] : ''),
+        comuna: colComuna !== undefined ? String(fila[colComuna] || '').trim() : '',
+        barrio: colBarrio !== undefined ? String(fila[colBarrio] || '').trim() : '',
+        direccion: colDir !== undefined ? String(fila[colDir] || '').trim() : '',
+        fechaNacimiento: colFecNac !== undefined ? fila[colFecNac] : '',
+        genero: colGen !== undefined ? String(fila[colGen] || '').trim() : '',
+        nacionalidad: colNac !== undefined ? String(fila[colNac] || '').trim() : '',
+        pmjh: colPmjh !== undefined ? String(fila[colPmjh] || '').trim() : '',
+        participaciones: participacionesPorPersona[id] || 0,
+        fila: fila
+      });
+    }
+
+    const n = items.length;
+    const parent = [];
+    for (let i = 0; i < n; i++) parent[i] = i;
+
+    function find(i) {
+      if (parent[i] === i) return i;
+      parent[i] = find(parent[i]);
+      return parent[i];
+    }
+    function union(a, b) {
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parent[rootB] = rootA;
+    }
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (sigcSonMismaPersona(items[i], items[j])) {
+          union(i, j);
+        }
+      }
+    }
+
+    const grupos = {};
+    for (let i = 0; i < n; i++) {
+      const root = find(i);
+      if (!grupos[root]) grupos[root] = [];
+      grupos[root].push(items[i]);
+    }
+
+    function calcularPuntajePersona(item) {
+      let score = 0;
+      if (item.rut && sigcValidarRut(item.rut)) score += 1000;
+      score += (item.participaciones || 0) * 100;
+      if (item.correo && sigcValidarCorreo(item.correo)) score += 50;
+      if (item.telefono && sigcValidarTelefono(item.telefono)) score += 50;
+      if (item.fechaNacimiento && String(item.fechaNacimiento).toLowerCase().indexOf('no informad') < 0) score += 30;
+      if (item.comuna) score += 20;
+      if (item.barrio) score += 10;
+      if (item.direccion) score += 10;
+      if (item.pmjh && item.pmjh !== 'No informado') score += 10;
+      // Preferir ID más antiguo (menor fila)
+      score -= item.indiceFila * 0.01;
+      return score;
+    }
+
+    const mapeoIdSecundarioAMaestro = {};
+    const filasParaEliminar = [];
+    let personasUnificadas = 0;
+    const nombresUnificados = [];
+    const ahora = new Date();
+
+    Object.keys(grupos).forEach(function(rootKey) {
+      const grupo = grupos[rootKey];
+      if (grupo.length <= 1) return;
+
+      grupo.sort(function(a, b) {
+        return calcularPuntajePersona(b) - calcularPuntajePersona(a);
+      });
+
+      const maestro = grupo[0];
+      const filaM = maestro.fila;
+
+      for (let s = 1; s < grupo.length; s++) {
+        const sec = grupo[s];
+        const filaS = sec.fila;
+
+        mapeoIdSecundarioAMaestro[sec.id] = maestro.id;
+
+        // 1. RUT
+        if ((!maestro.rut || !sigcValidarRut(maestro.rut)) && sec.rut && sigcValidarRut(sec.rut)) {
+          maestro.rut = sec.rut;
+          if (colRut !== undefined) filaM[colRut] = sec.rut;
+          if (colNumDoc !== undefined) filaM[colNumDoc] = sec.rut;
+          if (colTipoDoc !== undefined) filaM[colTipoDoc] = 'RUT';
+        } else if (maestro.rut && sigcValidarRut(maestro.rut) && colRut !== undefined && !filaM[colRut]) {
+          filaM[colRut] = maestro.rut;
+          if (colNumDoc !== undefined) filaM[colNumDoc] = maestro.rut;
+          if (colTipoDoc !== undefined) filaM[colTipoDoc] = 'RUT';
+        }
+
+        // 2. Correo
+        if (!maestro.correo && sec.correo) {
+          maestro.correo = sec.correo;
+          if (colCorreo !== undefined) filaM[colCorreo] = sec.correo;
+        }
+
+        // 3. Teléfono
+        if (!maestro.telefono && sec.telefono) {
+          maestro.telefono = sec.telefono;
+          if (colTel !== undefined) filaM[colTel] = sec.telefono;
+        }
+
+        // 4. Fecha Nacimiento
+        const fecM = String(maestro.fechaNacimiento || '').trim();
+        const fecS = String(sec.fechaNacimiento || '').trim();
+        if ((!fecM || fecM.toLowerCase().indexOf('no informad') >= 0) && fecS && fecS.toLowerCase().indexOf('no informad') < 0) {
+          maestro.fechaNacimiento = sec.fechaNacimiento;
+          if (colFecNac !== undefined) filaM[colFecNac] = sec.fechaNacimiento;
+        }
+
+        // 5. Comuna, Barrio, Dirección
+        if (!maestro.comuna && sec.comuna && colComuna !== undefined) filaM[colComuna] = sec.comuna;
+        if (!maestro.barrio && sec.barrio && colBarrio !== undefined) filaM[colBarrio] = sec.barrio;
+        if (!maestro.direccion && sec.direccion && colDir !== undefined) filaM[colDir] = sec.direccion;
+
+        // 6. PMJH
+        if ((!maestro.pmjh || maestro.pmjh === 'No informado') && sec.pmjh && sec.pmjh !== 'No informado' && colPmjh !== undefined) {
+          filaM[colPmjh] = sec.pmjh;
+        }
+
+        // 7. Género, Nacionalidad
+        if (!maestro.genero && sec.genero && colGen !== undefined) filaM[colGen] = sec.genero;
+        if (!maestro.nacionalidad && sec.nacionalidad && colNac !== undefined) filaM[colNac] = sec.nacionalidad;
+
+        if ((maestro.correo || maestro.telefono) && colContacto !== undefined) {
+          filaM[colContacto] = 'Activo';
+        }
+
+        if (colObs !== undefined) {
+          const obsActual = String(filaM[colObs] || '').trim();
+          const obsSec = String(filaS[colObs] || '').trim();
+          if (obsSec && obsActual.indexOf(obsSec) < 0) {
+            filaM[colObs] = (obsActual ? obsActual + ' | ' : '') + '[Fusionado de ' + sec.id + ': ' + obsSec + ']';
+          }
+        }
+
+        if (colUltAct !== undefined) filaM[colUltAct] = ahora;
+
+        filasParaEliminar.push(sec.indiceFila + 1); // 1-based para deleteRow
+        personasUnificadas++;
+      }
+
+      nombresUnificados.push(maestro.nombre + ' (' + maestro.id + ')');
+    });
+
+    if (personasUnificadas === 0) {
+      return {
+        ok: true,
+        personasUnificadas: 0,
+        participacionesActualizadas: 0,
+        mensaje: 'No se detectaron personas duplicadas para unificar.'
+      };
+    }
+
+    // Actualizar datos de maestros en PERSONAS
+    rangoPer.setValues(datosPer);
+    SpreadsheetApp.flush();
+
+    // Reasignar participaciones
+    let participacionesActualizadas = 0;
+    if (datosPart && colPartIdPer !== undefined) {
+      let partModificadas = false;
+      for (let pt = 1; pt < datosPart.length; pt++) {
+        const idSec = String(datosPart[pt][colPartIdPer] || '').trim();
+        if (mapeoIdSecundarioAMaestro[idSec]) {
+          datosPart[pt][colPartIdPer] = mapeoIdSecundarioAMaestro[idSec];
+          participacionesActualizadas++;
+          partModificadas = true;
+        }
+      }
+      if (partModificadas) {
+        rangoPart.setValues(datosPart);
+        SpreadsheetApp.flush();
+        if (typeof sigcInvalidarCacheTabla_ === 'function') {
+          sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PARTICIPACIONES);
+        }
+      }
+    }
+
+    // Reasignar intereses si existen
+    if (hojaIntereses && hojaIntereses.getLastRow() >= 2) {
+      try {
+        const rangoInt = hojaIntereses.getDataRange();
+        const datosInt = rangoInt.getValues();
+        const mInt = mapaEncabezados_(datosInt[0]);
+        const colIntIdPer = mInt['ID PERSONA'] !== undefined ? mInt['ID PERSONA'] : mInt['ID_PERSONA'];
+        if (colIntIdPer !== undefined) {
+          let intModificados = false;
+          for (let it = 1; it < datosInt.length; it++) {
+            const idSec = String(datosInt[it][colIntIdPer] || '').trim();
+            if (mapeoIdSecundarioAMaestro[idSec]) {
+              datosInt[it][colIntIdPer] = mapeoIdSecundarioAMaestro[idSec];
+              intModificados = true;
+            }
+          }
+          if (intModificados) {
+            rangoInt.setValues(datosInt);
+            SpreadsheetApp.flush();
+            if (typeof sigcInvalidarCacheTabla_ === 'function') {
+              sigcInvalidarCacheTabla_('INTERESES_CAPACITACION');
+            }
+          }
+        }
+      } catch (eInt) {
+        console.warn('Error al actualizar intereses en depurarDuplicadosPersonas: ' + eInt.message);
+      }
+    }
+
+    // Eliminar filas secundarias en PERSONAS de abajo hacia arriba
+    filasParaEliminar.sort(function(a, b) { return b - a; });
+    filasParaEliminar.forEach(function(numFila) {
+      hojaPer.deleteRow(numFila);
+    });
+    SpreadsheetApp.flush();
+
+    if (typeof sigcInvalidarCacheTabla_ === 'function') {
+      sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PERSONAS);
+    }
+
+    sigcRegistrarLog(
+      'DEPURAR',
+      'PERSONAS',
+      Object.keys(mapeoIdSecundarioAMaestro).join(','),
+      'Se unificaron ' + personasUnificadas + ' personas duplicadas. Participaciones reasignadas: ' + participacionesActualizadas
+    );
+
+    return {
+      ok: true,
+      personasUnificadas: personasUnificadas,
+      participacionesActualizadas: participacionesActualizadas,
+      nombres: nombresUnificados.slice(0, 10),
+      mensaje: 'Se unificaron con éxito ' + personasUnificadas + ' registro(s) de personas duplicadas y se actualizaron ' +
+        participacionesActualizadas + ' participación(es).'
     };
   } finally {
     lock.releaseLock();

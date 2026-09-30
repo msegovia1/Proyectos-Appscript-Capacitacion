@@ -102,6 +102,96 @@ function sigcValidarRut(valor) {
   const esperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
   return dv === esperado;
 }
+function sigcRutsCoincidentes(rutA, rutB) {
+  if (!rutA || !rutB) return false;
+  const strA = String(rutA).trim().toUpperCase();
+  const strB = String(rutB).trim().toUpperCase();
+  if (strA === strB) return true;
+
+  // 1. Probar normalización completa
+  const normA = sigcNormalizarRut(strA);
+  const normB = sigcNormalizarRut(strB);
+  if (normA && normB && normA === normB) return true;
+
+  // 2. Extraer dígitos puros
+  const soloNumA = strA.replace(/\D/g, '');
+  const soloNumB = strB.replace(/\D/g, '');
+  if (!soloNumA || !soloNumB) return false;
+
+  // Si ambos números son exactamente iguales (ej: "12862935" y "12862935")
+  if (soloNumA === soloNumB) return true;
+
+  // Si uno tiene cuerpo sin DV (7 u 8 dígitos) y el otro tiene cuerpo + DV (8 o 9 dígitos)
+  if (soloNumA.length >= 7 && soloNumA.length <= 8 && soloNumB.length === soloNumA.length + 1 && soloNumB.indexOf(soloNumA) === 0) {
+    return true;
+  }
+  if (soloNumB.length >= 7 && soloNumB.length <= 8 && soloNumA.length === soloNumB.length + 1 && soloNumA.indexOf(soloNumB) === 0) {
+    return true;
+  }
+
+  // Si ambos tienen guion, comparar cuerpos antes del guion
+  if (strA.indexOf('-') >= 0 && strB.indexOf('-') >= 0) {
+    const cA = strA.split('-')[0].replace(/\D/g, '');
+    const cB = strB.split('-')[0].replace(/\D/g, '');
+    if (cA && cB && cA === cB && cA.length >= 7) return true;
+  }
+
+  return false;
+}
+function sigcSonNombresCompatibles(a, b) {
+  const na = sigcNormalizarEncabezado(a);
+  const nb = sigcNormalizarEncabezado(b);
+  if (!na || !nb) return false;
+  if (na === nb || na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return true;
+  const ta = na.split(' ').filter(Boolean);
+  const tb = nb.split(' ').filter(Boolean);
+  if (!ta.length || !tb.length) return false;
+  const interseccion = ta.filter(function(x) { return tb.indexOf(x) >= 0; }).length;
+  return interseccion / Math.min(ta.length, tb.length) >= 0.75;
+}
+function nombresCompatibles_(a, b) {
+  return sigcSonNombresCompatibles(a, b);
+}
+function sigcSonMismaPersona(a, b) {
+  if (!a || !b) return false;
+  // Criterio 1: Mismo ID PERSONA
+  if (a.id && b.id && String(a.id).trim() === String(b.id).trim()) return true;
+
+  // Criterio 2: Coincidencia de RUT
+  const rutA = a.rut || sigcNormalizarRut(a.numeroDocumento || '');
+  const rutB = b.rut || sigcNormalizarRut(b.numeroDocumento || '');
+  if (rutA && rutB && (rutA === rutB || sigcRutsCoincidentes(rutA, rutB))) {
+    return true;
+  }
+  if (a.numeroDocumento && b.numeroDocumento && sigcRutsCoincidentes(a.numeroDocumento, b.numeroDocumento)) {
+    return true;
+  }
+
+  // Criterio 3: Mismo Documento Extranjero / Pasaporte
+  const tipoA = sigcNormalizarTipoDocumento(a.tipoDocumento, a.rut);
+  const tipoB = sigcNormalizarTipoDocumento(b.tipoDocumento, b.rut);
+  const numDocA = String(a.numeroDocumento || '').trim().toUpperCase();
+  const numDocB = String(b.numeroDocumento || '').trim().toUpperCase();
+  if (tipoA && tipoB && tipoA === tipoB && tipoA !== 'RUT' && numDocA && numDocB && numDocA === numDocB) {
+    return true;
+  }
+
+  // Criterio 4: Mismo Teléfono y Nombres Compatibles
+  const telA = sigcNormalizarTelefono(a.telefono || '');
+  const telB = sigcNormalizarTelefono(b.telefono || '');
+  if (telA && telB && telA === telB && sigcSonNombresCompatibles(a.nombre || a.NOMBRE_COMPLETO, b.nombre || b.NOMBRE_COMPLETO)) {
+    return true;
+  }
+
+  // Criterio 5: Mismo Correo y Nombres Compatibles
+  const corA = sigcNormalizarCorreo(a.correo || '');
+  const corB = sigcNormalizarCorreo(b.correo || '');
+  if (corA && corB && corA === corB && sigcSonNombresCompatibles(a.nombre || a.NOMBRE_COMPLETO, b.nombre || b.NOMBRE_COMPLETO)) {
+    return true;
+  }
+
+  return false;
+}
 function sigcNormalizarCorreo(valor) {
   return String(valor || '').trim().toLowerCase().replace(/\s+/g, '');
 }

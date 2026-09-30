@@ -811,39 +811,27 @@ function guardarPersona(datos) {
     if (!sigcValidarCorreo(correo)) throw new Error('El correo electrónico no es válido.');
     if (!sigcValidarTelefono(telefono)) throw new Error('El teléfono no tiene un formato chileno válido.');
     const existente = tabla.filas.find(function(fila) {
-      const persona = fila.datos;
-      const tipoExistente = sigcNormalizarTipoDocumento(
-        persona.TIPO_DOCUMENTO,
-        persona.RUT
-      );
-      const numeroExistente = sigcNormalizarDocumento(
-        tipoExistente,
-        persona.NUMERO_DOCUMENTO,
-        persona.RUT
-      );
-      let coincideDocumento = false;
-      if (documento.tipo === 'RUT') {
-        coincideDocumento =
-          tipoExistente === 'RUT' && numeroExistente === documento.numero;
-      } else {
-        coincideDocumento =
-          tipoExistente === 'Pasaporte' &&
-          numeroExistente === documento.numero &&
-          sigcNormalizarClave(persona.NACIONALIDAD) ===
-            sigcNormalizarClave(nacionalidad);
-      }
-      if (coincideDocumento) return true;
-      if (!numeroExistente) {
-        const mismoNombre =
-          sigcNormalizarEncabezado(persona.NOMBRE_COMPLETO) ===
-          sigcNormalizarEncabezado(nombre);
-        const mismoCorreo = correo &&
-          sigcNormalizarCorreo(persona.CORREO) === correo;
-        const mismoTelefono = telefono &&
-          sigcNormalizarTelefono(persona.TELEFONO) === telefono;
-        return mismoNombre && (mismoCorreo || mismoTelefono);
-      }
-      return false;
+      const p = fila.datos;
+      const personaExistente = {
+        id: p.ID_PERSONA,
+        rut: p.RUT,
+        tipoDocumento: p.TIPO_DOCUMENTO,
+        numeroDocumento: p.NUMERO_DOCUMENTO,
+        nombre: p.NOMBRE_COMPLETO,
+        correo: p.CORREO,
+        telefono: p.TELEFONO,
+        nacionalidad: p.NACIONALIDAD
+      };
+      const personaNueva = {
+        rut: rut,
+        tipoDocumento: documento.tipo,
+        numeroDocumento: documento.numero,
+        nombre: nombre,
+        correo: correo,
+        telefono: telefono,
+        nacionalidad: nacionalidad
+      };
+      return sigcSonMismaPersona(personaExistente, personaNueva);
     });
     const ahora = new Date();
     const cambios = {
@@ -1023,14 +1011,17 @@ function actualizarPersona(datos) {
     if (!sigcValidarTelefono(telefono)) throw new Error('El teléfono no tiene un formato chileno válido.');
     const duplicada = tabla.filas.find(function(fila) {
       if (String(fila.datos.ID_PERSONA || '').trim() === idPersona) return false;
-      const tipoOtro = sigcNormalizarTipoDocumento(fila.datos.TIPO_DOCUMENTO, fila.datos.RUT);
-      const numeroOtro = sigcNormalizarDocumento(tipoOtro, fila.datos.NUMERO_DOCUMENTO, fila.datos.RUT);
-      if (documento.tipo === 'RUT') {
-        return tipoOtro === 'RUT' && numeroOtro === documento.numero;
+      const p = fila.datos;
+      const tipoOtro = sigcNormalizarTipoDocumento(p.TIPO_DOCUMENTO, p.RUT);
+      const numeroOtro = sigcNormalizarDocumento(tipoOtro, p.NUMERO_DOCUMENTO, p.RUT);
+      const rutOtro = sigcNormalizarRut(p.RUT || (tipoOtro === 'RUT' ? numeroOtro : ''));
+      const rutEditado = documento.tipo === 'RUT' ? documento.numero : '';
+      if (rutEditado && rutOtro && (rutEditado === rutOtro || sigcRutsCoincidentes(rutEditado, rutOtro))) {
+        return true;
       }
       return tipoOtro === 'Pasaporte' &&
         numeroOtro === documento.numero &&
-        sigcNormalizarClave(fila.datos.NACIONALIDAD) === sigcNormalizarClave(nacionalidad);
+        sigcNormalizarClave(p.NACIONALIDAD) === sigcNormalizarClave(nacionalidad);
     });
     if (duplicada) {
       throw new Error('El documento ingresado ya pertenece a otra persona: ' + duplicada.datos.ID_PERSONA);
@@ -1713,6 +1704,12 @@ function obtenerGestionActividad(idActividad) {
 function depurarDuplicadosActividadWeb(idActividad) {
   webValidarObjeto_({ ID_ACTIVIDAD: idActividad }, ['ID_ACTIVIDAD']);
   return depurarDuplicadosActividad(idActividad);
+}
+/**
+ * Ejecuta la depuración y unificación manual de personas duplicadas desde la Web App.
+ */
+function depurarDuplicadosPersonasWeb() {
+  return depurarDuplicadosPersonas();
 }
 /**
  * Guarda selección, asistencia y resultados de forma masiva.

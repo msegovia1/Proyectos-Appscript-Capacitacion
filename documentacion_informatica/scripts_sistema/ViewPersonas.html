@@ -1,7 +1,10 @@
 <section id="personas" class="view">
         <div class="section-head">
           <div><h2>Personas</h2><p>Registro consolidado de usuarios y participantes.</p></div>
-          <button class="btn" type="button" onclick="irAVista('registro-personas')">＋ Registrar persona</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn secondary" type="button" onclick="depurarDuplicadosPersonasUI()" title="Buscar y unificar personas duplicadas por RUT, teléfono o correo coincidente">🧹 Depurar duplicados</button>
+            <button class="btn" type="button" onclick="irAVista('registro-personas')">＋ Registrar persona</button>
+          </div>
         </div>
         <div class="table-tools"><input id="buscarPersonas" placeholder="Buscar por nombre, RUT, correo..." oninput="renderConPausa('personas')"></div>
         <div class="table-container"><table><thead><tr><th>ID</th><th>Documento</th><th>Nombre</th><th>Fecha nacimiento</th><th>Edad</th><th>Correo</th><th>Teléfono</th><th>Comuna</th><th>Barrio</th><th>PMJH</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaPersonas"></tbody></table></div>
