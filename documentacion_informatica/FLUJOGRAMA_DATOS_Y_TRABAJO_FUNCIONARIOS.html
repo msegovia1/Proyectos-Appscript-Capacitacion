@@ -10,9 +10,10 @@
     mermaid.initialize({
       startOnLoad: true,
       theme: 'neutral',
-      flowchart: { curve: 'basis', htmlLabels: true },
+      flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: false },
       themeVariables: {
         fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        fontSize: '15px',
         primaryColor: '#e0f2fe',
         primaryBorderColor: '#0284c7',
         primaryTextColor: '#0f172a'
@@ -25,6 +26,7 @@
       --primary-dark: #0369a1;
       --secondary: #10b981;
       --accent: #f59e0b;
+      --purple: #8b5cf6;
       --dark: #0f172a;
       --light: #f8fafc;
       --border: #e2e8f0;
@@ -43,7 +45,7 @@
     }
 
     .container {
-      max-width: 1040px;
+      max-width: 1140px;
       margin: 30px auto;
       background: #ffffff;
       padding: 48px;
@@ -59,14 +61,14 @@
 
     h1 {
       color: var(--dark);
-      font-size: 2.1rem;
+      font-size: 2.2rem;
       font-weight: 800;
       margin: 0 0 8px 0;
       line-height: 1.25;
     }
 
     .subtitle {
-      font-size: 1.15rem;
+      font-size: 1.2rem;
       color: var(--primary-dark);
       font-weight: 600;
       margin: 0 0 16px 0;
@@ -79,28 +81,35 @@
     }
 
     .badge {
-      display: inline-block;
-      padding: 4px 12px;
-      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      font-size: 0.88rem;
       font-weight: 600;
       border-radius: 20px;
       background: #e0f2fe;
       color: #0369a1;
+      border: 1px solid #bae6fd;
     }
+
+    .badge.green { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+    .badge.purple { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+    .badge.amber { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 
     h2 {
       color: var(--dark);
-      font-size: 1.5rem;
+      font-size: 1.55rem;
       border-left: 5px solid var(--primary);
-      padding-left: 12px;
-      margin-top: 40px;
+      padding-left: 14px;
+      margin-top: 44px;
       margin-bottom: 20px;
     }
 
     h3 {
       color: var(--primary-dark);
-      font-size: 1.2rem;
-      margin-top: 28px;
+      font-size: 1.25rem;
+      margin-top: 30px;
       margin-bottom: 12px;
     }
 
@@ -112,8 +121,8 @@
     .alert-box {
       background: #f8fafc;
       border-left: 4px solid var(--primary);
-      padding: 16px 20px;
-      margin: 20px 0;
+      padding: 18px 22px;
+      margin: 22px 0;
       border-radius: 0 8px 8px 0;
     }
 
@@ -122,22 +131,171 @@
       padding-left: 20px;
     }
 
-    .diagram-card {
-      background: #fcfcfd;
+    /* Diagram Card con controles de zoom */
+    .diagram-wrapper {
+      margin: 28px 0;
+    }
+
+    .diagram-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f1f5f9;
+      padding: 10px 16px;
+      border-radius: 8px 8px 0 0;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-bottom: none;
+    }
+
+    .diagram-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .zoom-controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .zoom-btn {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+
+    .zoom-btn:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    .diagram-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 0 0 8px 8px;
       padding: 24px;
-      margin: 24px 0;
       overflow-x: auto;
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+      overflow-y: hidden;
+      min-height: 250px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.2s ease;
+    }
+
+    .diagram-card.full-width {
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .diagram-card svg {
+      max-width: none !important;
+      height: auto !important;
     }
 
     .diagram-caption {
-      font-size: 0.85rem;
+      font-size: 0.86rem;
       text-align: center;
       color: #64748b;
-      margin-top: 12px;
+      margin-top: 10px;
       font-style: italic;
+    }
+
+    /* Tabs de etapas para el Punto 2 */
+    .tabs-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid #e2e8f0;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .tab-btn {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-bottom: none;
+      padding: 10px 18px;
+      border-radius: 8px 8px 0 0;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #64748b;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      background: #e0f2fe;
+      color: var(--primary-dark);
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Módulos del Sistema Grid */
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin: 24px 0;
+    }
+
+    .module-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-top: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+
+    .module-card h4 {
+      margin: 0 0 8px 0;
+      font-size: 1.1rem;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .module-card p {
+      font-size: 0.92rem;
+      margin-bottom: 10px;
+      color: #475569;
+    }
+
+    .module-card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 0.88rem;
+      color: #334155;
     }
 
     table {
@@ -166,8 +324,8 @@
     .step-box {
       display: flex;
       gap: 16px;
-      margin-bottom: 24px;
-      padding: 16px;
+      margin-bottom: 20px;
+      padding: 18px;
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
@@ -175,8 +333,8 @@
 
     .step-num {
       flex-shrink: 0;
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
       background: var(--primary);
       color: #ffffff;
       border-radius: 50%;
@@ -184,7 +342,7 @@
       align-items: center;
       justify-content: center;
       font-weight: bold;
-      font-size: 1.1rem;
+      font-size: 1.15rem;
     }
 
     .step-content h4 {
@@ -205,16 +363,17 @@
       background: var(--primary-dark);
       color: white;
       border: none;
-      padding: 12px 20px;
+      padding: 12px 22px;
       border-radius: 30px;
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
       gap: 8px;
+      z-index: 100;
     }
 
     .btn-print:hover {
@@ -225,7 +384,8 @@
     @media print {
       body { background: white; }
       .container { max-width: 100%; margin: 0; padding: 0; box-shadow: none; }
-      .btn-print { display: none; }
+      .btn-print, .zoom-controls, .tabs-nav { display: none !important; }
+      .tab-pane { display: block !important; margin-bottom: 30px; }
       .diagram-card { border: none; padding: 10px 0; }
       h2 { page-break-before: always; }
       h2:first-of-type { page-break-before: avoid; }
@@ -242,9 +402,9 @@
       <div class="subtitle">Departamento de Capacitación — Municipalidad de Santiago</div>
       <div class="badge-bar">
         <span class="badge">📘 Documento Oficial de Proceso</span>
-        <span class="badge">🔄 Flujo de Trabajo y Ciclo del Dato</span>
-        <span class="badge">👥 Identificador Único PER-XXXXXX</span>
-        <span class="badge">🎯 Medición de Participación Real</span>
+        <span class="badge green">🔄 Trazabilidad Integral de Datos</span>
+        <span class="badge purple">👥 Padrón Vitalicio PER-XXXXXX</span>
+        <span class="badge amber">🎯 Cálculo de Participación Real</span>
       </div>
     </header>
 
@@ -254,142 +414,319 @@
         Este documento consolida en un solo mapa integral el <strong>trabajo diario que realizan los funcionarios del Departamento de Capacitación</strong> y el <strong>viaje, transformación y cruce de los datos</strong> a lo largo de todo el ciclo de vida de un curso.
       </p>
       <div class="alert-box">
-        <strong>Principios Fundamentales del Sistema:</strong>
+        <strong>Pilares Centrales del Sistema:</strong>
         <ul>
-          <li><strong>Padrón Único y Vitalicio:</strong> Cada vecino posee una sola ficha en la institución (<code>ID_PERSONA</code>), sin importar cuántos años pasen ni cuántos cursos postule.</li>
-          <li><strong>Medición de Participación Real:</strong> Distinción matemática entre postulantes brutos, vecinos seleccionados, asistentes efectivos y personas únicas aprobadas.</li>
-          <li><strong>Agilidad Operativa:</strong> Herramientas ágiles para control de cupos en tiempo real, toma de asistencia con un solo clic y contacto directo por WhatsApp.</li>
+          <li><strong>Padrón Único y Vitalicio:</strong> Cada vecino posee una sola ficha en la institución (<code>ID_PERSONA</code>), sin importar cuántos años pasen ni cuántos cursos postule, evitando duplicados por variaciones de RUT, teléfono o nombres.</li>
+          <li><strong>Medición de Participación Real:</strong> Distinción matemática entre demanda nominal (postulantes), cupos asignados, asistentes efectivos y personas únicas aprobadas.</li>
+          <li><strong>Módulos Operativos Integrados:</strong> Calendario de cruce de salas, gestión de demanda comunal insatisfecha, comunicaciones 1-a-1 por WhatsApp, toma de asistencia con columna fija y generación de nóminas oficiales en Excel y diplomas.</li>
         </ul>
       </div>
     </section>
 
+    <!-- PUNTO 2 MEJORADO: VISUALIZACION EXPANDIDA Y NAVEGABLE -->
     <section>
       <h2>2. Flujograma General Integrado: Trabajo del Funcionario y Flujo de Datos</h2>
       <p>
-        El siguiente flujograma de procesos muestra la secuencia de acciones operativas realizadas por los funcionarios y su correspondencia inmediata con los registros y cálculos que procesa el sistema:
+        Para garantizar una visualización óptima, clara y sin reducción de tamaño, a continuación se presenta primero el <strong>Macro Flujo Panorámico</strong> de las 5 fases y, de forma interactiva, el <strong>Desglose Detallado Fase por Fase</strong> en alta resolución con controles de acercamiento:
       </p>
 
-      <div class="diagram-card">
-        <div class="mermaid">
+      <!-- Macro Diagrama Horizontal -->
+      <div class="diagram-wrapper">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">🌐 Macro Flujo Secuencial de las 5 Etapas (Visión Panorámica)</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('macro-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('macro-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('macro-svg')">↺ 100%</button>
+          </div>
+        </div>
+        <div class="diagram-card" id="macro-card">
+          <div class="mermaid" id="macro-svg">
+flowchart LR
+    classDef fase fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+
+    E1["1. PLANIFICACIÓN\n• Planifica curso y calendario\n• Fija cupos y sesiones"] --> D1[("ACTIVIDADES\nACT-XXXXXX\nCupos al 100%")]
+    D1 --> E2["2. POSTULACIÓN\n• Vecino postula (Web/Ventanilla)\n• Captura de demanda"]
+    E2 --> D2[("PERSONAS\nPER-XXXXXX (Vitalicio)\n+ PARTICIPACIONES")]
+    D2 --> E3["3. SELECCIÓN\n• Filtra postulantes y requisitos\n• Asigna cupos y avisa WhatsApp"]
+    E3 --> D3[("PARTICIPACIONES\nSeleccionado / Espera\nControl sobrecupos")]
+    D3 --> E4["4. ASISTENCIA\n• Pase de lista en 1-clic\n• Alertas de inasistencias"]
+    E4 --> D4[("ASISTENCIAS_SESION\nAcumulado sesión a sesión\n% Asistencia en vivo")]
+    D4 --> E5["5. CIERRE Y REPORTE\n• Cierre de actividad\n• Descarga Excel y Diplomas"]
+    E5 --> D5[("MÉTRICAS DE ORO\nPersonas Únicas Aprobadas\nvs Inscripciones Brutas")]
+
+    class E1,E2,E3,E4,E5 fase;
+    class D1,D2,D3,D4,D5 dato;
+          </div>
+        </div>
+        <div class="diagram-caption">Figura 1A: Macro secuencia de estados y transformación del dato municipal.</div>
+      </div>
+
+      <!-- Pestañas Interactivas para las 5 Fases Detalladas -->
+      <h3 style="margin-top: 36px;">Explorador Detallado Fase por Fase (Alta Resolución)</h3>
+      <p>Selecciona cada pestaña para inspeccionar las acciones de los funcionarios y las operaciones en la base de datos con tipografía amplia y legible:</p>
+
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="mostrarPestana('fase1', this)">Fase 1: Planificación</button>
+        <button class="tab-btn" onclick="mostrarPestana('fase2', this)">Fase 2: Postulación y RUT</button>
+        <button class="tab-btn" onclick="mostrarPestana('fase3', this)">Fase 3: Selección y Cupos</button>
+        <button class="tab-btn" onclick="mostrarPestana('fase4', this)">Fase 4: Asistencia en Sala</button>
+        <button class="tab-btn" onclick="mostrarPestana('fase5', this)">Fase 5: Cierre y Reportes</button>
+      </div>
+
+      <!-- FASE 1 -->
+      <div id="fase1" class="tab-pane active">
+        <div class="diagram-wrapper">
+          <div class="diagram-toolbar">
+            <div class="diagram-title">📅 Fase 1: Planificación, Oferta y Calendario</div>
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 1.2)">🔍 +</button>
+              <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 0.8)">🔍 -</button>
+              <button class="zoom-btn" onclick="resetZoom('fase1-svg')">↺ 100%</button>
+            </div>
+          </div>
+          <div class="diagram-card">
+            <div class="mermaid" id="fase1-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
-    classDef sistema fill:#f8fafc,stroke:#64748b,stroke-width:1px,color:#1e293b;
-    classDef metric fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e,font-weight:bold;
 
-    subgraph ETAPA1["1. PLANIFICACIÓN Y CONVOCATORIA"]
-        F1["Funcionario planifica el curso:\nNombre, fechas, cupos, sesiones, relator"]
-        D1[("Nace registro en ACTIVIDADES\nID_ACTIVIDAD: ACT-000045\nCupos disponibles = Máximo")]
-        F1 --> D1
-        F2["Funcionario abre postulaciones\ny publica formulario digital o ventanilla"]
-        D1 --> F2
-    end
-
-    subgraph ETAPA2["2. POSTULACIÓN Y GENERACIÓN DEL ID"]
-        F3["Vecino envía su postulación\n(RUT, nombre, teléfono, correo)"]
-        F2 --> F3
-        S1["Sistema normaliza datos y valida RUT chileno\n(Módulo 11, eliminación de puntos y guiones)"]
-        F3 --> S1
-        S2{"¿Vecino ya existe en el padrón?"}
-        S1 --> S2
-        D2A["SÍ: Recupera ficha existente\nID_PERSONA: PER-001240\nActualiza teléfono y correo"]
-        D2B["NO: Genera nuevo ID vitalicio\nID_PERSONA: PER-005080\nCrea ficha maestra en PERSONAS"]
-        S2 -- "Existe" --> D2A
-        S2 -- "Nuevo" --> D2B
-        D3[("Nace registro en PARTICIPACIONES\nID_PARTICIPACION: PAR-009812\nCruce: ID_PERSONA + ID_ACTIVIDAD\nEstado inicial: 'Inscrito'")]
-        D2A --> D3
-        D2B --> D3
-    end
-
-    subgraph ETAPA3["3. SELECCIÓN Y ADMINISTRACIÓN DE CUPOS"]
-        F4["Funcionario revisa postulantes en la Web App\nEvalúa perfil y requisitos del curso"]
-        D3 --> F4
-        F5["Funcionario asigna estados:\n• Seleccionado (ocupa cupo oficial)\n• Lista de Espera (reserva ordenada)\n• Rechazado (no cumple requisitos)"]
-        F4 --> F5
-        D4["Sistema actualiza contador de cupos en tiempo real\nBloquea sobrecupos accidentales"]
-        F5 --> D4
-        F6["Funcionario confirma asistencia\n(vía WhatsApp o Correo con plantilla)"]
-        D4 --> F6
-    end
-
-    subgraph ETAPA4["4. EJECUCIÓN Y CONTROL DE ASISTENCIA EN SALA"]
-        F7["Día de clase: Funcionario abre la vista de gestión\nen tablet o computador"]
-        F6 --> F7
-        F8["Funcionario pasa lista con 1 clic por sesión\n(Sesión 1, 2, 3... n)"]
-        F7 --> F8
-        D5[("Guarda asistencia atómica en ASISTENCIAS_SESION\nAcumula SESIONES_ASISTIDAS\nCalcula % Asistencia en vivo")]
-        F8 --> D5
-        F9["Funcionario detecta inasistencias reiteradas\ny envía recordatorio directo por WhatsApp"]
-        D5 -.-> F9
-        F10["Si alumno renuncia: Funcionario promueve\nal primero de la Lista de Espera"]
-        F9 -.-> F10
-        F10 --> D4
-    end
-
-    subgraph ETAPA5["5. CIERRE, EVALUACIÓN Y MEDICIÓN REAL"]
-        F11["Última clase concluida: Funcionario cierra el curso"]
-        D5 --> F11
-        S3["Sistema evalúa condición final automáticamente:\n• Si % Asistencia >= 75% -> 'Aprobado'\n• Si % Asistencia < 75% -> 'Reprobado'\n• Si asistencias = 0 -> 'Desertor'"]
-        F11 --> S3
-        D6["Nómina Oficial consolidada en Excel\n(Lista para auditoría y firmas)"]
-        S3 --> D6
-        D7["Emisión de Diplomas / Certificados"]
-        S3 --> D7
-        M1["MÉTRICAS DE IMPACTO REAL:\n1. Demanda Nominal (Total inscritos)\n2. Asistentes Reales (Asistieron >= 1 clase)\n3. Aprobados Efectivos (Cumplieron >= 75%)\n4. Personas Únicas Capacitadas (RUTs distintos)"]
-        S3 --> M1
-    end
-
-    class F1,F2,F4,F5,F6,F7,F8,F9,F10,F11 func;
-    class D1,D2A,D2B,D3,D4,D5,D6,D7 dato;
-    class S1,S2,S3 sistema;
-    class M1 metric;
+    F1["Funcionario ingresa a 'Registro de Actividades'"] --> F2["Define: Nombre, Escuela/Línea, Sede, Relator, Cupos y Total Sesiones (N)"]
+    F2 --> F3["Consulta el MÓDULO CALENDARIO para verificar disponibilidad de salas"]
+    F3 --> D1[("Sistema genera registro en ACTIVIDADES\n• ID_ACTIVIDAD: ACT-000045\n• CUPOS_MAXIMOS = 25\n• CUPOS_DISPONIBLES = 25\n• SESIONES_TOTALES = 4")]
+    D1 --> F4["Funcionario activa estado 'Inscripción abierta'\ny publica convocatoria digital"]
+    
+    class F1,F2,F3,F4 func;
+    class D1 dato;
+            </div>
+          </div>
         </div>
-        <div class="diagram-caption">Figura 1: Flujo integrado de negocio entre la actividad del funcionario y la persistencia de datos.</div>
+      </div>
+
+      <!-- FASE 2 -->
+      <div id="fase2" class="tab-pane">
+        <div class="diagram-wrapper">
+          <div class="diagram-toolbar">
+            <div class="diagram-title">👥 Fase 2: Postulación, Normalización y Deduplicación de RUT</div>
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 1.2)">🔍 +</button>
+              <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 0.8)">🔍 -</button>
+              <button class="zoom-btn" onclick="resetZoom('fase2-svg')">↺ 100%</button>
+            </div>
+          </div>
+          <div class="diagram-card">
+            <div class="mermaid" id="fase2-svg">
+flowchart TD
+    classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+    classDef cond fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e,font-weight:bold;
+
+    F1["Vecino postula vía Formulario Web o Funcionario digita en Ventanilla"] --> S1["Limpieza: Elimina puntos, guiones y normaliza nombres y teléfonos"]
+    S1 --> S2{"¿RUT chileno válido según Módulo 11?"}
+    S2 -- "No" --> E1["Verifica si es Pasaporte / DNI Extranjero"]
+    S2 -- "Sí" --> BQ["Búsqueda Inteligente en Base Maestra PERSONAS\n(RUT con/sin DV, o Teléfono/Correo + Nombre compatible)"]
+    E1 --> BQ
+    BQ --> COND{"¿Existe coincidencia histórica?"}
+    
+    COND -- "SÍ EXISTE (Beneficiario Antiguo)" --> D2A[("RECUPERA FICHA EXISTENTE: ID_PERSONA PER-001240\n• Actualiza teléfono y correo\n• No duplica la fila\n• Mantiene historial completo")]
+    COND -- "NO EXISTE (Beneficiario Nuevo)" --> D2B[("CREA NUEVA FICHA MAESTRA: ID_PERSONA PER-005080\n• Genera identificador vitalicio correlativo")]
+    
+    D2A --> D3[("Nace registro en PARTICIPACIONES\n• ID_PARTICIPACION: PAR-009812\n• Cruce: PER-XXXXXX + ACT-XXXXXX\n• Estado inicial: 'Inscrito'")]
+    D2B --> D3
+
+    class F1 func;
+    class D2A,D2B,D3 dato;
+    class S2,COND cond;
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FASE 3 -->
+      <div id="fase3" class="tab-pane">
+        <div class="diagram-wrapper">
+          <div class="diagram-toolbar">
+            <div class="diagram-title">🎯 Fase 3: Selección de Postulantes y Gestión de Cupos</div>
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 1.2)">🔍 +</button>
+              <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 0.8)">🔍 -</button>
+              <button class="zoom-btn" onclick="resetZoom('fase3-svg')">↺ 100%</button>
+            </div>
+          </div>
+          <div class="diagram-card">
+            <div class="mermaid" id="fase3-svg">
+flowchart TD
+    classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+
+    F1["Funcionario abre 'Gestión del Curso' en la Web App"] --> F2["Revisa postulantes, residencia comunal y grupo prioritario (PMJH)"]
+    F2 --> F3["Usa filtro '📞 Postulantes por llamar' para contactar vía WhatsApp institucional"]
+    F3 --> F4["Asigna estados con 1 clic:\n• Seleccionado (ocupa cupo oficial)\n• Lista de Espera (reserva)\n• Rechazado / No Cumple"]
+    F4 --> D1[("Control de Cupos en Vivo:\nCupos Ocupados = Suma(Seleccionados)\nBloqueo automático de sobrecupos accidentales")]
+    D1 --> F5["Envía citación formal por WhatsApp con sala y fecha de inicio"]
+
+    class F1,F2,F3,F4,F5 func;
+    class D1 dato;
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FASE 4 -->
+      <div id="fase4" class="tab-pane">
+        <div class="diagram-wrapper">
+          <div class="diagram-toolbar">
+            <div class="diagram-title">📋 Fase 4: Ejecución de Clases y Control de Asistencia en Sala</div>
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 1.2)">🔍 +</button>
+              <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 0.8)">🔍 -</button>
+              <button class="zoom-btn" onclick="resetZoom('fase4-svg')">↺ 100%</button>
+            </div>
+          </div>
+          <div class="diagram-card">
+            <div class="mermaid" id="fase4-svg">
+flowchart TD
+    classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+
+    F1["En cada clase: Funcionario abre la lista de 'Seleccionados' en tablet o PC"] --> F2["Columna de Nombres Fija permite desplazar hacia las sesiones (S1..Sn) sin perder la fila"]
+    F2 --> F3["Marca presencia con 1 clic en la casilla de la sesión"]
+    F3 --> D1[("Guarda marca atómica en ASISTENCIAS_SESION\nActualiza SESIONES_ASISTIDAS y calcula % Asistencia en vivo")]
+    F2 --> F4["¿Alumno inasistente? Funcionario hace clic en 💬 WhatsApp y envía recordatorio directo"]
+    F4 --> F5["Si alumno renuncia: cambia a 'Renuncia' y promueve al primero de 'Lista de Espera'"]
+    F5 --> D1
+
+    class F1,F2,F3,F4,F5 func;
+    class D1 dato;
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FASE 5 -->
+      <div id="fase5" class="tab-pane">
+        <div class="diagram-wrapper">
+          <div class="diagram-toolbar">
+            <div class="diagram-title">📊 Fase 5: Cierre, Calificación, Nóminas y Métricas de Impacto</div>
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 1.2)">🔍 +</button>
+              <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 0.8)">🔍 -</button>
+              <button class="zoom-btn" onclick="resetZoom('fase5-svg')">↺ 100%</button>
+            </div>
+          </div>
+          <div class="diagram-card">
+            <div class="mermaid" id="fase5-svg">
+flowchart TD
+    classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+
+    F1["Concluida la última clase: Funcionario pulsa 'Cierre de Actividad'"] --> S1["Evaluación institucional automática:\n• Asistencia >= 75% -> 'Aprobado'\n• Asistencia < 75% -> 'Reprobado'\n• Asistencias = 0 -> 'Desertor'"]
+    S1 --> F2["Descarga la Nómina Oficial en Excel (con desglose sesión a sesión para firmas)"]
+    S1 --> F3["Genera Certificados y Diplomas institucionales de aprobación"]
+    S1 --> D1[("Alimenta el DASHBOARD de Jefatura y Dirección:\n• Total Inscritos (Demanda Nominal)\n• Asistentes Reales (Asistieron >= 1 clase)\n• Personas Únicas Capacitadas (RUTs distintos)")]
+
+    class F1,F2,F3 func;
+    class S1,D1 dato;
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
+    <!-- SECCION DETALLADA DE TODAS LAS FUNCIONALIDADES DEL SISTEMA -->
     <section>
-      <h2>3. Ciclo de Vida del Dato y Deduplicación Inteligente</h2>
+      <h2>3. Funcionalidades y Módulos Operativos del Sistema</h2>
       <p>
-        Para asegurar la unicidad del beneficiario, el sistema implementa un algoritmo de validación de RUT mediante Módulo 11 y búsqueda inteligente con tolerancia de formatos:
+        El sistema cuenta con una suite completa de módulos diseñados para dar soporte ágil al trabajo de los funcionarios en todas las facetas del servicio formativo:
       </p>
 
-      <div class="diagram-card">
-        <div class="mermaid">
-flowchart TD
-    IN["Postulación Ingresada (Web o Ventanilla)"] --> NORM["Normalización: Limpieza de RUT, Teléfono y Nombre"]
-    NORM --> MOD11{"¿RUT válido con Módulo 11?"}
-    
-    MOD11 -- "No" --> EXT{"¿Es Pasaporte / DNI Extranjero?"}
-    EXT -- "Sí" --> BQ_EXT["Búsqueda por número de documento extranjero"]
-    EXT -- "No" --> CORR["Alerta al funcionario para corrección de datos"]
-    
-    MOD11 -- "Sí" --> BQ["Búsqueda en Base Maestra PERSONAS\n(Por RUT limpio, teléfono o correo + nombre compatible)"]
-    BQ_EXT --> COND
-    BQ --> COND{"¿Existe en el padrón histórico?"}
-    
-    COND -- "SÍ EXISTE" --> REC["RECUPERA ID_PERSONA EXISTENTE\n(Ej: PER-001240)\n• Actualiza datos de contacto\n• Mantiene su historial intacto"]
-    COND -- "NO EXISTE" --> CREA["GENERA NUEVO ID_PERSONA VITALICIO\n(Ej: PER-005080)\n• Crea registro maestro en PERSONAS"]
-    
-    REC --> VINC["Crea registro en PARTICIPACIONES\nID_PARTICIPACION: PAR-XXXXXX\nEstado: 'Inscrito'"]
-    CREA --> VINC
+      <div class="module-grid">
+        <div class="module-card">
+          <h4>📅 Módulo Calendario de Actividades</h4>
+          <p>Planificación visual y preventiva del uso de espacios y fechas de capacitación:</p>
+          <ul>
+            <li>Visualización mensual y semanal interactiva de talleres programados.</li>
+            <li>Detección y prevención de cruces de horarios en sedes y salas.</li>
+            <li>Filtro dinámico por estado de curso, línea temática y relator.</li>
+          </ul>
         </div>
-        <div class="diagram-caption">Figura 2: Árbol de decisiones para la normalización, deduplicación y asignación de ID_PERSONA.</div>
+
+        <div class="module-card">
+          <h4>📊 Módulo de Demanda e Intereses</h4>
+          <p>Captura sistemática de la necesidad ciudadana insatisfecha:</p>
+          <ul>
+            <li>Registro de áreas temáticas demandadas cuando no hay cursos abiertos.</li>
+            <li>Cruce de intereses para diseñar la parrilla formativa del semestre.</li>
+            <li>Identificación de áreas con alta demanda para postular a nuevos fondos.</li>
+          </ul>
+        </div>
+
+        <div class="module-card">
+          <h4>💬 Módulo de Comunicaciones y WhatsApp</h4>
+          <p>Contacto directo y fluido con el vecino desde la misma plataforma:</p>
+          <ul>
+            <li>Enlaces directos a WhatsApp Web / Móvil con plantillas institucionales.</li>
+            <li>Mensajería 1-a-1 y convocatoria masiva a seleccionados.</li>
+            <li>Alertas inmediatas a alumnos inasistentes para prevenir deserciones.</li>
+          </ul>
+        </div>
+
+        <div class="module-card">
+          <h4>📋 Módulo de Gestión de Participantes</h4>
+          <p>Operación ágil de asistencia y cupos en el aula:</p>
+          <ul>
+            <li><strong>Columna de Nombres Fija:</strong> Desplazamiento horizontal fluido en tablas anchas sin perder de vista la identidad del alumno.</li>
+            <li>Filtro directo de <em>"📞 Postulantes por llamar"</em> para agilizar inducciones.</li>
+            <li>Pase de lista en 1-clic con cálculo automático de % de asistencia en vivo.</li>
+          </ul>
+        </div>
+
+        <div class="module-card">
+          <h4>📥 Módulo de Descarga de Reportes</h4>
+          <p>Respaldo administrativo formal y valor de auditoría:</p>
+          <ul>
+            <li>Exportación de <strong>Nóminas Oficiales en Excel</strong> con desglose clase a clase.</li>
+            <li>Hojas de firma y control presencial listas para imprimir.</li>
+            <li>Emisión masiva de certificados y diplomas con datos normalizados.</li>
+          </ul>
+        </div>
+
+        <div class="module-card">
+          <h4>🧹 Padrón Único y Depuración Global</h4>
+          <p>Salud e integridad de datos sin duplicados:</p>
+          <ul>
+            <li>Asignación de clave vitalicia <code>PER-XXXXXX</code> única por vecino.</li>
+            <li>Validación Módulo 11 tolerante a formatos con y sin dígito verificador.</li>
+            <li><strong>Herramienta "🧹 Depurar duplicados":</strong> Unificación global con migración automática de cursos y asistencias históricas.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
+    <!-- MODELO RELACIONAL Y PARTICIPACION REAL -->
     <section>
       <h2>4. El Cruce de Datos y la Medición de Participación Real</h2>
       <p>
-        El sistema estructura la relación entre el beneficiario y la oferta municipal mediante un modelo relacional estricto que separa la Persona, el Curso y la Matrícula/Asistencia:
+        El sistema separa limpiamente la identidad del vecino, la actividad y la matrícula mediante un modelo relacional de tercera forma normal:
       </p>
 
-      <div class="diagram-card">
-        <div class="mermaid">
+      <div class="diagram-wrapper">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">🗂️ Diagrama Entidad-Relación y Cruce de Participaciones</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('erd-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('erd-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('erd-svg')">↺ 100%</button>
+          </div>
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="erd-svg">
 erDiagram
     PERSONAS ||--o{ PARTICIPACIONES : "posee (1 a N)"
     ACTIVIDADES ||--o{ PARTICIPACIONES : "agrupa (1 a N)"
     PARTICIPACIONES ||--o{ ASISTENCIAS_SESION : "desglosa (1 a N)"
+    PERSONAS ||--o{ INTERESES_DEMANDA : "declara (1 a N)"
 
     PERSONAS {
         string ID_PERSONA PK "PER-001240 (Vitalicio)"
@@ -402,7 +739,7 @@ erDiagram
 
     ACTIVIDADES {
         string ID_ACTIVIDAD PK "ACT-000045"
-        string NOMBRE_ACTIVIDAD "Marketing Digital y Redes Sociales"
+        string NOMBRE_ACTIVIDAD "Marketing Digital y Redes"
         int CUPOS_MAXIMOS "25"
         int SESIONES_TOTALES "4 sesiones"
         string ESTADO "Cerrada"
@@ -425,8 +762,15 @@ erDiagram
         boolean PRESENTE "true"
         date TIMESTAMP "2026-10-05 18:05:00"
     }
+
+    INTERESES_DEMANDA {
+        string ID_INTERES PK "INT-0012"
+        string ID_PERSONA FK "PER-001240"
+        string AREA_SOLICITADA "Gastronomía"
+    }
+          </div>
         </div>
-        <div class="diagram-caption">Figura 3: Modelo relacional para cálculo de asistencia y trazabilidad de certificaciones.</div>
+        <div class="diagram-caption">Figura 2: Cruce de tablas que permite calcular notas, asistencias e intereses de capacitación.</div>
       </div>
 
       <h3>Escala de Indicadores de Impacto Municipal</h3>
@@ -474,48 +818,9 @@ erDiagram
       </table>
     </section>
 
+    <!-- MATRIZ DE RESPONSABILIDADES -->
     <section>
-      <h2>5. Control de Asistencia en Sala y Contacto Directo</h2>
-      <p>
-        Durante el desarrollo del curso, el funcionario registra la asistencia en un clic y dispone de contacto ágil por WhatsApp:
-      </p>
-
-      <div class="diagram-card">
-        <div class="mermaid">
-sequenceDiagram
-    autonumber
-    actor Funcionario as Funcionario Municipal (en sala)
-    participant App as Web App de Asistencia
-    participant DB as Base de Datos (Sheets / SQL)
-    participant WA as Enlace WhatsApp
-
-    Funcionario->>App: Selecciona el curso y abre nómina de seleccionados
-    App->>DB: Consulta participantes con estado 'Seleccionado'
-    DB-->>App: Retorna nombres, teléfonos y matriz de sesiones
-    
-    loop Durante el pase de lista
-        Funcionario->>App: Clic en Sesión N del alumno presente (✓)
-        App->>DB: Guarda registro atómico en ASISTENCIAS_SESION
-        App->>DB: Actualiza contador de asistencias y % acumulado en PARTICIPACIONES
-        DB-->>App: Confirma actualización en vivo (0 errores)
-    end
-
-    opt Alumno inasistente a la sesión
-        Funcionario->>App: Clic en botón 💬 WhatsApp
-        App->>WA: Abre conversación directa con texto institucional predefinido
-    end
-
-    opt Alumno renuncia formalmente
-        Funcionario->>App: Cambia estado a 'Renuncia' y promueve 'Lista de Espera'
-        App->>DB: Reasigna cupo oficial y notifica al nuevo seleccionado
-    end
-        </div>
-        <div class="diagram-caption">Figura 4: Diagrama de interacción para la toma de asistencia y contacto con alumnos.</div>
-      </div>
-    </section>
-
-    <section>
-      <h2>6. Matriz de Responsabilidades y Transformación del Dato</h2>
+      <h2>5. Matriz Resumen: Trabajo del Funcionario vs. Flujo de Datos</h2>
       <table>
         <thead>
           <tr>
@@ -529,81 +834,109 @@ sequenceDiagram
         <tbody>
           <tr>
             <td><strong>1. Planificación</strong></td>
-            <td>Crea el curso, define cupos, sesiones, relator y sede.</td>
+            <td>Crea el curso, revisa Calendario, define cupos y sesiones.</td>
             <td>Parámetros del curso.</td>
-            <td>Genera <code>ACT-XXXXXX</code> e inicializa cupos disponibles.</td>
+            <td>Genera <code>ACT-XXXXXX</code> e inicializa cupos.</td>
             <td>Curso en catálogo (`ACTIVIDADES`).</td>
           </tr>
           <tr>
             <td><strong>2. Postulación</strong></td>
-            <td>Difunde convocatoria y apoya postulaciones presenciales.</td>
-            <td>RUT, nombres, contacto y género.</td>
+            <td>Difunde convocatoria y registra demanda no cubierta.</td>
+            <td>RUT, nombres, contacto, PMJH e intereses.</td>
             <td>Valida Módulo 11; recupera o crea <code>PER-XXXXXX</code>.</td>
-            <td>Postulación registrada en `PARTICIPACIONES`.</td>
+            <td>Postulación en `PARTICIPACIONES` e intereses en `DEMANDA`.</td>
           </tr>
           <tr>
             <td><strong>3. Selección</strong></td>
-            <td>Evalúa requisitos y selecciona alumnos; avisa por WhatsApp.</td>
+            <td>Filtra por llamar, asigna cupos y envía WhatsApp oficial.</td>
             <td>Criterios de focalización.</td>
-            <td>Recalcula cupos ocupados; bloquea sobrecupos.</td>
+            <td>Recalcula cupos en vivo; bloquea sobrecupos.</td>
             <td>Nómina de seleccionados confirmada.</td>
           </tr>
           <tr>
             <td><strong>4. Asistencia</strong></td>
-            <td>Pasa lista en 1 clic; contacta a inasistentes.</td>
-            <td>Marca de asistencia por sesión.</td>
-            <td>Guarda registro atómico; actualiza % acumulado en vivo.</td>
+            <td>Pasa lista con columna fija; contacta inasistentes.</td>
+            <td>Marca por sesión en 1-clic.</td>
+            <td>Guarda registro atómico; actualiza % en vivo.</td>
             <td>Porcentaje de asistencia en tiempo real.</td>
           </tr>
           <tr>
             <td><strong>5. Cierre</strong></td>
-            <td>Cierra actividad y genera nómina oficial en Excel.</td>
+            <td>Cierra curso, descarga Excel oficial y emite diplomas.</td>
             <td>Confirmación de término.</td>
             <td>Aplica umbral (>= 75% = Aprobado); bloquea edición.</td>
-            <td>Nómina Oficial, Diplomas y KPIs de Dirección.</td>
+            <td>Nómina Oficial, Certificados y KPIs de Dirección.</td>
           </tr>
         </tbody>
       </table>
     </section>
 
+    <!-- CASO PRACTICO -->
     <section>
-      <h2>7. Ejemplo Práctico de Trazabilidad Completa</h2>
+      <h2>6. Ejemplo Práctico de Trazabilidad Completa</h2>
       <div class="step-box">
         <div class="step-num">1</div>
         <div class="step-content">
-          <h4>Planificación del Curso</h4>
-          <p>El funcionario crea el taller <em>"Manipulación de Alimentos"</em> (<code>ACT-000050</code>), con 20 cupos y 4 sesiones presenciales.</p>
+          <h4>Planificación del Curso y Calendario</h4>
+          <p>El funcionario programa el taller <em>"Manipulación de Alimentos"</em> (<code>ACT-000050</code>) en el Módulo Calendario, asegurando 20 cupos y 4 sesiones sin tope de salas.</p>
         </div>
       </div>
       <div class="step-box">
         <div class="step-num">2</div>
         <div class="step-content">
-          <h4>Postulación y Reconocimiento de la Persona</h4>
-          <p>La vecina Rosa Morales ingresa al formulario con su RUT <code>14.882.319-5</code>. El sistema detecta que participó hace dos años, recupera su ficha <code>PER-000412</code> sin crear duplicados y registra su postulación <code>PAR-002105</code>.</p>
+          <h4>Postulación y Padrón Vitalicio</h4>
+          <p>Rosa Morales postula con su RUT <code>14.882.319-5</code>. El sistema detecta que participó hace dos años, recupera su ficha <code>PER-000412</code> sin crear duplicados y registra su postulación <code>PAR-002105</code>.</p>
         </div>
       </div>
       <div class="step-box">
         <div class="step-num">3</div>
         <div class="step-content">
-          <h4>Selección y Convocatoria</h4>
-          <p>El funcionario confirma que cumple con el perfil, cambia su estado a <code>Seleccionado</code> y le envía un WhatsApp de bienvenida con sala y horario.</p>
+          <h4>Selección y Contacto por WhatsApp</h4>
+          <p>El funcionario revisa el listado usando el botón de llamar, le asigna cupo oficial y le envía la confirmación con sala y horario directamente por WhatsApp.</p>
         </div>
       </div>
       <div class="step-box">
         <div class="step-num">4</div>
         <div class="step-content">
-          <h4>Clases y Asistencia en Sala</h4>
-          <p>Rosa asiste a las sesiones 1, 2 y 4 (faltó a la 3 con justificación). El funcionario marca sus asistencias en sala. El sistema acumula 3 de 4 sesiones (75% de asistencia).</p>
+          <h4>Clases y Asistencia con Columna Fija</h4>
+          <p>Rosa asiste a las sesiones 1, 2 y 4 (faltó a la 3 con justificación). El funcionario marca sus asistencias en la tablet. El sistema acumula 3 de 4 clases (75% de asistencia).</p>
         </div>
       </div>
       <div class="step-box">
         <div class="step-num">5</div>
         <div class="step-content">
-          <h4>Cierre, Certificación e Impacto Institucional</h4>
-          <p>El funcionario cierra el curso. Al cumplir el 75%, el sistema marca su estado en <strong>Aprobado</strong>. Rosa recibe su diploma y en la estadística anual de la Alcaldía cuenta como <strong>1 Persona Única Capacitada</strong>.</p>
+          <h4>Cierre, Certificación y Reporte de Alcaldía</h4>
+          <p>El funcionario cierra el curso. Al cumplir el 75%, el sistema la califica como <strong>Aprobado</strong>. Se descarga la Nómina Oficial en Excel y el diploma. Ante la Alcaldía, Rosa suma como <strong>1 Persona Única Capacitada</strong>.</p>
         </div>
       </div>
     </section>
   </div>
+
+  <script>
+    function zoomDiagram(id, factor) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const currentScale = parseFloat(el.getAttribute('data-scale') || '1');
+      const newScale = Math.max(0.5, Math.min(2.5, currentScale * factor));
+      el.setAttribute('data-scale', newScale);
+      el.style.transform = `scale(${newScale})`;
+      el.style.transformOrigin = 'top center';
+    }
+
+    function resetZoom(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.setAttribute('data-scale', '1');
+      el.style.transform = 'scale(1)';
+    }
+
+    function mostrarPestana(idPestana, btn) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      const target = document.getElementById(idPestana);
+      if (target) target.classList.add('active');
+      if (btn) btn.classList.add('active');
+    }
+  </script>
 </body>
 </html>
