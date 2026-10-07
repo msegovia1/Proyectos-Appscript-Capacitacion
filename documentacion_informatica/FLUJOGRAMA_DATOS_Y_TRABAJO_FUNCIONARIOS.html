@@ -34,6 +34,7 @@
     }
 
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
 
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -45,7 +46,7 @@
     }
 
     .container {
-      max-width: 1140px;
+      max-width: 1160px;
       margin: 30px auto;
       background: #ffffff;
       padding: 48px;
@@ -131,9 +132,49 @@
       padding-left: 20px;
     }
 
+    /* Navegación rápida por fases */
+    .sticky-nav {
+      position: sticky;
+      top: 10px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
+      z-index: 50;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      margin: 24px 0 32px 0;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .nav-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: #f1f5f9;
+      color: #334155;
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 700;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+
+    .nav-pill:hover {
+      background: #e0f2fe;
+      color: var(--primary-dark);
+      border-color: #7dd3fc;
+    }
+
     /* Diagram Card con controles de zoom */
     .diagram-wrapper {
-      margin: 28px 0;
+      margin: 32px 0;
+      scroll-margin-top: 80px;
     }
 
     .diagram-toolbar {
@@ -141,15 +182,15 @@
       justify-content: space-between;
       align-items: center;
       background: #f1f5f9;
-      padding: 10px 16px;
-      border-radius: 8px 8px 0 0;
+      padding: 12px 18px;
+      border-radius: 10px 10px 0 0;
       border: 1px solid var(--border);
       border-bottom: none;
     }
 
     .diagram-title {
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 1rem;
       color: var(--dark);
       display: flex;
       align-items: center;
@@ -165,7 +206,7 @@
       background: #ffffff;
       border: 1px solid #cbd5e1;
       color: #334155;
-      padding: 4px 10px;
+      padding: 5px 12px;
       border-radius: 6px;
       font-size: 0.85rem;
       cursor: pointer;
@@ -181,20 +222,15 @@
     .diagram-card {
       background: #ffffff;
       border: 1px solid var(--border);
-      border-radius: 0 0 8px 8px;
+      border-radius: 0 0 10px 10px;
       padding: 24px;
       overflow-x: auto;
       overflow-y: hidden;
-      min-height: 250px;
+      min-height: 200px;
       display: flex;
       justify-content: center;
       align-items: center;
       transition: transform 0.2s ease;
-    }
-
-    .diagram-card.full-width {
-      border-radius: 8px;
-      margin-bottom: 24px;
     }
 
     .diagram-card svg {
@@ -203,60 +239,11 @@
     }
 
     .diagram-caption {
-      font-size: 0.86rem;
+      font-size: 0.88rem;
       text-align: center;
       color: #64748b;
       margin-top: 10px;
       font-style: italic;
-    }
-
-    /* Tabs de etapas para el Punto 2 */
-    .tabs-nav {
-      display: flex;
-      gap: 8px;
-      border-bottom: 2px solid #e2e8f0;
-      margin-bottom: 20px;
-      overflow-x: auto;
-      padding-bottom: 4px;
-    }
-
-    .tab-btn {
-      background: #f8fafc;
-      border: 1px solid #cbd5e1;
-      border-bottom: none;
-      padding: 10px 18px;
-      border-radius: 8px 8px 0 0;
-      font-size: 0.92rem;
-      font-weight: 700;
-      color: #64748b;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.2s ease;
-    }
-
-    .tab-btn:hover {
-      background: #e0f2fe;
-      color: var(--primary-dark);
-    }
-
-    .tab-btn.active {
-      background: var(--primary);
-      color: #ffffff;
-      border-color: var(--primary);
-    }
-
-    .tab-pane {
-      display: none;
-    }
-
-    .tab-pane.active {
-      display: block;
-      animation: fadeIn 0.3s ease;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
     }
 
     /* Módulos del Sistema Grid */
@@ -384,8 +371,7 @@
     @media print {
       body { background: white; }
       .container { max-width: 100%; margin: 0; padding: 0; box-shadow: none; }
-      .btn-print, .zoom-controls, .tabs-nav { display: none !important; }
-      .tab-pane { display: block !important; margin-bottom: 30px; }
+      .btn-print, .zoom-controls, .sticky-nav { display: none !important; }
       .diagram-card { border: none; padding: 10px 0; }
       h2 { page-break-before: always; }
       h2:first-of-type { page-break-before: avoid; }
@@ -423,38 +409,48 @@
       </div>
     </section>
 
-    <!-- PUNTO 2 MEJORADO: VISUALIZACION EXPANDIDA Y NAVEGABLE -->
+    <!-- SECCION 2: FLUJOGRAMAS VISUALES AMPLIADOS Y SIN RESTRICCIONES -->
     <section>
-      <h2>2. Flujograma General Integrado: Trabajo del Funcionario y Flujo de Datos</h2>
+      <h2>2. Flujogramas Operativos y Ciclo del Dato (Visualización Ampliada)</h2>
       <p>
-        Para garantizar una visualización óptima, clara y sin reducción de tamaño, a continuación se presenta primero el <strong>Macro Flujo Panorámico</strong> de las 5 fases y, de forma interactiva, el <strong>Desglose Detallado Fase por Fase</strong> en alta resolución con controles de acercamiento:
+        A continuación se presentan los diagramas de flujo en alta resolución. Para mayor comodidad de lectura, puedes usar la barra de acceso rápido para saltar directamente a cualquier fase o utilizar los controles de zoom (<code>🔍 +</code> / <code>🔍 -</code> / <code>↺ 100%</code>) en cada tarjeta:
       </p>
 
-      <!-- Macro Diagrama Horizontal -->
-      <div class="diagram-wrapper">
+      <!-- Barra de acceso rapido -->
+      <nav class="sticky-nav">
+        <a class="nav-pill" href="#sec-macro">🌐 Macro Flujo</a>
+        <a class="nav-pill" href="#sec-fase1">1️⃣ Planificación y Calendario</a>
+        <a class="nav-pill" href="#sec-fase2">2️⃣ Postulación y Deduplicación</a>
+        <a class="nav-pill" href="#sec-fase3">3️⃣ Selección y Cupos</a>
+        <a class="nav-pill" href="#sec-fase4">4️⃣ Asistencia en Sala</a>
+        <a class="nav-pill" href="#sec-fase5">5️⃣ Cierre y Reportes</a>
+      </nav>
+
+      <!-- DIAGRAMA MACRO -->
+      <div class="diagram-wrapper" id="sec-macro">
         <div class="diagram-toolbar">
-          <div class="diagram-title">🌐 Macro Flujo Secuencial de las 5 Etapas (Visión Panorámica)</div>
+          <div class="diagram-title">🌐 Macro Flujo Secuencial: Las 5 Etapas del Servicio Municipal</div>
           <div class="zoom-controls">
             <button class="zoom-btn" onclick="zoomDiagram('macro-svg', 1.2)">🔍 +</button>
             <button class="zoom-btn" onclick="zoomDiagram('macro-svg', 0.8)">🔍 -</button>
             <button class="zoom-btn" onclick="resetZoom('macro-svg')">↺ 100%</button>
           </div>
         </div>
-        <div class="diagram-card" id="macro-card">
+        <div class="diagram-card">
           <div class="mermaid" id="macro-svg">
 flowchart LR
     classDef fase fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
 
-    E1["1. PLANIFICACIÓN\n• Planifica curso y calendario\n• Fija cupos y sesiones"] --> D1[("ACTIVIDADES\nACT-XXXXXX\nCupos al 100%")]
-    D1 --> E2["2. POSTULACIÓN\n• Vecino postula (Web/Ventanilla)\n• Captura de demanda"]
-    E2 --> D2[("PERSONAS\nPER-XXXXXX (Vitalicio)\n+ PARTICIPACIONES")]
-    D2 --> E3["3. SELECCIÓN\n• Filtra postulantes y requisitos\n• Asigna cupos y avisa WhatsApp"]
-    E3 --> D3[("PARTICIPACIONES\nSeleccionado / Espera\nControl sobrecupos")]
-    D3 --> E4["4. ASISTENCIA\n• Pase de lista en 1-clic\n• Alertas de inasistencias"]
-    E4 --> D4[("ASISTENCIAS_SESION\nAcumulado sesión a sesión\n% Asistencia en vivo")]
-    D4 --> E5["5. CIERRE Y REPORTE\n• Cierre de actividad\n• Descarga Excel y Diplomas"]
-    E5 --> D5[("MÉTRICAS DE ORO\nPersonas Únicas Aprobadas\nvs Inscripciones Brutas")]
+    E1["1. PLANIFICACIÓN<br/>• Planifica curso y calendario<br/>• Fija cupos y sesiones"] --> D1[("ACTIVIDADES<br/>ACT-XXXXXX<br/>Cupos al 100%")]
+    D1 --> E2["2. POSTULACIÓN<br/>• Vecino postula (Web/Ventanilla)<br/>• Captura de demanda"]
+    E2 --> D2[("PERSONAS<br/>PER-XXXXXX (Vitalicio)<br/>+ PARTICIPACIONES")]
+    D2 --> E3["3. SELECCIÓN<br/>• Filtra postulantes y requisitos<br/>• Asigna cupos y avisa WhatsApp"]
+    E3 --> D3[("PARTICIPACIONES<br/>Seleccionado / Espera<br/>Control sobrecupos")]
+    D3 --> E4["4. ASISTENCIA<br/>• Pase de lista en 1-clic<br/>• Alertas de inasistencias"]
+    E4 --> D4[("ASISTENCIAS_SESION<br/>Acumulado sesión a sesión<br/>% Asistencia en vivo")]
+    D4 --> E5["5. CIERRE Y REPORTE<br/>• Cierre de actividad<br/>• Descarga Excel y Diplomas"]
+    E5 --> D5[("MÉTRICAS DE ORO<br/>Personas Únicas Aprobadas<br/>vs Inscripciones Brutas")]
 
     class E1,E2,E3,E4,E5 fase;
     class D1,D2,D3,D4,D5 dato;
@@ -463,60 +459,46 @@ flowchart LR
         <div class="diagram-caption">Figura 1A: Macro secuencia de estados y transformación del dato municipal.</div>
       </div>
 
-      <!-- Pestañas Interactivas para las 5 Fases Detalladas -->
-      <h3 style="margin-top: 36px;">Explorador Detallado Fase por Fase (Alta Resolución)</h3>
-      <p>Selecciona cada pestaña para inspeccionar las acciones de los funcionarios y las operaciones en la base de datos con tipografía amplia y legible:</p>
-
-      <div class="tabs-nav">
-        <button class="tab-btn active" onclick="mostrarPestana('fase1', this)">Fase 1: Planificación</button>
-        <button class="tab-btn" onclick="mostrarPestana('fase2', this)">Fase 2: Postulación y RUT</button>
-        <button class="tab-btn" onclick="mostrarPestana('fase3', this)">Fase 3: Selección y Cupos</button>
-        <button class="tab-btn" onclick="mostrarPestana('fase4', this)">Fase 4: Asistencia en Sala</button>
-        <button class="tab-btn" onclick="mostrarPestana('fase5', this)">Fase 5: Cierre y Reportes</button>
-      </div>
-
       <!-- FASE 1 -->
-      <div id="fase1" class="tab-pane active">
-        <div class="diagram-wrapper">
-          <div class="diagram-toolbar">
-            <div class="diagram-title">📅 Fase 1: Planificación, Oferta y Calendario</div>
-            <div class="zoom-controls">
-              <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 1.2)">🔍 +</button>
-              <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 0.8)">🔍 -</button>
-              <button class="zoom-btn" onclick="resetZoom('fase1-svg')">↺ 100%</button>
-            </div>
+      <div class="diagram-wrapper" id="sec-fase1">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">📅 Fase 1: Planificación, Oferta y Calendario de Actividades</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('fase1-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('fase1-svg')">↺ 100%</button>
           </div>
-          <div class="diagram-card">
-            <div class="mermaid" id="fase1-svg">
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="fase1-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
 
     F1["Funcionario ingresa a 'Registro de Actividades'"] --> F2["Define: Nombre, Escuela/Línea, Sede, Relator, Cupos y Total Sesiones (N)"]
     F2 --> F3["Consulta el MÓDULO CALENDARIO para verificar disponibilidad de salas"]
-    F3 --> D1[("Sistema genera registro en ACTIVIDADES\n• ID_ACTIVIDAD: ACT-000045\n• CUPOS_MAXIMOS = 25\n• CUPOS_DISPONIBLES = 25\n• SESIONES_TOTALES = 4")]
-    D1 --> F4["Funcionario activa estado 'Inscripción abierta'\ny publica convocatoria digital"]
+    F3 --> D1[("Sistema genera registro en ACTIVIDADES<br/>• ID_ACTIVIDAD: ACT-000045<br/>• CUPOS_MAXIMOS = 25<br/>• CUPOS_DISPONIBLES = 25<br/>• SESIONES_TOTALES = 4")]
+    D1 --> F4["Funcionario activa estado 'Inscripción abierta'<br/>y publica convocatoria digital"]
     
     class F1,F2,F3,F4 func;
     class D1 dato;
-            </div>
           </div>
         </div>
+        <div class="diagram-caption">Figura 1B: Planificación y prevención de choques de horario en salas y relatores.</div>
       </div>
 
       <!-- FASE 2 -->
-      <div id="fase2" class="tab-pane">
-        <div class="diagram-wrapper">
-          <div class="diagram-toolbar">
-            <div class="diagram-title">👥 Fase 2: Postulación, Normalización y Deduplicación de RUT</div>
-            <div class="zoom-controls">
-              <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 1.2)">🔍 +</button>
-              <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 0.8)">🔍 -</button>
-              <button class="zoom-btn" onclick="resetZoom('fase2-svg')">↺ 100%</button>
-            </div>
+      <div class="diagram-wrapper" id="sec-fase2">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">👥 Fase 2: Postulación, Normalización y Deduplicación Inteligente de RUT</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('fase2-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('fase2-svg')">↺ 100%</button>
           </div>
-          <div class="diagram-card">
-            <div class="mermaid" id="fase2-svg">
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="fase2-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
@@ -524,113 +506,110 @@ flowchart TD
 
     F1["Vecino postula vía Formulario Web o Funcionario digita en Ventanilla"] --> S1["Limpieza: Elimina puntos, guiones y normaliza nombres y teléfonos"]
     S1 --> S2{"¿RUT chileno válido según Módulo 11?"}
-    S2 -- "No" --> E1["Verifica si es Pasaporte / DNI Extranjero"]
-    S2 -- "Sí" --> BQ["Búsqueda Inteligente en Base Maestra PERSONAS\n(RUT con/sin DV, o Teléfono/Correo + Nombre compatible)"]
+    S2 -->|No| E1["Verifica si es Pasaporte o DNI Extranjero"]
+    S2 -->|Sí| BQ["Búsqueda Inteligente en Base Maestra PERSONAS<br/>(Por RUT con/sin DV, o Teléfono/Correo + Nombre compatible)"]
     E1 --> BQ
     BQ --> COND{"¿Existe coincidencia histórica?"}
     
-    COND -- "SÍ EXISTE (Beneficiario Antiguo)" --> D2A[("RECUPERA FICHA EXISTENTE: ID_PERSONA PER-001240\n• Actualiza teléfono y correo\n• No duplica la fila\n• Mantiene historial completo")]
-    COND -- "NO EXISTE (Beneficiario Nuevo)" --> D2B[("CREA NUEVA FICHA MAESTRA: ID_PERSONA PER-005080\n• Genera identificador vitalicio correlativo")]
+    COND -->|Sí existe| D2A[("RECUPERA FICHA EXISTENTE: ID_PERSONA PER-001240<br/>• Actualiza teléfono y correo<br/>• No duplica la fila<br/>• Mantiene historial completo")]
+    COND -->|No existe| D2B[("CREA NUEVA FICHA MAESTRA: ID_PERSONA PER-005080<br/>• Genera identificador vitalicio correlativo")]
     
-    D2A --> D3[("Nace registro en PARTICIPACIONES\n• ID_PARTICIPACION: PAR-009812\n• Cruce: PER-XXXXXX + ACT-XXXXXX\n• Estado inicial: 'Inscrito'")]
+    D2A --> D3[("Nace registro en PARTICIPACIONES<br/>• ID_PARTICIPACION: PAR-009812<br/>• Cruce: PER-XXXXXX + ACT-XXXXXX<br/>• Estado inicial: Inscrito")]
     D2B --> D3
 
     class F1 func;
     class D2A,D2B,D3 dato;
     class S2,COND cond;
-            </div>
           </div>
         </div>
+        <div class="diagram-caption">Figura 1C: Normalización estricta de identidad para asegurar una única ficha vitalicia por vecino.</div>
       </div>
 
       <!-- FASE 3 -->
-      <div id="fase3" class="tab-pane">
-        <div class="diagram-wrapper">
-          <div class="diagram-toolbar">
-            <div class="diagram-title">🎯 Fase 3: Selección de Postulantes y Gestión de Cupos</div>
-            <div class="zoom-controls">
-              <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 1.2)">🔍 +</button>
-              <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 0.8)">🔍 -</button>
-              <button class="zoom-btn" onclick="resetZoom('fase3-svg')">↺ 100%</button>
-            </div>
+      <div class="diagram-wrapper" id="sec-fase3">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">🎯 Fase 3: Selección de Postulantes y Gestión de Cupos en Vivo</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('fase3-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('fase3-svg')">↺ 100%</button>
           </div>
-          <div class="diagram-card">
-            <div class="mermaid" id="fase3-svg">
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="fase3-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
 
     F1["Funcionario abre 'Gestión del Curso' en la Web App"] --> F2["Revisa postulantes, residencia comunal y grupo prioritario (PMJH)"]
     F2 --> F3["Usa filtro '📞 Postulantes por llamar' para contactar vía WhatsApp institucional"]
-    F3 --> F4["Asigna estados con 1 clic:\n• Seleccionado (ocupa cupo oficial)\n• Lista de Espera (reserva)\n• Rechazado / No Cumple"]
-    F4 --> D1[("Control de Cupos en Vivo:\nCupos Ocupados = Suma(Seleccionados)\nBloqueo automático de sobrecupos accidentales")]
+    F3 --> F4["Asigna estados con 1 clic:<br/>• Seleccionado (ocupa cupo oficial)<br/>• Lista de Espera (reserva)<br/>• Rechazado / No Cumple"]
+    F4 --> D1[("Control de Cupos en Vivo:<br/>Cupos Ocupados = Suma(Seleccionados)<br/>Bloqueo automático de sobrecupos accidentales")]
     D1 --> F5["Envía citación formal por WhatsApp con sala y fecha de inicio"]
 
     class F1,F2,F3,F4,F5 func;
     class D1 dato;
-            </div>
           </div>
         </div>
+        <div class="diagram-caption">Figura 1D: Asignación de cupos oficiales, llamadas de confirmación y reserva ordenada.</div>
       </div>
 
       <!-- FASE 4 -->
-      <div id="fase4" class="tab-pane">
-        <div class="diagram-wrapper">
-          <div class="diagram-toolbar">
-            <div class="diagram-title">📋 Fase 4: Ejecución de Clases y Control de Asistencia en Sala</div>
-            <div class="zoom-controls">
-              <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 1.2)">🔍 +</button>
-              <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 0.8)">🔍 -</button>
-              <button class="zoom-btn" onclick="resetZoom('fase4-svg')">↺ 100%</button>
-            </div>
+      <div class="diagram-wrapper" id="sec-fase4">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">📋 Fase 4: Ejecución de Clases y Asistencia con Columna Fija</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('fase4-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('fase4-svg')">↺ 100%</button>
           </div>
-          <div class="diagram-card">
-            <div class="mermaid" id="fase4-svg">
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="fase4-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
 
     F1["En cada clase: Funcionario abre la lista de 'Seleccionados' en tablet o PC"] --> F2["Columna de Nombres Fija permite desplazar hacia las sesiones (S1..Sn) sin perder la fila"]
     F2 --> F3["Marca presencia con 1 clic en la casilla de la sesión"]
-    F3 --> D1[("Guarda marca atómica en ASISTENCIAS_SESION\nActualiza SESIONES_ASISTIDAS y calcula % Asistencia en vivo")]
+    F3 --> D1[("Guarda marca atómica en ASISTENCIAS_SESION<br/>Actualiza SESIONES_ASISTIDAS y calcula % Asistencia en vivo")]
     F2 --> F4["¿Alumno inasistente? Funcionario hace clic en 💬 WhatsApp y envía recordatorio directo"]
     F4 --> F5["Si alumno renuncia: cambia a 'Renuncia' y promueve al primero de 'Lista de Espera'"]
     F5 --> D1
 
     class F1,F2,F3,F4,F5 func;
     class D1 dato;
-            </div>
           </div>
         </div>
+        <div class="diagram-caption">Figura 1E: Marcaje ágil sesión a sesión, control de inasistencias y promoción automática.</div>
       </div>
 
       <!-- FASE 5 -->
-      <div id="fase5" class="tab-pane">
-        <div class="diagram-wrapper">
-          <div class="diagram-toolbar">
-            <div class="diagram-title">📊 Fase 5: Cierre, Calificación, Nóminas y Métricas de Impacto</div>
-            <div class="zoom-controls">
-              <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 1.2)">🔍 +</button>
-              <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 0.8)">🔍 -</button>
-              <button class="zoom-btn" onclick="resetZoom('fase5-svg')">↺ 100%</button>
-            </div>
+      <div class="diagram-wrapper" id="sec-fase5">
+        <div class="diagram-toolbar">
+          <div class="diagram-title">📊 Fase 5: Cierre, Calificación, Descarga de Nóminas y Certificación</div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 1.2)">🔍 +</button>
+            <button class="zoom-btn" onclick="zoomDiagram('fase5-svg', 0.8)">🔍 -</button>
+            <button class="zoom-btn" onclick="resetZoom('fase5-svg')">↺ 100%</button>
           </div>
-          <div class="diagram-card">
-            <div class="mermaid" id="fase5-svg">
+        </div>
+        <div class="diagram-card">
+          <div class="mermaid" id="fase5-svg">
 flowchart TD
     classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
     classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
 
-    F1["Concluida la última clase: Funcionario pulsa 'Cierre de Actividad'"] --> S1["Evaluación institucional automática:\n• Asistencia >= 75% -> 'Aprobado'\n• Asistencia < 75% -> 'Reprobado'\n• Asistencias = 0 -> 'Desertor'"]
+    F1["Concluida la última clase: Funcionario pulsa 'Cierre de Actividad'"] --> S1["Evaluación institucional automática:<br/>• Asistencia >= 75% -> 'Aprobado'<br/>• Asistencia < 75% -> 'Reprobado'<br/>• Asistencias = 0 -> 'Desertor'"]
     S1 --> F2["Descarga la Nómina Oficial en Excel (con desglose sesión a sesión para firmas)"]
     S1 --> F3["Genera Certificados y Diplomas institucionales de aprobación"]
-    S1 --> D1[("Alimenta el DASHBOARD de Jefatura y Dirección:\n• Total Inscritos (Demanda Nominal)\n• Asistentes Reales (Asistieron >= 1 clase)\n• Personas Únicas Capacitadas (RUTs distintos)")]
+    S1 --> D1[("Alimenta el DASHBOARD de Jefatura y Dirección:<br/>• Total Inscritos (Demanda Nominal)<br/>• Asistentes Reales (Asistieron >= 1 clase)<br/>• Personas Únicas Capacitadas (RUTs distintos)")]
 
     class F1,F2,F3 func;
     class S1,D1 dato;
-            </div>
           </div>
         </div>
+        <div class="diagram-caption">Figura 1F: Emisión de reportes oficiales, actas para firmas y métricas de impacto real.</div>
       </div>
     </section>
 
@@ -928,14 +907,6 @@ erDiagram
       if (!el) return;
       el.setAttribute('data-scale', '1');
       el.style.transform = 'scale(1)';
-    }
-
-    function mostrarPestana(idPestana, btn) {
-      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      const target = document.getElementById(idPestana);
-      if (target) target.classList.add('active');
-      if (btn) btn.classList.add('active');
     }
   </script>
 </body>
