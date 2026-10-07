@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flujograma Integral de Datos de Capacitación y Gestión de Funcionarios</title>
+  <!-- Mermaid.js for diagram rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'neutral',
+      flowchart: { curve: 'basis', htmlLabels: true },
+      themeVariables: {
+        fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        primaryColor: '#e0f2fe',
+        primaryBorderColor: '#0284c7',
+        primaryTextColor: '#0f172a'
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --secondary: #10b981;
+      --accent: #f59e0b;
+      --dark: #0f172a;
+      --light: #f8fafc;
+      --border: #e2e8f0;
+      --text: #334155;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background-color: #f1f5f9;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 30px auto;
+      background: #ffffff;
+      padding: 48px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    }
+
+    header {
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 36px;
+    }
+
+    h1 {
+      color: var(--dark);
+      font-size: 2.1rem;
+      font-weight: 800;
+      margin: 0 0 8px 0;
+      line-height: 1.25;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--primary-dark);
+      font-weight: 600;
+      margin: 0 0 16px 0;
+    }
+
+    .badge-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 20px;
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    h2 {
+      color: var(--dark);
+      font-size: 1.5rem;
+      border-left: 5px solid var(--primary);
+      padding-left: 12px;
+      margin-top: 40px;
+      margin-bottom: 20px;
+    }
+
+    h3 {
+      color: var(--primary-dark);
+      font-size: 1.2rem;
+      margin-top: 28px;
+      margin-bottom: 12px;
+    }
+
+    p {
+      margin-bottom: 16px;
+      text-align: justify;
+    }
+
+    .alert-box {
+      background: #f8fafc;
+      border-left: 4px solid var(--primary);
+      padding: 16px 20px;
+      margin: 20px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .alert-box ul {
+      margin: 8px 0 0 0;
+      padding-left: 20px;
+    }
+
+    .diagram-card {
+      background: #fcfcfd;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      margin: 24px 0;
+      overflow-x: auto;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .diagram-caption {
+      font-size: 0.85rem;
+      text-align: center;
+      color: #64748b;
+      margin-top: 12px;
+      font-style: italic;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f8fafc;
+      color: var(--dark);
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) {
+      background-color: #fdfdfd;
+    }
+
+    .step-box {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 16px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      background: var(--primary);
+      color: #ffffff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+
+    .step-content h4 {
+      margin: 0 0 6px 0;
+      color: var(--dark);
+      font-size: 1.05rem;
+    }
+
+    .step-content p {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .btn-print {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--primary-dark);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 30px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-print:hover {
+      background: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    @media print {
+      body { background: white; }
+      .container { max-width: 100%; margin: 0; padding: 0; box-shadow: none; }
+      .btn-print { display: none; }
+      .diagram-card { border: none; padding: 10px 0; }
+      h2 { page-break-before: always; }
+      h2:first-of-type { page-break-before: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar en PDF</button>
+
+  <div class="container">
+    <header>
+      <h1>Flujograma Integral de Datos de Capacitación y Gestión de Funcionarios</h1>
+      <div class="subtitle">Departamento de Capacitación — Municipalidad de Santiago</div>
+      <div class="badge-bar">
+        <span class="badge">📘 Documento Oficial de Proceso</span>
+        <span class="badge">🔄 Flujo de Trabajo y Ciclo del Dato</span>
+        <span class="badge">👥 Identificador Único PER-XXXXXX</span>
+        <span class="badge">🎯 Medición de Participación Real</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Introducción y Propósito</h2>
+      <p>
+        Este documento consolida en un solo mapa integral el <strong>trabajo diario que realizan los funcionarios del Departamento de Capacitación</strong> y el <strong>viaje, transformación y cruce de los datos</strong> a lo largo de todo el ciclo de vida de un curso.
+      </p>
+      <div class="alert-box">
+        <strong>Principios Fundamentales del Sistema:</strong>
+        <ul>
+          <li><strong>Padrón Único y Vitalicio:</strong> Cada vecino posee una sola ficha en la institución (<code>ID_PERSONA</code>), sin importar cuántos años pasen ni cuántos cursos postule.</li>
+          <li><strong>Medición de Participación Real:</strong> Distinción matemática entre postulantes brutos, vecinos seleccionados, asistentes efectivos y personas únicas aprobadas.</li>
+          <li><strong>Agilidad Operativa:</strong> Herramientas ágiles para control de cupos en tiempo real, toma de asistencia con un solo clic y contacto directo por WhatsApp.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Flujograma General Integrado: Trabajo del Funcionario y Flujo de Datos</h2>
+      <p>
+        El siguiente flujograma de procesos muestra la secuencia de acciones operativas realizadas por los funcionarios y su correspondencia inmediata con los registros y cálculos que procesa el sistema:
+      </p>
+
+      <div class="diagram-card">
+        <div class="mermaid">
+flowchart TD
+    classDef func fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1,font-weight:bold;
+    classDef dato fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#15803d,font-weight:bold;
+    classDef sistema fill:#f8fafc,stroke:#64748b,stroke-width:1px,color:#1e293b;
+    classDef metric fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e,font-weight:bold;
+
+    subgraph ETAPA1["1. PLANIFICACIÓN Y CONVOCATORIA"]
+        F1["Funcionario planifica el curso:\nNombre, fechas, cupos, sesiones, relator"]
+        D1[("Nace registro en ACTIVIDADES\nID_ACTIVIDAD: ACT-000045\nCupos disponibles = Máximo")]
+        F1 --> D1
+        F2["Funcionario abre postulaciones\ny publica formulario digital o ventanilla"]
+        D1 --> F2
+    end
+
+    subgraph ETAPA2["2. POSTULACIÓN Y GENERACIÓN DEL ID"]
+        F3["Vecino envía su postulación\n(RUT, nombre, teléfono, correo)"]
+        F2 --> F3
+        S1["Sistema normaliza datos y valida RUT chileno\n(Módulo 11, eliminación de puntos y guiones)"]
+        F3 --> S1
+        S2{"¿Vecino ya existe en el padrón?"}
+        S1 --> S2
+        D2A["SÍ: Recupera ficha existente\nID_PERSONA: PER-001240\nActualiza teléfono y correo"]
+        D2B["NO: Genera nuevo ID vitalicio\nID_PERSONA: PER-005080\nCrea ficha maestra en PERSONAS"]
+        S2 -- "Existe" --> D2A
+        S2 -- "Nuevo" --> D2B
+        D3[("Nace registro en PARTICIPACIONES\nID_PARTICIPACION: PAR-009812\nCruce: ID_PERSONA + ID_ACTIVIDAD\nEstado inicial: 'Inscrito'")]
+        D2A --> D3
+        D2B --> D3
+    end
+
+    subgraph ETAPA3["3. SELECCIÓN Y ADMINISTRACIÓN DE CUPOS"]
+        F4["Funcionario revisa postulantes en la Web App\nEvalúa perfil y requisitos del curso"]
+        D3 --> F4
+        F5["Funcionario asigna estados:\n• Seleccionado (ocupa cupo oficial)\n• Lista de Espera (reserva ordenada)\n• Rechazado (no cumple requisitos)"]
+        F4 --> F5
+        D4["Sistema actualiza contador de cupos en tiempo real\nBloquea sobrecupos accidentales"]
+        F5 --> D4
+        F6["Funcionario confirma asistencia\n(vía WhatsApp o Correo con plantilla)"]
+        D4 --> F6
+    end
+
+    subgraph ETAPA4["4. EJECUCIÓN Y CONTROL DE ASISTENCIA EN SALA"]
+        F7["Día de clase: Funcionario abre la vista de gestión\nen tablet o computador"]
+        F6 --> F7
+        F8["Funcionario pasa lista con 1 clic por sesión\n(Sesión 1, 2, 3... n)"]
+        F7 --> F8
+        D5[("Guarda asistencia atómica en ASISTENCIAS_SESION\nAcumula SESIONES_ASISTIDAS\nCalcula % Asistencia en vivo")]
+        F8 --> D5
+        F9["Funcionario detecta inasistencias reiteradas\ny envía recordatorio directo por WhatsApp"]
+        D5 -.-> F9
+        F10["Si alumno renuncia: Funcionario promueve\nal primero de la Lista de Espera"]
+        F9 -.-> F10
+        F10 --> D4
+    end
+
+    subgraph ETAPA5["5. CIERRE, EVALUACIÓN Y MEDICIÓN REAL"]
+        F11["Última clase concluida: Funcionario cierra el curso"]
+        D5 --> F11
+        S3["Sistema evalúa condición final automáticamente:\n• Si % Asistencia >= 75% -> 'Aprobado'\n• Si % Asistencia < 75% -> 'Reprobado'\n• Si asistencias = 0 -> 'Desertor'"]
+        F11 --> S3
+        D6["Nómina Oficial consolidada en Excel\n(Lista para auditoría y firmas)"]
+        S3 --> D6
+        D7["Emisión de Diplomas / Certificados"]
+        S3 --> D7
+        M1["MÉTRICAS DE IMPACTO REAL:\n1. Demanda Nominal (Total inscritos)\n2. Asistentes Reales (Asistieron >= 1 clase)\n3. Aprobados Efectivos (Cumplieron >= 75%)\n4. Personas Únicas Capacitadas (RUTs distintos)"]
+        S3 --> M1
+    end
+
+    class F1,F2,F4,F5,F6,F7,F8,F9,F10,F11 func;
+    class D1,D2A,D2B,D3,D4,D5,D6,D7 dato;
+    class S1,S2,S3 sistema;
+    class M1 metric;
+        </div>
+        <div class="diagram-caption">Figura 1: Flujo integrado de negocio entre la actividad del funcionario y la persistencia de datos.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Ciclo de Vida del Dato y Deduplicación Inteligente</h2>
+      <p>
+        Para asegurar la unicidad del beneficiario, el sistema implementa un algoritmo de validación de RUT mediante Módulo 11 y búsqueda inteligente con tolerancia de formatos:
+      </p>
+
+      <div class="diagram-card">
+        <div class="mermaid">
+flowchart TD
+    IN["Postulación Ingresada (Web o Ventanilla)"] --> NORM["Normalización: Limpieza de RUT, Teléfono y Nombre"]
+    NORM --> MOD11{"¿RUT válido con Módulo 11?"}
+    
+    MOD11 -- "No" --> EXT{"¿Es Pasaporte / DNI Extranjero?"}
+    EXT -- "Sí" --> BQ_EXT["Búsqueda por número de documento extranjero"]
+    EXT -- "No" --> CORR["Alerta al funcionario para corrección de datos"]
+    
+    MOD11 -- "Sí" --> BQ["Búsqueda en Base Maestra PERSONAS\n(Por RUT limpio, teléfono o correo + nombre compatible)"]
+    BQ_EXT --> COND
+    BQ --> COND{"¿Existe en el padrón histórico?"}
+    
+    COND -- "SÍ EXISTE" --> REC["RECUPERA ID_PERSONA EXISTENTE\n(Ej: PER-001240)\n• Actualiza datos de contacto\n• Mantiene su historial intacto"]
+    COND -- "NO EXISTE" --> CREA["GENERA NUEVO ID_PERSONA VITALICIO\n(Ej: PER-005080)\n• Crea registro maestro en PERSONAS"]
+    
+    REC --> VINC["Crea registro en PARTICIPACIONES\nID_PARTICIPACION: PAR-XXXXXX\nEstado: 'Inscrito'"]
+    CREA --> VINC
+        </div>
+        <div class="diagram-caption">Figura 2: Árbol de decisiones para la normalización, deduplicación y asignación de ID_PERSONA.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. El Cruce de Datos y la Medición de Participación Real</h2>
+      <p>
+        El sistema estructura la relación entre el beneficiario y la oferta municipal mediante un modelo relacional estricto que separa la Persona, el Curso y la Matrícula/Asistencia:
+      </p>
+
+      <div class="diagram-card">
+        <div class="mermaid">
+erDiagram
+    PERSONAS ||--o{ PARTICIPACIONES : "posee (1 a N)"
+    ACTIVIDADES ||--o{ PARTICIPACIONES : "agrupa (1 a N)"
+    PARTICIPACIONES ||--o{ ASISTENCIAS_SESION : "desglosa (1 a N)"
+
+    PERSONAS {
+        string ID_PERSONA PK "PER-001240 (Vitalicio)"
+        string RUT UK "15.420.312-8 (Validado M11)"
+        string NOMBRE_COMPLETO "Juan Carlos Pérez Soto"
+        string TELEFONO "+56987654321"
+        string COMUNA "Santiago"
+        string PARTICIPA_PMJH "No"
+    }
+
+    ACTIVIDADES {
+        string ID_ACTIVIDAD PK "ACT-000045"
+        string NOMBRE_ACTIVIDAD "Marketing Digital y Redes Sociales"
+        int CUPOS_MAXIMOS "25"
+        int SESIONES_TOTALES "4 sesiones"
+        string ESTADO "Cerrada"
+    }
+
+    PARTICIPACIONES {
+        string ID_PARTICIPACION PK "PAR-009812 (Cruce relacional)"
+        string ID_PERSONA FK "PER-001240"
+        string ID_ACTIVIDAD FK "ACT-000045"
+        string ESTADO_PARTICIPACION "Seleccionado"
+        int SESIONES_ASISTIDAS "4"
+        decimal PORCENTAJE_ASISTENCIA "100%"
+        string ESTADO_FINAL "Aprobado"
+    }
+
+    ASISTENCIAS_SESION {
+        string ID_ASISTENCIA PK "ASI-0001"
+        string ID_PARTICIPACION FK "PAR-009812"
+        int NUMERO_SESION "Sesión 1, 2, 3 o 4"
+        boolean PRESENTE "true"
+        date TIMESTAMP "2026-10-05 18:05:00"
+    }
+        </div>
+        <div class="diagram-caption">Figura 3: Modelo relacional para cálculo de asistencia y trazabilidad de certificaciones.</div>
+      </div>
+
+      <h3>Escala de Indicadores de Impacto Municipal</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Nivel</th>
+            <th>Indicador</th>
+            <th>Fórmula / Lógica</th>
+            <th>Significado Institucional</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Nivel 1</strong></td>
+            <td><strong>Demanda Nominal (Inscritos)</strong></td>
+            <td><code>COUNT(PARTICIPACIONES)</code> con estado 'Inscrito'</td>
+            <td>Mide el interés ciudadano y necesidad por la temática formativa.</td>
+          </tr>
+          <tr>
+            <td><strong>Nivel 2</strong></td>
+            <td><strong>Cupos Asignados (Seleccionados)</strong></td>
+            <td><code>COUNT(PARTICIPACIONES)</code> con estado 'Seleccionado'</td>
+            <td>Mide la utilización de la capacidad instalada y relatores contratados.</td>
+          </tr>
+          <tr>
+            <td><strong>Nivel 3</strong></td>
+            <td><strong>Participación Real (Asistentes)</strong></td>
+            <td><code>COUNT(PARTICIPACIONES)</code> con <code>SESIONES_ASISTIDAS >= 1</code></td>
+            <td>Descarta postulantes que no llegaron; mide a quienes realmente pisaron el aula.</td>
+          </tr>
+          <tr>
+            <td><strong>Nivel 4</strong></td>
+            <td><strong>Beneficiarios Aprobados</strong></td>
+            <td><code>COUNT(PARTICIPACIONES)</code> con <code>ESTADO_FINAL = 'Aprobado'</code></td>
+            <td>Mide el éxito de la capacitación (cumplieron con asistencia >= 75%).</td>
+          </tr>
+          <tr>
+            <td><strong>Nivel 5</strong></td>
+            <td><strong>Personas Únicas Capacitadas</strong></td>
+            <td><code>COUNT(DISTINCT ID_PERSONA)</code> aprobadas en el año</td>
+            <td><strong>Métrica de Oro:</strong> Elimina duplicados de vecinos que tomaron múltiples cursos.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Control de Asistencia en Sala y Contacto Directo</h2>
+      <p>
+        Durante el desarrollo del curso, el funcionario registra la asistencia en un clic y dispone de contacto ágil por WhatsApp:
+      </p>
+
+      <div class="diagram-card">
+        <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Funcionario as Funcionario Municipal (en sala)
+    participant App as Web App de Asistencia
+    participant DB as Base de Datos (Sheets / SQL)
+    participant WA as Enlace WhatsApp
+
+    Funcionario->>App: Selecciona el curso y abre nómina de seleccionados
+    App->>DB: Consulta participantes con estado 'Seleccionado'
+    DB-->>App: Retorna nombres, teléfonos y matriz de sesiones
+    
+    loop Durante el pase de lista
+        Funcionario->>App: Clic en Sesión N del alumno presente (✓)
+        App->>DB: Guarda registro atómico en ASISTENCIAS_SESION
+        App->>DB: Actualiza contador de asistencias y % acumulado en PARTICIPACIONES
+        DB-->>App: Confirma actualización en vivo (0 errores)
+    end
+
+    opt Alumno inasistente a la sesión
+        Funcionario->>App: Clic en botón 💬 WhatsApp
+        App->>WA: Abre conversación directa con texto institucional predefinido
+    end
+
+    opt Alumno renuncia formalmente
+        Funcionario->>App: Cambia estado a 'Renuncia' y promueve 'Lista de Espera'
+        App->>DB: Reasigna cupo oficial y notifica al nuevo seleccionado
+    end
+        </div>
+        <div class="diagram-caption">Figura 4: Diagrama de interacción para la toma de asistencia y contacto con alumnos.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. Matriz de Responsabilidades y Transformación del Dato</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Etapa</th>
+            <th>Acción del Funcionario</th>
+            <th>Entrada de Datos</th>
+            <th>Procesamiento del Sistema</th>
+            <th>Salida de Datos</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. Planificación</strong></td>
+            <td>Crea el curso, define cupos, sesiones, relator y sede.</td>
+            <td>Parámetros del curso.</td>
+            <td>Genera <code>ACT-XXXXXX</code> e inicializa cupos disponibles.</td>
+            <td>Curso en catálogo (`ACTIVIDADES`).</td>
+          </tr>
+          <tr>
+            <td><strong>2. Postulación</strong></td>
+            <td>Difunde convocatoria y apoya postulaciones presenciales.</td>
+            <td>RUT, nombres, contacto y género.</td>
+            <td>Valida Módulo 11; recupera o crea <code>PER-XXXXXX</code>.</td>
+            <td>Postulación registrada en `PARTICIPACIONES`.</td>
+          </tr>
+          <tr>
+            <td><strong>3. Selección</strong></td>
+            <td>Evalúa requisitos y selecciona alumnos; avisa por WhatsApp.</td>
+            <td>Criterios de focalización.</td>
+            <td>Recalcula cupos ocupados; bloquea sobrecupos.</td>
+            <td>Nómina de seleccionados confirmada.</td>
+          </tr>
+          <tr>
+            <td><strong>4. Asistencia</strong></td>
+            <td>Pasa lista en 1 clic; contacta a inasistentes.</td>
+            <td>Marca de asistencia por sesión.</td>
+            <td>Guarda registro atómico; actualiza % acumulado en vivo.</td>
+            <td>Porcentaje de asistencia en tiempo real.</td>
+          </tr>
+          <tr>
+            <td><strong>5. Cierre</strong></td>
+            <td>Cierra actividad y genera nómina oficial en Excel.</td>
+            <td>Confirmación de término.</td>
+            <td>Aplica umbral (>= 75% = Aprobado); bloquea edición.</td>
+            <td>Nómina Oficial, Diplomas y KPIs de Dirección.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>7. Ejemplo Práctico de Trazabilidad Completa</h2>
+      <div class="step-box">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h4>Planificación del Curso</h4>
+          <p>El funcionario crea el taller <em>"Manipulación de Alimentos"</em> (<code>ACT-000050</code>), con 20 cupos y 4 sesiones presenciales.</p>
+        </div>
+      </div>
+      <div class="step-box">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h4>Postulación y Reconocimiento de la Persona</h4>
+          <p>La vecina Rosa Morales ingresa al formulario con su RUT <code>14.882.319-5</code>. El sistema detecta que participó hace dos años, recupera su ficha <code>PER-000412</code> sin crear duplicados y registra su postulación <code>PAR-002105</code>.</p>
+        </div>
+      </div>
+      <div class="step-box">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h4>Selección y Convocatoria</h4>
+          <p>El funcionario confirma que cumple con el perfil, cambia su estado a <code>Seleccionado</code> y le envía un WhatsApp de bienvenida con sala y horario.</p>
+        </div>
+      </div>
+      <div class="step-box">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h4>Clases y Asistencia en Sala</h4>
+          <p>Rosa asiste a las sesiones 1, 2 y 4 (faltó a la 3 con justificación). El funcionario marca sus asistencias en sala. El sistema acumula 3 de 4 sesiones (75% de asistencia).</p>
+        </div>
+      </div>
+      <div class="step-box">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h4>Cierre, Certificación e Impacto Institucional</h4>
+          <p>El funcionario cierra el curso. Al cumplir el 75%, el sistema marca su estado en <strong>Aprobado</strong>. Rosa recibe su diploma y en la estadística anual de la Alcaldía cuenta como <strong>1 Persona Única Capacitada</strong>.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
