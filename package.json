@@ -16,5 +16,10 @@
     "web-app"
   ],
   "author": "Municipalidad de Santiago",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "docx": "^9.9.0",
+    "marked": "^18.1.0",
+    "puppeteer-core": "^25.12.0"
+  }
 }
