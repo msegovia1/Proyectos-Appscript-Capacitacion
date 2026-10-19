@@ -1712,6 +1712,21 @@ function depurarDuplicadosPersonasWeb() {
   return depurarDuplicadosPersonas();
 }
 /**
+ * Analiza los postulantes de una actividad origen para traspaso hacia una actividad destino.
+ */
+function obtenerResumenTraspasoActividadWeb(idOrigen, idDestino) {
+  webValidarObjeto_({ ID_ORIGEN: idOrigen, ID_DESTINO: idDestino }, ['ID_ORIGEN', 'ID_DESTINO']);
+  return obtenerResumenTraspasoActividad(idOrigen, idDestino);
+}
+/**
+ * Ejecuta el traspaso de postulantes no seleccionados o en lista de espera hacia una nueva actividad.
+ */
+function ejecutarTraspasoPostulantesWeb(payload) {
+  if (!payload) throw new Error('Datos de traspaso no proporcionados.');
+  webValidarObjeto_({ ID_ORIGEN: payload.idOrigen, ID_DESTINO: payload.idDestino }, ['ID_ORIGEN', 'ID_DESTINO']);
+  return traspasarPostulantesActividad(payload);
+}
+/**
  * Guarda selección, asistencia y resultados de forma masiva.
  */
 function guardarGestionMasiva(payload) {

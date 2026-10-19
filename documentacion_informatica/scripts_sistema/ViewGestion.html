@@ -15,6 +15,7 @@
             </div>
             <button class="btn" type="button" onclick="cargarGestionActividad(true)" title="Forzar recarga fresca desde Google Sheets">↻ Cargar participantes</button>
             <button class="btn secondary" type="button" onclick="depurarDuplicadosGestion()" title="Detectar y unificar participantes duplicados en esta actividad">🧹 Depurar duplicados</button>
+            <button class="btn secondary" type="button" onclick="abrirModalTraspasoPostulantes()" title="Traspasar postulantes no seleccionados o en lista de espera desde una versión o capacitación previa">📥 Traspasar de otra actividad</button>
           </div>
           <div class="module-kpis">
             <div class="card module-kpi accent-blue"><span>Inscritos</span><strong id="gInscritos">0</strong></div>
@@ -302,6 +303,83 @@
             <div class="modal-footer">
               <button class="btn secondary" type="button" onclick="cerrarModalAsistenciaAlumno()">Cerrar</button>
               <button class="btn" type="button" onclick="guardarModalAsistenciaAlumno()">Aplicar a la tabla</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal de Traspaso de Postulantes entre Actividades -->
+        <div id="modalTraspasoPostulantes" class="modal-overlay" style="display: none;">
+          <div class="modal-box" style="max-width: 620px;">
+            <div class="modal-header">
+              <h3>📥 Traspasar Postulantes de Otra Actividad</h3>
+              <button type="button" class="modal-close" onclick="cerrarModalTraspasoPostulantes()">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p style="font-size: 13px; color: var(--gris, #64748b); margin-top: 0; line-height: 1.5;">
+                Reutilice la convocatoria de una versión anterior o capacitación previa. Incorpore a quienes no fueron seleccionados o quedaron en lista de espera a esta nueva actividad sin necesidad de pedirles un nuevo formulario.
+              </p>
+              
+              <div class="notice" style="margin-bottom: 14px; background: rgba(37,99,235,0.06); border-left: 4px solid #2563eb; padding: 10px 14px; border-radius: 6px;">
+                <span style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Actividad Destino (recibirá a los postulantes):</span><br>
+                <strong id="traspasoNombreActividadDestino" style="font-size: 14px; color: #1e3a8a; display: block; margin-top: 2px;">-</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="field full">
+                  <label for="traspasoActividadOrigen"><strong>1. Actividad de origen (de dónde extraer postulantes) *</strong></label>
+                  <select id="traspasoActividadOrigen" onchange="alCambiarOrigenTraspaso()">
+                    <option value="">Seleccione la actividad o versión anterior...</option>
+                  </select>
+                </div>
+
+                <div class="field full">
+                  <label><strong>2. ¿A quiénes desea traspasar según su estado anterior? *</strong></label>
+                  <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 6px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                      <input type="checkbox" id="chkTraspasoListaEspera" checked onchange="actualizarVistaPreviaTraspaso()">
+                      <span>⏳ Lista de espera</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                      <input type="checkbox" id="chkTraspasoNoSeleccionado" checked onchange="actualizarVistaPreviaTraspaso()">
+                      <span>❌ No seleccionado</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                      <input type="checkbox" id="chkTraspasoPendiente" onchange="actualizarVistaPreviaTraspaso()">
+                      <span>⚪ Pendiente</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="traspasoEstadoDestino"><strong>3. Estado en la nueva actividad</strong></label>
+                  <select id="traspasoEstadoDestino">
+                    <option value="Pendiente" selected>Pendiente (Para evaluar/seleccionar)</option>
+                    <option value="Lista de espera">Lista de espera</option>
+                    <option value="Seleccionado">Seleccionado</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="traspasoCanal"><strong>Canal de registro</strong></label>
+                  <input id="traspasoCanal" placeholder="Ej: Traspaso de Versión 1" value="Traspaso de convocatoria previa">
+                </div>
+              </div>
+
+              <!-- Panel de Resumen / Vista Previa -->
+              <div id="traspasoResumenBox" style="margin-top: 14px; padding: 14px; background: #f1f5f9; border-radius: 8px; border: 1px solid #cbd5e1; display: none;">
+                <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                  <span>📊</span> <span>Análisis de postulantes disponibles para traspaso:</span>
+                </div>
+                <div style="font-size: 13px; color: #334155; line-height: 1.6;" id="traspasoResumenTexto">
+                  Consultando...
+                </div>
+              </div>
+
+              <div id="traspasoAlerta" class="notice" style="margin-top: 12px; display: none;"></div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn secondary" type="button" onclick="cerrarModalTraspasoPostulantes()">Cancelar</button>
+              <button id="btnEjecutarTraspaso" class="btn" type="button" onclick="ejecutarTraspasoPostulantesUI()" disabled>Confirmar Traspaso</button>
             </div>
           </div>
         </div>

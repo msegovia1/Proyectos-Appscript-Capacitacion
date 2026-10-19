@@ -3246,6 +3246,309 @@ function depurarDuplicadosActividad(idActividad) {
 }
 
 /**
+ * Analiza los postulantes de una actividad origen para traspaso hacia una actividad destino.
+ * Clasifica los candidatos según estado de selección y verifica quiénes ya están inscritos en el destino.
+ */
+function obtenerResumenTraspasoActividad(idOrigen, idDestino) {
+  const idOrigStr = String(idOrigen || '').trim();
+  const idDestStr = String(idDestino || '').trim();
+  if (!idOrigStr || !idDestStr) {
+    throw new Error('Debe especificar la actividad de origen y la actividad de destino.');
+  }
+  if (idOrigStr === idDestStr) {
+    throw new Error('La actividad de origen y la actividad de destino deben ser distintas.');
+  }
+
+  const ss = sigcSpreadsheetCentral_();
+  const hojaAct = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+  const hojaPart = ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+
+  if (!hojaAct || !hojaPart || hojaPart.getLastRow() < 2) {
+    return {
+      ok: true,
+      origen: { id: idOrigStr, nombre: idOrigStr },
+      destino: { id: idDestStr, nombre: idDestStr },
+      estados: {},
+      totalDisponibles: 0,
+      totalYaInscritos: 0,
+      mensaje: 'No se encontraron postulantes en la actividad seleccionada.'
+    };
+  }
+
+  // 1. Obtener nombres de actividades
+  const datosAct = hojaAct.getDataRange().getValues();
+  const mAct = mapaEncabezados_(datosAct[0]);
+  let nombreOrigen = idOrigStr;
+  let nombreDestino = idDestStr;
+  let cuposDestino = 0;
+  for (let a = 1; a < datosAct.length; a++) {
+    const idA = String(datosAct[a][mAct['ID ACTIVIDAD']] || '').trim();
+    if (idA === idOrigStr) nombreOrigen = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idOrigStr);
+    if (idA === idDestStr) {
+      nombreDestino = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idDestStr);
+      cuposDestino = Number(datosAct[a][mAct['CUPOS']] || 0);
+    }
+  }
+
+  // 2. Obtener personas ya inscritas en destino (activas)
+  const datosPart = hojaPart.getDataRange().getValues();
+  const mPart = mapaEncabezados_(datosPart[0]);
+  const personasEnDestino = new Set();
+
+  for (let pt = 1; pt < datosPart.length; pt++) {
+    const fila = datosPart[pt];
+    const idAct = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
+    const activo = mPart['REGISTRO ACTIVO'] === undefined ||
+      normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
+    if (idAct === idDestStr && activo) {
+      const idP = String(fila[mPart['ID PERSONA']] || '').trim();
+      if (idP) personasEnDestino.add(idP);
+    }
+  }
+
+  // 3. Agrupar postulantes de la actividad origen
+  const resumenEstados = {
+    'Lista de espera': { total: 0, disponibles: 0, yaInscritos: 0 },
+    'No seleccionado': { total: 0, disponibles: 0, yaInscritos: 0 },
+    'Pendiente': { total: 0, disponibles: 0, yaInscritos: 0 },
+    'Seleccionado': { total: 0, disponibles: 0, yaInscritos: 0 },
+    'Otros': { total: 0, disponibles: 0, yaInscritos: 0 }
+  };
+
+  const personasVistasEnOrigen = new Set();
+  let totalDisponibles = 0;
+  let totalYaInscritos = 0;
+
+  for (let pt = 1; pt < datosPart.length; pt++) {
+    const fila = datosPart[pt];
+    const idAct = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
+    const activo = mPart['REGISTRO ACTIVO'] === undefined ||
+      normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
+
+    if (idAct === idOrigStr && activo) {
+      const idP = String(fila[mPart['ID PERSONA']] || '').trim();
+      if (!idP || personasVistasEnOrigen.has(idP)) continue;
+      personasVistasEnOrigen.add(idP);
+
+      const rawEstado = String(fila[mPart['ESTADO SELECCION']] || '').trim();
+      const normEstado = normalizarEncabezado_(rawEstado);
+
+      let categoria = 'Otros';
+      if (normEstado === 'LISTA DE ESPERA' || normEstado === 'ESPERA') {
+        categoria = 'Lista de espera';
+      } else if (normEstado === 'NO SELECCIONADO' || normEstado === 'NO SELECCIONADA') {
+        categoria = 'No seleccionado';
+      } else if (normEstado === 'PENDIENTE') {
+        categoria = 'Pendiente';
+      } else if (normEstado === 'SELECCIONADO' || normEstado === 'SELECCIONADA') {
+        categoria = 'Seleccionado';
+      }
+
+      const yaInscrito = personasEnDestino.has(idP);
+      resumenEstados[categoria].total++;
+      if (yaInscrito) {
+        resumenEstados[categoria].yaInscritos++;
+        totalYaInscritos++;
+      } else {
+        resumenEstados[categoria].disponibles++;
+        totalDisponibles++;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    origen: { id: idOrigStr, nombre: nombreOrigen },
+    destino: { id: idDestStr, nombre: nombreDestino, cupos: cuposDestino },
+    estados: resumenEstados,
+    totalDisponibles: totalDisponibles,
+    totalYaInscritos: totalYaInscritos
+  };
+}
+
+/**
+ * Traspasa participantes seleccionados desde una actividad previa hacia una actividad destino.
+ * Garantiza cero duplicados (omite a quienes ya estén en el destino) y genera las participaciones con su nuevo estado.
+ */
+function traspasarPostulantesActividad(payload) {
+  if (!payload || !payload.idOrigen || !payload.idDestino) {
+    throw new Error('Debe especificar la actividad de origen y la actividad de destino.');
+  }
+  const idOrigStr = String(payload.idOrigen).trim();
+  const idDestStr = String(payload.idDestino).trim();
+  if (idOrigStr === idDestStr) {
+    throw new Error('La actividad de origen y destino no pueden ser iguales.');
+  }
+
+  const estadosPermitidos = (payload.estadosOrigen || []).map(function(e) {
+    return normalizarEncabezado_(e);
+  });
+  if (!estadosPermitidos.length) {
+    throw new Error('Debe seleccionar al menos un estado de origen para traspasar (ej: Lista de espera o No seleccionado).');
+  }
+
+  const estadoDestino = String(payload.estadoDestino || 'Pendiente').trim();
+  const canalRegistro = String(payload.canal || ('Traspaso ' + idOrigStr)).trim();
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = sigcSpreadsheetCentral_();
+    const hojaPart = ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES);
+    const hojaAct = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+
+    if (!hojaPart || !hojaAct) throw new Error('No se encontraron las hojas necesarias.');
+
+    // 1. Obtener sesiones oficiales de la actividad destino
+    const datosAct = hojaAct.getDataRange().getValues();
+    const mAct = mapaEncabezados_(datosAct[0]);
+    let sesionesDestino = 1;
+    let nombreDestino = idDestStr;
+    for (let a = 1; a < datosAct.length; a++) {
+      if (String(datosAct[a][mAct['ID ACTIVIDAD']] || '').trim() === idDestStr) {
+        sesionesDestino = Math.max(1, Number(datosAct[a][mAct['SESIONES TOTALES']] || 1));
+        nombreDestino = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idDestStr);
+        break;
+      }
+    }
+
+    // 2. Leer PARTICIPACIONES
+    const rangoPart = hojaPart.getDataRange();
+    const datosPart = rangoPart.getValues();
+    const encabezadosPart = datosPart[0];
+    const mPart = mapaEncabezados_(encabezadosPart);
+
+    // Identificar quiénes ya están en destino y calcular correlativo maxIdPart
+    const anioActual = new Date().getFullYear();
+    const prefijoPartAnio = 'PAR-' + anioActual + '-';
+    let maxIdPart = 0;
+    const personasEnDestino = new Set();
+
+    for (let pt = 1; pt < datosPart.length; pt++) {
+      const fila = datosPart[pt];
+      const idPt = String(fila[mPart['ID PARTICIPACION']] || '').trim();
+      if (idPt.indexOf(prefijoPartAnio) === 0) {
+        const num = Number(idPt.substring(prefijoPartAnio.length).replace(/\D/g, ''));
+        if (num > maxIdPart) maxIdPart = num;
+      }
+
+      const idA = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
+      const activo = mPart['REGISTRO ACTIVO'] === undefined ||
+        normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
+      if (idA === idDestStr && activo) {
+        const idP = String(fila[mPart['ID PERSONA']] || '').trim();
+        if (idP) personasEnDestino.add(idP);
+      }
+    }
+
+    // 3. Filtrar candidatos de origen que cumplan los estados y no estén ya en destino
+    const nuevasFilas = [];
+    const personasProcesadasOrigen = new Set();
+    let omitidosYaInscritos = 0;
+    const ahora = new Date();
+
+    for (let pt = 1; pt < datosPart.length; pt++) {
+      const fila = datosPart[pt];
+      const idA = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
+      const activo = mPart['REGISTRO ACTIVO'] === undefined ||
+        normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
+
+      if (idA === idOrigStr && activo) {
+        const idP = String(fila[mPart['ID PERSONA']] || '').trim();
+        if (!idP || personasProcesadasOrigen.has(idP)) continue;
+        personasProcesadasOrigen.add(idP);
+
+        const rawEstado = String(fila[mPart['ESTADO SELECCION']] || '').trim();
+        const normEstado = normalizarEncabezado_(rawEstado);
+
+        // Verificar si califica según los filtros seleccionados
+        let califica = false;
+        estadosPermitidos.forEach(function(estPermitido) {
+          if (normEstado === estPermitido) califica = true;
+          if (estPermitido === 'LISTA DE ESPERA' && (normEstado === 'ESPERA' || normEstado === 'LISTA ESPERA')) califica = true;
+          if (estPermitido === 'NO SELECCIONADO' && normEstado === 'NO SELECCIONADA') califica = true;
+          if (estPermitido === 'PENDIENTE' && normEstado === 'PENDIENTE') califica = true;
+        });
+
+        if (!califica) continue;
+
+        if (personasEnDestino.has(idP)) {
+          omitidosYaInscritos++;
+          continue;
+        }
+
+        // Crear nueva participación
+        personasEnDestino.add(idP);
+        maxIdPart++;
+        const nuevoIdPart = prefijoPartAnio + String(maxIdPart).padStart(6, '0');
+
+        const obsAnterior = String(fila[mPart['OBSERVACIONES']] || '').trim();
+        const obsFinal = 'Traspasado desde ' + idOrigStr + (obsAnterior ? ' | Obs anterior: ' + obsAnterior : '');
+        const cumpleAnt = String(fila[mPart['CUMPLE REQUISITOS']] || 'Pendiente').trim();
+
+        const nuevaFila = nuevaFilaSegunEncabezados_(encabezadosPart, {
+          'ID PARTICIPACION': nuevoIdPart,
+          'ID PERSONA': idP,
+          'ID ACTIVIDAD': idDestStr,
+          'FECHA INSCRIPCION': ahora,
+          'CANAL INSCRIPCION': canalRegistro,
+          'CUMPLE REQUISITOS': cumpleAnt,
+          'ESTADO SELECCION': estadoDestino,
+          'FECHA NOTIFICACION': '',
+          'MEDIO NOTIFICACION': 'No informado',
+          'CONFIRMA PARTICIPACION': 'No informado',
+          'SESIONES ASISTIDAS': 0,
+          'SESIONES TOTALES': sesionesDestino,
+          'PORCENTAJE ASISTENCIA': 0,
+          'RESULTADO ASISTENCIA': 'Pendiente',
+          'RESULTADO FINAL': 'Pendiente',
+          'CERTIFICADO': 'No informado',
+          'FECHA CERTIFICACION': '',
+          'OBSERVACIONES': obsFinal,
+          'ARCHIVO ORIGEN': 'Traspaso entre actividades',
+          'FILA ORIGEN': '',
+          'REGISTRO ACTIVO': 'Sí',
+          'ULTIMA ACTUALIZACION': ahora
+        });
+
+        nuevasFilas.push(nuevaFila);
+      }
+    }
+
+    if (nuevasFilas.length > 0) {
+      hojaPart.getRange(hojaPart.getLastRow() + 1, 1, nuevasFilas.length, encabezadosPart.length)
+        .setValues(nuevasFilas);
+      SpreadsheetApp.flush();
+    }
+
+    sigcRegistrarLog(
+      'CREAR',
+      'PARTICIPACION',
+      'TRASPASO_ACTIVIDAD',
+      idOrigStr + ' -> ' + idDestStr + ' (' + nuevasFilas.length + ' traspasados)'
+    );
+
+    sigcInvalidarCache_();
+    if (typeof sigcInvalidarCacheTabla_ === 'function') {
+      sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PARTICIPACIONES);
+    }
+
+    return {
+      ok: true,
+      traspasados: nuevasFilas.length,
+      omitidosYaInscritos: omitidosYaInscritos,
+      idDestino: idDestStr,
+      nombreDestino: nombreDestino,
+      mensaje: nuevasFilas.length > 0
+        ? '¡Éxito! Se traspasaron ' + nuevasFilas.length + ' postulante(s) a ' + idDestStr + (omitidosYaInscritos > 0 ? ' (' + omitidosYaInscritos + ' omitidos por ya estar inscritos).' : '.')
+        : 'No se encontraron postulantes nuevos para traspasar con los filtros seleccionados' + (omitidosYaInscritos > 0 ? ' (' + omitidosYaInscritos + ' ya se encontraban inscritos en esta actividad).' : '.')
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * Detecta y unifica personas duplicadas en toda la base de datos (hoja PERSONAS).
  * Reasigna todas las participaciones e intereses asociados al registro maestro
  * y elimina de forma segura las filas secundarias redundantes.
