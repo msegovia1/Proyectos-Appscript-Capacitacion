@@ -4,12 +4,12 @@
  * Soporta configuración dinámica mediante PropertiesService y respaldo estático.
  */
 const SIGC_CONFIG_DEFAULT = Object.freeze({
-  VERSION: '3.9.0',
+  VERSION: '3.10.16',
   SPREADSHEET_ID: '1gT0135EeC1MTzLSfcfJOHuJl5yODFyDtL7eXRfTRmuo',
   ZONA_HORARIA: 'America/Santiago',
   LIMITE_RECUPERACION_FORMULARIO: 100,
   CACHE_RESUMEN_SEGUNDOS: 21600,
-  CACHE_FORMULARIOS_SEGUNDOS: 300,
+  CACHE_FORMULARIOS_SEGUNDOS: 900,
   LIMITE_ACTIVADORES_PROYECTO: 20,
   MAX_FORMULARIOS_RECOMENDADO: 15,
   HOJAS: Object.freeze({
@@ -26,25 +26,31 @@ const SIGC_CONFIG_DEFAULT = Object.freeze({
     IMPORTAR: 'IMPORTAR_ASISTENTES',
     HISTORIAL_IMPORTACIONES: 'HISTORIAL_IMPORTACIONES',
     HISTORICO_ORIGINAL: 'HISTORICO_ORIGINAL',
+    EVALUACIONES: 'EVALUACIONES_SATISFACCION',
     LOG: 'LOG_CAMBIOS',
     AUDITORIA: 'AUDITORIA_MIGRACION'
   })
 });
 
+let _cachedSpreadsheetIdMemoria = null;
+
 /**
- * Obtiene el SPREADSHEET_ID activo, priorizando Script Properties sobre el valor por defecto.
+ * Obtiene el SPREADSHEET_ID activo, priorizando memoria de ejecución, luego Script Properties y respaldo estático.
  */
 function sigcObtenerSpreadsheetId() {
+  if (_cachedSpreadsheetIdMemoria) return _cachedSpreadsheetIdMemoria;
   try {
     const props = PropertiesService.getScriptProperties();
     const idProp = props.getProperty('SIGC_SPREADSHEET_ID');
     if (idProp && idProp.trim().length > 10) {
-      return idProp.trim();
+      _cachedSpreadsheetIdMemoria = idProp.trim();
+      return _cachedSpreadsheetIdMemoria;
     }
   } catch (e) {
     console.warn('No se pudo acceder a PropertiesService, usando valor por defecto: ' + e.message);
   }
-  return SIGC_CONFIG_DEFAULT.SPREADSHEET_ID;
+  _cachedSpreadsheetIdMemoria = SIGC_CONFIG_DEFAULT.SPREADSHEET_ID;
+  return _cachedSpreadsheetIdMemoria;
 }
 
 /**
@@ -59,6 +65,10 @@ function sigcGuardarSpreadsheetId(nuevoId) {
     // Probar conexión antes de guardar
     const ss = SpreadsheetApp.openById(idLimpio);
     PropertiesService.getScriptProperties().setProperty('SIGC_SPREADSHEET_ID', idLimpio);
+    _cachedSpreadsheetIdMemoria = idLimpio;
+    if (typeof _cachedSpreadsheetCentralInstancia !== 'undefined') {
+      _cachedSpreadsheetCentralInstancia = ss;
+    }
     return {
       ok: true,
       mensaje: 'Conexión exitosa a la planilla: ' + ss.getName(),

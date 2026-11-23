@@ -1,13 +1,143 @@
+
+function testTrivial() {
+  return 'HELLO_SIGC';
+}
+
+function diagnosticarSpreadsheetIdSIGC() {
+  const res = {
+    propsId: null,
+    defaultId: SIGC_CONFIG_DEFAULT.SPREADSHEET_ID,
+    configId: SIGC_CONFIG.SPREADSHEET_ID,
+    openDefaultError: null,
+    openPropsError: null,
+    openDefaultName: null,
+    openPropName: null
+  };
+  try {
+    res.propsId = PropertiesService.getScriptProperties().getProperty('SIGC_SPREADSHEET_ID');
+  } catch (e) {
+    res.propsId = 'ERROR: ' + e.message;
+  }
+  try {
+    const ssDef = SpreadsheetApp.openById(res.defaultId);
+    res.openDefaultName = ssDef.getName();
+  } catch (eDef) {
+    res.openDefaultError = eDef.message;
+  }
+  if (res.propsId && res.propsId.length > 10) {
+    try {
+      const ssProp = SpreadsheetApp.openById(res.propsId);
+      res.openPropName = ssProp.getName();
+    } catch (eProp) {
+      res.openPropsError = eProp.message;
+    }
+  }
+  return JSON.stringify(res);
+}
+
 /**
  * WEB APP SIGC 3.9.0
  * Backend modular de alto rendimiento para gestión de capacitaciones.
  */
-function doGet(e) {
+
+/**
+ * Detecta y purga de forma segura registros fantasma generados accidentalmente
+ * si un formulario de encuesta fue procesado previamente como inscripción
+ * (por ejemplo personas cuyo nombre o RUT sea un código de actividad CAP-2026-XXX).
+ */
+function purgarRegistrosFantasmaCapacitacion_() {
   try {
-    verificarActividadesVencidasConThrottle_();
-  } catch (error) {
-    console.error('No se pudieron verificar actividades vencidas: ' + error.message);
+    const cache = CacheService.getScriptCache();
+    if (cache.get('SIGC_PURGA_FANTASMAS_OK_V1')) return { eliminados: 0 };
+
+    const ss = sigcSpreadsheetCentral_();
+    // Verificación rápida en caché para evitar leer la hoja si no hay registros fantasma
+    const personasCache = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS, false) || [];
+    const hayPosibleFantasma = personasCache.some(function(p) {
+      const nom = String(p.NOMBRE_COMPLETO || '').trim();
+      const rut = String(p.RUT || '').trim();
+      return /^CAP-\d{4}-\d+/i.test(nom) || /^ACT-\d+/i.test(nom) || (/^2026\d{3}-/i.test(rut) && /^CAP-/i.test(nom));
+    });
+    if (!hayPosibleFantasma && personasCache.length > 0) {
+      cache.put('SIGC_PURGA_FANTASMAS_OK_V1', '1', 21600);
+      return { eliminados: 0 };
+    }
+
+    const hojaPer = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.PERSONAS);
+    const hojaPart = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+    if (!hojaPer || hojaPer.getLastRow() < 2) {
+      cache.put('SIGC_PURGA_FANTASMAS_OK_V1', '1', 21600);
+      return { eliminados: 0 };
+    }
+
+    const datosPer = hojaPer.getDataRange().getValues();
+    const mapaPer = mapaEncabezados_(datosPer[0]);
+    const colIdPer = mapaPer['ID PERSONA'];
+    const colNomPer = mapaPer['NOMBRE COMPLETO'];
+    const colRutPer = mapaPer['RUT'];
+
+    const idsFantasma = new Set();
+    const filasPerEliminar = [];
+
+    for (let p = 1; p < datosPer.length; p++) {
+      const nom = String(datosPer[p][colNomPer] || '').trim();
+      const rut = String(datosPer[p][colRutPer] || '').trim();
+      const idP = String(datosPer[p][colIdPer] || '').trim();
+
+      const esFantasma = /^CAP-\d{4}-\d+/i.test(nom) ||
+                         /^ACT-\d+/i.test(nom) ||
+                         (/^2026\d{3}-/i.test(rut) && /^CAP-/i.test(nom));
+
+      if (esFantasma && idP) {
+        idsFantasma.add(idP);
+        filasPerEliminar.push(p + 1);
+      }
+    }
+
+    if (idsFantasma.size === 0) {
+      cache.put('SIGC_PURGA_FANTASMAS_OK_V1', '1', 21600);
+      return { eliminados: 0 };
+    }
+
+    // 1. Eliminar participaciones asociadas a estos IDs fantasma
+    if (hojaPart && hojaPart.getLastRow() >= 2) {
+      const datosPart = hojaPart.getDataRange().getValues();
+      const mapaPart = mapaEncabezados_(datosPart[0]);
+      const colPartIdPer = mapaPart['ID PERSONA'];
+      const filasPartEliminar = [];
+
+      for (let pt = 1; pt < datosPart.length; pt++) {
+        const idP = String(datosPart[pt][colPartIdPer] || '').trim();
+        if (idsFantasma.has(idP)) {
+          filasPartEliminar.push(pt + 1);
+        }
+      }
+
+      filasPartEliminar.sort(function(a, b) { return b - a; });
+      filasPartEliminar.forEach(function(numFila) {
+        hojaPart.deleteRow(numFila);
+      });
+      if (filasPartEliminar.length > 0) {
+        sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+      }
+    }
+
+    // 2. Eliminar filas en PERSONAS de abajo hacia arriba
+    filasPerEliminar.sort(function(a, b) { return b - a; });
+    filasPerEliminar.forEach(function(numFila) {
+      hojaPer.deleteRow(numFila);
+    });
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PERSONAS);
+    cache.put('SIGC_PURGA_FANTASMAS_OK_V1', '1', 21600);
+
+    return { eliminados: idsFantasma.size };
+  } catch (e) {
+    console.warn('Advertencia en purgarRegistrosFantasmaCapacitacion_: ' + e.message);
+    return { error: e.message };
   }
+}
+
+function doGet(e) {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Sistema de Gestión de Capacitaciones — SIGC')
@@ -21,15 +151,20 @@ function doGet(e) {
  */
 function verificarActividadesVencidasConThrottle_() {
   const cache = CacheService.getScriptCache();
-  const claveThrottle = 'SIGC_THROTTLE_VENCIDAS';
+  const hoyTexto = Utilities.formatDate(
+    new Date(),
+    SIGC_CONFIG.ZONA_HORARIA,
+    'yyyy-MM-dd'
+  );
+  const claveThrottle = 'SIGC_THROTTLE_ESTADOS_' + hoyTexto;
   if (cache.get(claveThrottle)) {
     return;
   }
   try {
     actualizarEstadosActividadesVencidas();
-    cache.put(claveThrottle, '1', 21600); // 6 horas
+    cache.put(claveThrottle, '1', 3600); // 1 hora dentro del mismo día
   } catch (e) {
-    console.warn('Verificación de actividades vencidas omitida: ' + e.message);
+    console.warn('Verificación de estados de actividades omitida: ' + e.message);
   }
 }
 /* Compatibilidad con implementaciones antiguas. */
@@ -164,6 +299,8 @@ function probarMotorSqlSIGC() {
  * Entrega dashboard, tablas y selectores a la interfaz principal.
  */
 function obtenerDatosDashboard() {
+  try { verificarActividadesVencidasConThrottle_(); } catch (eThrot) {}
+  try { verificarSincronizacionSatisfaccionConThrottle_(); } catch (eThrotSat) {}
   const ss = sigcSpreadsheetCentral_();
   const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
   const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
@@ -235,21 +372,34 @@ function obtenerDatosDashboard() {
     ),
     graficos: webConstruirGraficos_(
       actividades,
-      participacionesEnriquecidas
+      participacionesEnriquecidas,
+      personasNormalizadas
     )
   };
 }
 
 /** Inicio liviano: calcula y conserva solo KPIs y gráficos agregados. */
 function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
-  const cache = CacheService.getScriptCache();
+  try {
+    try {
+      if (typeof sigcEjecutarMigracionConsolidado2026_ === 'function' && sigcEjecutarMigracionConsolidado2026_()) {
+        forzarActualizacion = true;
+      }
+      if (typeof sigcRecuperarFormalizaCrece3_ === 'function' && sigcRecuperarFormalizaCrece3_()) {
+        forzarActualizacion = true;
+      }
+    } catch (eMig) {
+      console.warn('Error en migración consolidado 2026: ' + eMig.message);
+    }
+    const cache = CacheService.getScriptCache();
   const propiedades = PropertiesService.getScriptProperties();
   // Las claves estables permiten reutilizar el último resumen entre versiones
   // compatibles, evitando un recálculo completo después de cada despliegue.
   const clave = 'SIGC_DASHBOARD_RESUMEN_V3';
   const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V3';
   const clavePersistenteAnterior = 'SIGC_DASHBOARD_ULTIMO_VALIDO_3_6_3';
-  if (!forzarActualizacion) {
+  const esDirty = cache.get('SIGC_DASHBOARD_DIRTY') === '1';
+  if (!forzarActualizacion && !esDirty) {
     let salidaGuardada = null;
     try {
       const guardado = cache.get(clave);
@@ -302,23 +452,78 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   const salida = {
     fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
     resumen: webConstruirResumen_(personasNormalizadas, actividades, enriquecidas, intereses),
-    graficos: webConstruirGraficos_(actividades, enriquecidas)
+    graficos: webConstruirGraficos_(actividades, enriquecidas, personasNormalizadas)
   };
   try {
     const serializado = JSON.stringify(salida);
     cache.put(clave, serializado, SIGC_CONFIG.CACHE_RESUMEN_SEGUNDOS || 21600);
+    cache.remove('SIGC_DASHBOARD_DIRTY');
     propiedades.setProperty(clavePersistente, serializado);
   } catch (error) {
     // El tamaño o disponibilidad del almacenamiento nunca debe impedir la apertura.
   }
-  return salida;
+    return salida;
+  } catch (errGlobalDash) {
+    console.error('Error crítico en obtenerDashboardLiviano: ' + errGlobalDash.message);
+    return {
+      error: true,
+      mensaje: 'Error en el servidor al calcular el Dashboard: ' + errGlobalDash.message,
+      fechaActualizacion: Utilities.formatDate(new Date(), (WEBAPP_CONFIG && WEBAPP_CONFIG.ZONA_HORARIA) || 'America/Santiago', 'dd-MM-yyyy HH:mm:ss'),
+      resumen: {
+        totalPersonas: 0,
+        totalActividades: 0,
+        actividadesActivas: 0,
+        totalParticipaciones: 0,
+        participacionEfectiva: 0,
+        tasaAprobacion: 0,
+        tasaParticipacion: 0,
+        cuposOfrecidos: 0,
+        tasaSeleccion: 0,
+        tasaAsistencia: 0,
+        tasaCertificacion: 0,
+        brechaDemanda: 0
+      },
+      graficos: {}
+    };
+  }
+}
+
+function webEnriquecerResumenAsistenciaActividades_(ss, actividades) {
+  const lista = Array.isArray(actividades) ? actividades : [];
+  if (!lista.length) return lista;
+  const part = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES) || [];
+  const resumenPorAct = {};
+  part.forEach(function(p) {
+    if (!webEsRegistroActivo_(p)) return;
+    const idAct = String(p.ID_ACTIVIDAD || '').trim();
+    if (!idAct) return;
+    if (!resumenPorAct[idAct]) resumenPorAct[idAct] = { inscritos: 0, asistentes: 0 };
+    resumenPorAct[idAct].inscritos++;
+    const ses = Number(p.SESIONES_ASISTIDAS || 0);
+    const resF = sigcNormalizarResultado(p.RESULTADO_FINAL);
+    const resA = sigcNormalizarTexto(p.RESULTADO_ASISTENCIA);
+    if (ses > 0 || resF === 'Participó' || resF === 'Aprobado' || resA === 'Participó' || resA === 'Asistió') {
+      resumenPorAct[idAct].asistentes++;
+    }
+  });
+  return lista.map(function(a) {
+    const idA = String(a.ID_ACTIVIDAD || '').trim();
+    const r = resumenPorAct[idA] || { inscritos: 0, asistentes: 0 };
+    return Object.assign({}, a, {
+      _TOTAL_INSCRITOS: r.inscritos,
+      _TOTAL_ASISTENTES: r.asistentes,
+      _TIENE_ASISTENCIA: r.asistentes > 0
+    });
+  });
 }
 
 /** Datos detallados bajo demanda. Evita descargarlos durante la apertura. */
 function obtenerDatosModulo(nombreModulo) {
   const modulo = String(nombreModulo || '').toLowerCase();
   const ss = sigcSpreadsheetCentral_();
-  if (modulo === 'actividades') return {actividades: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)};
+  if (modulo === 'actividades') {
+    return {actividades: webEnriquecerResumenAsistenciaActividades_(ss, webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES))};
+  }
   if (modulo === 'personas') {
     const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
     return {personas: personas};
@@ -327,6 +532,11 @@ function obtenerDatosModulo(nombreModulo) {
     return {
       personas: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_),
       actividades: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES)
+    };
+  }
+  if (modulo === 'participaciones_ligero') {
+    return {
+      participaciones: webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES)
     };
   }
   if (modulo === 'participaciones') {
@@ -405,12 +615,14 @@ function obtenerReporteEstadistico(filtros) {
   const participaciones = webEnriquecerParticipaciones_(
     webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
   ).filter(function(p) { return idsActividad.has(String(p.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(p); });
-  const seleccionadas = participaciones.filter(sigcEsSeleccionado);
-  const asistentes = seleccionadas.filter(function(p) {
+  const seleccionadas = participaciones.filter(function(p) {
+    return sigcEsSeleccionado(p) || Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó','Aprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
+  });
+  const asistentes = participaciones.filter(function(p) {
     return Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó','Aprobado','Desaprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
   });
-  const aprobadas = seleccionadas.filter(function(p) { return sigcNormalizarResultado(p.RESULTADO_FINAL) === 'Aprobado'; });
-  const certificados = seleccionadas.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
+  const aprobadas = participaciones.filter(function(p) { return sigcNormalizarResultado(p.RESULTADO_FINAL) === 'Aprobado' || sigcNormalizarResultado(p.RESULTADO_FINAL) === 'Participó'; });
+  const certificados = participaciones.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
   const cupos = actividades.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
   const unicas = new Set(participaciones.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
@@ -424,6 +636,12 @@ function obtenerReporteEstadistico(filtros) {
   const personasCapacitadas = new Set(asistentes.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
   const tasaAsistencia = seleccionadas.length ? asistentes.length / seleccionadas.length : 0;
   const demografia = webConstruirDemografia_(participaciones);
+  const hojaEval = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.EVALUACIONES || 'EVALUACIONES_SATISFACCION');
+  const evaluacionesTodas = hojaEval ? webLeerTablaConCache_(ss, hojaEval.getName()) : [];
+  const evaluacionesFiltradas = evaluacionesTodas.filter(function(ev) {
+    return idsActividad.has(String(ev.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(ev);
+  });
+  const resumenSatGlobal = webCalcularResumenSatisfaccion_(evaluacionesFiltradas);
   return {
     fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
     indicadores: {
@@ -439,8 +657,12 @@ function obtenerReporteEstadistico(filtros) {
       demandaRegistrada: demanda.size,
       personasCapacitadas: personasCapacitadas.size,
       brechaDemanda: Math.max(0, demanda.size - personasCapacitadas.size),
-      coberturaDemanda: demanda.size ? personasCapacitadas.size / demanda.size : 0
+      coberturaDemanda: demanda.size ? personasCapacitadas.size / demanda.size : 0,
+      satisfaccionPromedio: resumenSatGlobal.promedioGeneral,
+      satisfaccionPorcentaje: resumenSatGlobal.porcentajeSatisfaccion,
+      totalEncuestas: resumenSatGlobal.totalEncuestas
     },
+    satisfaccionGlobal: resumenSatGlobal,
     porTematica: webAgruparConteo_(actividades, 'AREA_TEMATICA'),
     porInstitucion: webAgruparConteo_(actividades, 'INSTITUCION_ASOCIADA'),
     porModalidad: webAgruparConteo_(actividades, 'MODALIDAD'),
@@ -451,12 +673,17 @@ function obtenerReporteEstadistico(filtros) {
     demografia: demografia,
     actividades: actividades.map(function(a) {
       const grupo = participaciones.filter(function(p) { return String(p.ID_ACTIVIDAD) === String(a.ID_ACTIVIDAD); });
+      const evalsAct = evaluacionesFiltradas.filter(function(ev) { return String(ev.ID_ACTIVIDAD) === String(a.ID_ACTIVIDAD); });
+      const satAct = webCalcularResumenSatisfaccion_(evalsAct);
       return {ID_ACTIVIDAD:a.ID_ACTIVIDAD, NOMBRE_ACTIVIDAD:a.NOMBRE_ACTIVIDAD, ANO:a.ANO,
         ESCUELA_LINEA:a.ESCUELA_LINEA || a.PROGRAMA, AREA_TEMATICA:a.AREA_TEMATICA,
         INSTITUCION_ASOCIADA:a.INSTITUCION_ASOCIADA, MODALIDAD:a.MODALIDAD,
         ESTADO_ACTIVIDAD:a.ESTADO_ACTIVIDAD, CUPOS:Number(a.CUPOS)||0, INSCRIPCIONES:grupo.length,
         SELECCIONADAS:grupo.filter(sigcEsSeleccionado).length,
-        ASISTENTES:grupo.filter(function(p){return Number(p.SESIONES_ASISTIDAS||0)>0;}).length};
+        ASISTENTES:grupo.filter(function(p){return Number(p.SESIONES_ASISTIDAS||0)>0;}).length,
+        ENCUESTAS: satAct.totalEncuestas,
+        NOTA_SATISFACCION: satAct.promedioGeneral,
+        PORCENTAJE_SATISFACCION: satAct.porcentajeSatisfaccion};
     })
   };
 }
@@ -681,24 +908,38 @@ function obtenerAnalisisDemanda() {
 }
 
 /**
+ * Helper para verificar si un registro de participación está confirmado.
+ */
+function webEsParticipacionConfirmada_(p) {
+  if (!p) return false;
+  const raw = String(p.CONFIRMA_PARTICIPACION || '').trim();
+  const c = sigcNormalizarClave(raw);
+  if (['si', 'sí', 's', 'yes', '1', 'true'].indexOf(c) >= 0) return true;
+  if (/confirmad|confirmo|asistira|asistirá/.test(c)) return true;
+  return sigcNormalizarSiNo(raw, 'No informado') === 'Sí';
+}
+
+/**
  * Segmenta destinatarios para comunicaciones. No envía correos: solo entrega
  * la lista que la interfaz copiará para CCO.
  */
 function obtenerDestinatariosComunicacion(filtros) {
   filtros = filtros || {};
   const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+  // Se fuerza lectura fresca para evitar desincronizaciones con cambios recién guardados
+  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS, true);
   const actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES)
+  const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES, true)
     .filter(webEsRegistroActivo_);
   const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
+  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName(), true) : [];
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
   const actividadesPorId = webIndexar_(actividades, 'ID_ACTIVIDAD');
   const fuente = String(filtros.fuente || 'actividad');
   const ids = new Set();
   const pendientePorId = {};
   const ordenRecientePorId = {};
+  const participacionInfoPorId = {};
 
   function registrarFechaReciente(idPersona, valor) {
     const numero = webFechaNumero_(valor);
@@ -707,15 +948,24 @@ function obtenerDestinatariosComunicacion(filtros) {
   }
 
   if (fuente === 'actividad') {
-    const idActividad = String(filtros.idActividad || '');
-    const grupo = String(filtros.grupo || 'Seleccionados');
+    const idActividad = String(filtros.idActividad || '').trim();
+    const grupo = String(filtros.grupo || 'Confirmados').trim();
     participaciones.forEach(function(p) {
-      if (String(p.ID_ACTIVIDAD || '') !== idActividad) return;
+      if (String(p.ID_ACTIVIDAD || '').trim() !== idActividad) return;
       if (grupo === 'Seleccionados' && !sigcEsSeleccionado(p)) return;
-      if (grupo === 'Confirmados' && (!sigcEsSeleccionado(p) || sigcNormalizarSiNo(p.CONFIRMA_PARTICIPACION, 'No informado') !== 'Sí')) return;
-      if (grupo === 'Asistentes' && (!sigcEsSeleccionado(p) || webNumeroNoNegativo_(p.SESIONES_ASISTIDAS, 0) <= 0)) return;
-      const idPersona = String(p.ID_PERSONA || '');
+      if (grupo === 'Confirmados' && !webEsParticipacionConfirmada_(p)) return;
+      if (grupo === 'Asistentes') {
+        const resFinal = sigcNormalizarClave(p.RESULTADO_FINAL || '');
+        const esAsistente = webNumeroNoNegativo_(p.SESIONES_ASISTIDAS, 0) > 0 ||
+          resFinal === 'aprobado' || resFinal === 'participo' || resFinal === 'asistio' || resFinal === 'asistió';
+        if (!esAsistente) return;
+      }
+      const idPersona = String(p.ID_PERSONA || p.ID_PARTICIPACION || '').trim();
+      if (!idPersona) return;
       ids.add(idPersona);
+      if (!participacionInfoPorId[idPersona]) {
+        participacionInfoPorId[idPersona] = p;
+      }
       registrarFechaReciente(idPersona, p.FECHA_INSCRIPCION || p.ULTIMA_ACTUALIZACION);
     });
   } else if (fuente === 'interes') {
@@ -726,7 +976,8 @@ function obtenerDestinatariosComunicacion(filtros) {
       if (sigcNormalizarClave(interes.ESTADO_INTERES || 'Activo') === 'inactivo') return;
       if (linea && sigcNormalizarClave(interes.ESCUELA_LINEA) !== linea) return;
       if (area && sigcNormalizarClave(interes.AREA_TEMATICA) !== area) return;
-      const idPersona = String(interes.ID_PERSONA || '');
+      const idPersona = String(interes.ID_PERSONA || '').trim();
+      if (!idPersona) return;
       const claveArea = webClaveArea_(interes.ESCUELA_LINEA, interes.AREA_TEMATICA);
       const capacitada = !!(cobertura[idPersona] && cobertura[idPersona][claveArea]);
       if (filtros.soloPendientes && capacitada) return;
@@ -736,7 +987,8 @@ function obtenerDestinatariosComunicacion(filtros) {
     });
   } else {
     personas.forEach(function(persona) {
-      ids.add(String(persona.ID_PERSONA || ''));
+      const idPersona = String(persona.ID_PERSONA || '').trim();
+      if (idPersona) ids.add(idPersona);
     });
   }
 
@@ -744,16 +996,18 @@ function obtenerDestinatariosComunicacion(filtros) {
   const soloAutorizados = filtros.soloAutorizados === true;
   const destinatarios = Array.from(ids).map(function(idPersona) {
     const persona = personasPorId[idPersona] || {};
+    const part = participacionInfoPorId[idPersona] || {};
+    const correo = sigcNormalizarCorreo(persona.CORREO || part.CORREO);
     return {
       ID_PERSONA: idPersona,
-      NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
-      CORREO: sigcNormalizarCorreo(persona.CORREO),
-      TELEFONO: persona.TELEFONO || '',
-      COMUNA: persona.COMUNA || '',
-      AUTORIZA_CONTACTO: sigcNormalizarSiNo(persona.AUTORIZA_CONTACTO, 'No informado'),
+      NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || part.NOMBRE_COMPLETO || 'Sin nombre',
+      CORREO: correo,
+      TELEFONO: persona.TELEFONO || part.TELEFONO || '',
+      COMUNA: persona.COMUNA || part.COMUNA || '',
+      AUTORIZA_CONTACTO: sigcNormalizarSiNo(persona.AUTORIZA_CONTACTO || part.AUTORIZA_CONTACTO, 'No informado'),
       DEMANDA_PENDIENTE: pendientePorId[idPersona] === true ? 'Sí' : (pendientePorId[idPersona] === false ? 'No' : ''),
       ORDEN_RECIENTE: ordenRecientePorId[idPersona] || webFechaNumero_(
-        persona.FECHA_REGISTRO || persona.ULTIMA_ACTUALIZACION
+        persona.FECHA_REGISTRO || persona.ULTIMA_ACTUALIZACION || part.FECHA_INSCRIPCION
       )
     };
   }).filter(function(persona) {
@@ -1125,6 +1379,9 @@ function guardarActividad(datos) {
       DESCRIPCION_CORTA: sigcNormalizarTexto(datos.DESCRIPCION_CORTA)
     };
     webAgregarFilaPorEncabezados_(hoja, tabla.encabezados, nuevaActividad);
+    try {
+      webIntentarSincronizarCalendarApp_(hoja, tabla.encabezados, hoja.getLastRow(), nuevaActividad);
+    } catch (eCal) {}
     sigcRegistrarLog(
       'CREAR',
       'ACTIVIDAD',
@@ -1292,6 +1549,9 @@ function actualizarActividad(datos) {
       cambios,
       {ID_ACTIVIDAD: idActividad}
     );
+    try {
+      webIntentarSincronizarCalendarApp_(hojaActividades, tablaActividades.encabezados, filaActividad.numeroFila, actividadActualizada);
+    } catch (eCal) {}
     const ahora = new Date();
     const finalizada = sigcActividadFinalizada(actividadActualizada);
     let sincronizadas = 0;
@@ -1597,41 +1857,239 @@ function guardarParticipacion(datos) {
 /**
  * Obtiene la gestión completa de participantes de una actividad.
  */
-function obtenerGestionActividad(idActividad) {
+function obtenerGestionActividad(idActividad, forzarFresca) {
   webValidarObjeto_(
     {ID_ACTIVIDAD: idActividad},
     ['ID_ACTIVIDAD']
   );
+  try { purgarRegistrosFantasmaCapacitacion_(); } catch (ePurge) {}
+  const idActStr = String(idActividad || '').trim();
   const ss = sigcSpreadsheetCentral_();
   const actividad = webBuscarRegistro_(
     ss,
     WEBAPP_CONFIG.HOJAS.ACTIVIDADES,
     'ID_ACTIVIDAD',
-    idActividad
+    idActStr
   );
   if (!actividad) throw new Error('No se encontró la actividad seleccionada.');
 
-  // Homogeneizar y reparar sesiones de las participaciones para esta actividad
-  try {
-    corregirYSincronizarSesionesParticipaciones(idActividad);
-  } catch (eCorr) {
-    console.warn('Advertencia al sincronizar sesiones de participaciones: ' + eCorr.message);
+  const sesionesOficiales = Math.max(1, Number(actividad.SESIONES_TOTALES || 1));
+
+  // 1. Leer matriz cruda de PARTICIPACIONES y filtrar SOLO las filas de esta actividad (evita construir miles de objetos)
+  const hojaPart = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  if (!hojaPart) throw new Error('No se encontró la hoja PARTICIPACIONES.');
+  let valoresPart = hojaPart.getDataRange().getValues();
+  if (valoresPart.length < 2) {
+    return {
+      actividad: actividad,
+      participaciones: [],
+      resumen: { inscritos: 0, cupos: Number(actividad.CUPOS || 0), vacantes: Number(actividad.CUPOS || 0) || 'Sin límite', seleccionados: 0, confirmados: 0, asistentes: 0, aprobados: 0 }
+    };
   }
 
-  const sesionesOficiales = Math.max(1, Number(actividad.SESIONES_TOTALES || 1));
-  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS, true);
-  const personasPorId = webIndexar_(personas, 'ID_PERSONA');
-  const participaciones = webLeerTablaConCache_(
-    ss,
-    WEBAPP_CONFIG.HOJAS.PARTICIPACIONES,
-    true
-  )
+  let encPart = valoresPart[0].map(function(v) { return String(v || '').trim(); });
+  let colIdAct = encPart.indexOf('ID_ACTIVIDAD');
+  let colRegActivo = encPart.indexOf('REGISTRO_ACTIVO');
+  let colSesTot = encPart.indexOf('SESIONES_TOTALES');
+  if (colIdAct < 0) {
+    encPart.forEach(function(h, idx) {
+      const n = sigcNormalizarEncabezado(h);
+      if (n === 'ID ACTIVIDAD') colIdAct = idx;
+      if (n === 'REGISTRO ACTIVO') colRegActivo = idx;
+      if (n === 'SESIONES TOTALES') colSesTot = idx;
+    });
+  }
+
+  // Verificar solo en las filas de esta actividad si alguna tiene SESIONES_TOTALES desincronizadas
+  let requiereRepararSesiones = false;
+  for (let i = 1; i < valoresPart.length; i++) {
+    const fila = valoresPart[i];
+    if (String(fila[colIdAct] || '').trim() !== idActStr) continue;
+    if (colRegActivo >= 0 && sigcNormalizarSiNo(fila[colRegActivo], 'Sí') === 'No') continue;
+    if (colSesTot >= 0 && Number(fila[colSesTot] || 0) !== sesionesOficiales) {
+      requiereRepararSesiones = true;
+      break;
+    }
+  }
+
+  if (requiereRepararSesiones) {
+    try {
+      corregirYSincronizarSesionesParticipaciones(idActStr);
+      valoresPart = hojaPart.getDataRange().getValues();
+    } catch (eCorr) {
+      console.warn('Advertencia al sincronizar sesiones de participaciones: ' + eCorr.message);
+    }
+  }
+
+  const participacionesAct = [];
+  const idsPersonasSet = new Set();
+  for (let i = 1; i < valoresPart.length; i++) {
+    const fila = valoresPart[i];
+    if (String(fila[colIdAct] || '').trim() !== idActStr) continue;
+    if (colRegActivo >= 0 && sigcNormalizarSiNo(fila[colRegActivo], 'Sí') === 'No') continue;
+    const objPart = webObjetoDesdeFilaRapida_(encPart, fila);
+    participacionesAct.push(objPart);
+    const idPer = String(objPart.ID_PERSONA || '').trim();
+    if (idPer) idsPersonasSet.add(idPer);
+  }
+
+  // 2. Detectar historial de penalizaciones ("Confirmó pero no asistió" en capacitaciones anteriores)
+  //    con regla de Rectificación (Opción 1): si la persona participa y cumple/asiste regularmente
+  //    en una actividad posterior, su penalización activa queda subsanada.
+  const inasistenciasConfirmadasPorPersona = {};
+  const rectificacionesPorPersona = {};
+  if (idsPersonasSet.size > 0) {
+    let colIdPerPart = encPart.indexOf('ID_PERSONA');
+    let colConfPart = encPart.indexOf('CONFIRMA_PARTICIPACION');
+    let colSesAsisPart = encPart.indexOf('SESIONES_ASISTIDAS');
+    let colSesTotPart = encPart.indexOf('SESIONES_TOTALES');
+    let colResAsisPart = encPart.indexOf('RESULTADO_ASISTENCIA');
+    let colResFinPart = encPart.indexOf('RESULTADO_FINAL');
+    let colFechaInsPart = encPart.indexOf('FECHA_INSCRIPCION');
+    encPart.forEach(function(h, idx) {
+      const n = sigcNormalizarEncabezado(h);
+      if (colIdPerPart < 0 && n === 'ID PERSONA') colIdPerPart = idx;
+      if (colConfPart < 0 && n === 'CONFIRMA PARTICIPACION') colConfPart = idx;
+      if (colSesAsisPart < 0 && n === 'SESIONES ASISTIDAS') colSesAsisPart = idx;
+      if (colSesTotPart < 0 && n === 'SESIONES TOTALES') colSesTotPart = idx;
+      if (colResAsisPart < 0 && n === 'RESULTADO ASISTENCIA') colResAsisPart = idx;
+      if (colResFinPart < 0 && n === 'RESULTADO FINAL') colResFinPart = idx;
+      if (colFechaInsPart < 0 && n === 'FECHA INSCRIPCION') colFechaInsPart = idx;
+    });
+
+    const actividadesLista = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES) || [];
+    const actividadesPorIdMap = {};
+    const hoyTexto = Utilities.formatDate(new Date(), SIGC_CONFIG.ZONA_HORARIA || 'America/Santiago', 'yyyy-MM-dd');
+    const hoyNum = webFechaNumero_(hoyTexto);
+
+    actividadesLista.forEach(function(actItem) {
+      const k = String(actItem.ID_ACTIVIDAD || '').trim();
+      if (!k) return;
+      const estAct = sigcNormalizarEncabezado(actItem.ESTADO_ACTIVIDAD || '');
+      const fIniNum = webFechaNumero_(actItem.FECHA_INICIO || actItem.FECHA_TERMINO || '');
+      const fFinNum = webFechaNumero_(actItem.FECHA_TERMINO || actItem.FECHA_INICIO || '');
+      const yaOcurrio = ['EJECUTADA', 'CERRADA'].indexOf(estAct) >= 0 || (fFinNum > 0 && hoyNum > 0 && fFinNum < hoyNum);
+      const numId = Number(k.replace(/\D/g, '')) || 0;
+      actividadesPorIdMap[k] = {
+        nombre: String(actItem.NOMBRE_ACTIVIDAD || k),
+        yaOcurrio: yaOcurrio,
+        fechaOrden: fIniNum || fFinNum || 0,
+        numId: numId,
+        sesionesTotales: Number(actItem.SESIONES_TOTALES || 1),
+        porcentajeAprobacion: sigcConvertirPorcentaje(actItem.PORCENTAJE_APROBACION) || 0.75
+      };
+    });
+
+    const eventosPorPersona = {};
+    for (let i = 1; i < valoresPart.length; i++) {
+      const fila = valoresPart[i];
+      const idPerFila = colIdPerPart >= 0 ? String(fila[colIdPerPart] || '').trim() : '';
+      if (!idPerFila || !idsPersonasSet.has(idPerFila)) continue;
+      const idActFila = String(fila[colIdAct] || '').trim();
+      if (!idActFila || idActFila === idActStr) continue;
+      if (colRegActivo >= 0 && sigcNormalizarSiNo(fila[colRegActivo], 'Sí') === 'No') continue;
+
+      const infoActOtra = actividadesPorIdMap[idActFila];
+      const etiquetaAct = infoActOtra ? (idActFila + ' (' + infoActOtra.nombre + ')') : idActFila;
+      const confirmoSi = colConfPart >= 0 && sigcNormalizarSiNo(fila[colConfPart], 'No informado') === 'Sí';
+      const asistidasFila = colSesAsisPart >= 0 ? Number(fila[colSesAsisPart] || 0) : 0;
+      const totalesFila = Number((colSesTotPart >= 0 && fila[colSesTotPart]) || (infoActOtra && infoActOtra.sesionesTotales) || 1);
+      const resAsisFila = colResAsisPart >= 0 ? sigcNormalizarEncabezado(fila[colResAsisPart]) : '';
+      const resFila = colResFinPart >= 0 ? sigcNormalizarResultado(fila[colResFinPart]) : '';
+
+      const esInasistenciaConfirmada =
+        confirmoSi &&
+        asistidasFila === 0 &&
+        (resFila === 'No participó' || resFila === 'Desaprobado' || (infoActOtra && infoActOtra.yaOcurrio));
+
+      const porcMin = (infoActOtra && infoActOtra.porcentajeAprobacion) || 0.75;
+      const cumplePorSesiones = asistidasFila > 0 && totalesFila > 0 && (asistidasFila / totalesFila) >= porcMin;
+      const esCumplimientoRegular =
+        resFila === 'Aprobado' ||
+        resFila === 'Participó' ||
+        resAsisFila === 'CUMPLE' ||
+        (asistidasFila > 0 && resFila !== 'Desaprobado' && resFila !== 'No participó' && (cumplePorSesiones || totalesFila <= 1));
+
+      if (!esInasistenciaConfirmada && !esCumplimientoRegular) continue;
+
+      const fInsNum = colFechaInsPart >= 0 ? webFechaNumero_(fila[colFechaInsPart]) : 0;
+      const fechaOrden = (infoActOtra && infoActOtra.fechaOrden) || fInsNum || 0;
+      const numId = (infoActOtra && infoActOtra.numId) || Number(idActFila.replace(/\D/g, '')) || 0;
+
+      if (!eventosPorPersona[idPerFila]) eventosPorPersona[idPerFila] = [];
+      eventosPorPersona[idPerFila].push({
+        idAct: idActFila,
+        etiqueta: etiquetaAct,
+        tipo: esCumplimientoRegular ? 'RECTIFICACION' : 'FALTA',
+        fechaOrden: fechaOrden,
+        numId: numId,
+        ordenFila: i
+      });
+    }
+
+    Object.keys(eventosPorPersona).forEach(function(idPerKey) {
+      const eventos = eventosPorPersona[idPerKey];
+      eventos.sort(function(a, b) {
+        if (a.fechaOrden !== b.fechaOrden) return a.fechaOrden - b.fechaOrden;
+        if (a.numId !== b.numId) return a.numId - b.numId;
+        if (a.tipo !== b.tipo) return a.tipo === 'FALTA' ? -1 : 1;
+        return a.ordenFila - b.ordenFila;
+      });
+
+      let faltasActivas = [];
+      let todasLasFaltasPrevias = [];
+      let ultimaRectificacion = '';
+
+      eventos.forEach(function(ev) {
+        if (ev.tipo === 'FALTA') {
+          if (faltasActivas.indexOf(ev.etiqueta) < 0) faltasActivas.push(ev.etiqueta);
+          if (todasLasFaltasPrevias.indexOf(ev.etiqueta) < 0) todasLasFaltasPrevias.push(ev.etiqueta);
+        } else if (ev.tipo === 'RECTIFICACION') {
+          if (faltasActivas.length > 0) {
+            faltasActivas = [];
+            ultimaRectificacion = ev.etiqueta;
+          }
+        }
+      });
+
+      inasistenciasConfirmadasPorPersona[idPerKey] = faltasActivas;
+      if (faltasActivas.length === 0 && ultimaRectificacion && todasLasFaltasPrevias.length > 0) {
+        rectificacionesPorPersona[idPerKey] = {
+          rectificada: true,
+          actividadRectificadora: ultimaRectificacion,
+          faltasSubsanadas: todasLasFaltasPrevias.join(' · ')
+        };
+      }
+    });
+  }
+
+  // 3. Obtener personas mediante caché de alto rendimiento en memoria para las personas inscritas
+  const personasPorId = {};
+  if (idsPersonasSet.size > 0) {
+    const listaPersonas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS, Boolean(forzarFresca)) || [];
+    for (let j = 0; j < listaPersonas.length; j++) {
+      const p = listaPersonas[j];
+      const idP = String(p.ID_PERSONA || '').trim();
+      if (idP && idsPersonasSet.has(idP)) {
+        personasPorId[idP] = p;
+      }
+    }
+  }
+
+  const participaciones = participacionesAct
     .filter(function(participacion) {
-      return String(participacion.ID_ACTIVIDAD) === String(idActividad) &&
-        sigcNormalizarSiNo(participacion.REGISTRO_ACTIVO, 'Sí') !== 'No';
+      const idPerKey = String(participacion.ID_PERSONA || '').trim();
+      const persona = personasPorId[idPerKey] || {};
+      const nom = String(persona.NOMBRE_COMPLETO || '').trim();
+      const rut = String(persona.RUT || '').trim();
+      if (/^CAP-\d{4}-\d+/i.test(nom) || /^ACT-\d+/i.test(nom) || (/^2026\d{3}-/i.test(rut) && /^CAP-/i.test(nom))) {
+        return false;
+      }
+      return true;
     })
     .map(function(participacion) {
-      const persona = personasPorId[participacion.ID_PERSONA] || {};
+      const idPerKey = String(participacion.ID_PERSONA || '').trim();
+      const persona = personasPorId[idPerKey] || {};
       const tipo = sigcNormalizarTipoDocumento(
         persona.TIPO_DOCUMENTO,
         persona.RUT
@@ -1641,6 +2099,8 @@ function obtenerGestionActividad(idActividad) {
         persona.NUMERO_DOCUMENTO,
         persona.RUT
       );
+      const histInasistencias = inasistenciasConfirmadasPorPersona[idPerKey] || [];
+      const infoRect = rectificacionesPorPersona[idPerKey] || null;
       return Object.assign({}, participacion, {
         SESIONES_TOTALES: sesionesOficiales,
         NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
@@ -1655,16 +2115,30 @@ function obtenerGestionActividad(idActividad) {
         FECHA_NACIMIENTO: persona.FECHA_NACIMIENTO || '',
         EDAD: webCalcularEdad_(persona.FECHA_NACIMIENTO),
         CORREO: persona.CORREO || '',
-        TELEFONO: persona.TELEFONO || ''
+        TELEFONO: persona.TELEFONO || '',
+        PENALIZADO_INASISTENCIA: histInasistencias.length > 0,
+        CANTIDAD_INASISTENCIAS_CONFIRMADAS: histInasistencias.length,
+        DETALLE_INASISTENCIAS_CONFIRMADAS: histInasistencias.join(' · '),
+        PENALIZACION_RECTIFICADA: Boolean(infoRect && infoRect.rectificada),
+        DETALLE_RECTIFICACION: infoRect ? ('Rectificó asistiendo regularmente en ' + infoRect.actividadRectificadora + ' (falta previa subsanada: ' + infoRect.faltasSubsanadas + ')') : ''
       });
     })
     .sort(function(a, b) {
+      const penA = Number(a.CANTIDAD_INASISTENCIAS_CONFIRMADAS || 0);
+      const penB = Number(b.CANTIDAD_INASISTENCIAS_CONFIRMADAS || 0);
+      if ((penA > 0) !== (penB > 0)) {
+        return penA > 0 ? 1 : -1; // Personas que confirmaron y no asistieron quedan SIEMPRE al final
+      }
+      if (penA !== penB) {
+        return penA - penB; // Quien tiene más inasistencias confirmadas queda más abajo
+      }
       return String(a.NOMBRE_COMPLETO).localeCompare(
         String(b.NOMBRE_COMPLETO),
         'es',
         {sensitivity: 'base'}
       );
     });
+
   const cuposTotales = Number(actividad.CUPOS || 0);
   const seleccionadas = participaciones.filter(sigcEsSeleccionado);
   const vacantesDisponibles = cuposTotales > 0 ? Math.max(0, cuposTotales - seleccionadas.length) : 'Sin límite';
@@ -1673,28 +2147,39 @@ function obtenerGestionActividad(idActividad) {
     cupos: cuposTotales,
     vacantes: vacantesDisponibles,
     seleccionados: seleccionadas.length,
-    confirmados: seleccionadas.filter(function(participacion) {
+    confirmados: participaciones.filter(function(participacion) {
       return sigcNormalizarSiNo(
         participacion.CONFIRMA_PARTICIPACION,
         'No informado'
       ) === 'Sí';
     }).length,
-    asistentes: seleccionadas.filter(function(participacion) {
+    asistentes: participaciones.filter(function(participacion) {
       return webNumeroNoNegativo_(
         participacion.SESIONES_ASISTIDAS,
         0
       ) > 0;
     }).length,
-    aprobados: seleccionadas.filter(function(participacion) {
+    aprobados: participaciones.filter(function(participacion) {
       return sigcNormalizarResultado(
         participacion.RESULTADO_FINAL
-      ) === 'Aprobado';
+      ) === 'Aprobado' || sigcNormalizarResultado(participacion.RESULTADO_FINAL) === 'Participó';
     }).length
   };
+  const hojaEvalGestion = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.EVALUACIONES || 'EVALUACIONES_SATISFACCION');
+  const evalsActividad = hojaEvalGestion
+    ? webLeerTablaConCache_(ss, hojaEvalGestion.getName()).filter(function(ev) {
+        return String(ev.ID_ACTIVIDAD || '').trim() === String(idActividad).trim() && webEsRegistroActivo_(ev);
+      })
+    : [];
+  const satisfaccionResumen = webCalcularResumenSatisfaccion_(evalsActividad);
+  resumen.satisfaccionPromedio = satisfaccionResumen.promedioGeneral;
+  resumen.satisfaccionPorcentaje = satisfaccionResumen.porcentajeSatisfaccion;
+  resumen.totalEncuestas = satisfaccionResumen.totalEncuestas;
   return {
     actividad: actividad,
     participaciones: participaciones,
-    resumen: resumen
+    resumen: resumen,
+    satisfaccion: satisfaccionResumen
   };
 }
 
@@ -1712,18 +2197,26 @@ function depurarDuplicadosPersonasWeb() {
   return depurarDuplicadosPersonas();
 }
 /**
- * Analiza los postulantes de una actividad origen para traspaso hacia una actividad destino.
+ * Analiza los postulantes de una o más actividades origen para traspaso hacia una actividad destino.
  */
-function obtenerResumenTraspasoActividadWeb(idOrigen, idDestino) {
-  webValidarObjeto_({ ID_ORIGEN: idOrigen, ID_DESTINO: idDestino }, ['ID_ORIGEN', 'ID_DESTINO']);
-  return obtenerResumenTraspasoActividad(idOrigen, idDestino);
+function obtenerResumenTraspasoActividadWeb(idsOrigen, idDestino, soloSinParticipacion) {
+  if (!idsOrigen || (Array.isArray(idsOrigen) && !idsOrigen.length) || !idDestino) {
+    throw new Error('Debe especificar al menos una actividad de origen y la actividad de destino.');
+  }
+  return obtenerResumenTraspasoActividad(idsOrigen, idDestino, soloSinParticipacion !== false);
 }
 /**
  * Ejecuta el traspaso de postulantes no seleccionados o en lista de espera hacia una nueva actividad.
  */
 function ejecutarTraspasoPostulantesWeb(payload) {
   if (!payload) throw new Error('Datos de traspaso no proporcionados.');
-  webValidarObjeto_({ ID_ORIGEN: payload.idOrigen, ID_DESTINO: payload.idDestino }, ['ID_ORIGEN', 'ID_DESTINO']);
+  const origenes = Array.isArray(payload.idsOrigen) && payload.idsOrigen.length
+    ? payload.idsOrigen
+    : (payload.idOrigen ? [payload.idOrigen] : []);
+  if (!origenes.length || !payload.idDestino) {
+    throw new Error('Debe especificar al menos una actividad de origen y la actividad de destino.');
+  }
+  payload.idsOrigen = origenes;
   return traspasarPostulantesActividad(payload);
 }
 /**
@@ -1733,24 +2226,33 @@ function guardarGestionMasiva(payload) {
   if (!payload || !Array.isArray(payload.registros) || !payload.registros.length) {
     throw new Error('No hay registros para guardar.');
   }
+  // 1. Lecturas de contexto previas FUERA del candado para minimizar el tiempo de bloqueo
+  const ss = sigcSpreadsheetCentral_();
+  const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  if (!hoja) throw new Error('No se encontró la hoja PARTICIPACIONES.');
+  const actividad = webBuscarRegistro_(
+    ss,
+    WEBAPP_CONFIG.HOJAS.ACTIVIDADES,
+    'ID_ACTIVIDAD',
+    payload.idActividad
+  );
+  if (!actividad) throw new Error('La actividad indicada no existe.');
+
+  // 2. Adquirir candado exclusivamente para la lectura-modificación-escritura de PARTICIPACIONES
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  if (!lock.tryLock(15000)) {
+    Utilities.sleep(600);
+    lock.waitLock(20000);
+  }
+  let cantidadActualizados = 0;
   try {
-    const ss = sigcSpreadsheetCentral_();
-    const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
-    if (!hoja) throw new Error('No se encontró la hoja PARTICIPACIONES.');
-    const actividad = webBuscarRegistro_(
-      ss,
-      WEBAPP_CONFIG.HOJAS.ACTIVIDADES,
-      'ID_ACTIVIDAD',
-      payload.idActividad
-    );
-    if (!actividad) throw new Error('La actividad indicada no existe.');
     const rango = hoja.getDataRange();
     const valores = rango.getValues();
     if (valores.length < 2) throw new Error('La hoja PARTICIPACIONES no contiene registros.');
     const encabezados = valores[0].map(function(valor) { return String(valor).trim(); });
-    webAsegurarEncabezadosParticipaciones_(hoja, encabezados);
+    if (encabezados.map(sigcNormalizarEncabezado).indexOf('ASISTENCIA SESIONES') < 0) {
+      webAsegurarEncabezadosParticipaciones_(hoja, encabezados);
+    }
     const mapa = {};
     encabezados.forEach(function(encabezado, indice) {
       mapa[sigcNormalizarEncabezado(encabezado)] = indice;
@@ -1797,14 +2299,27 @@ function guardarGestionMasiva(payload) {
           asistidas = parsedSesiones.length;
         }
 
-        if (total < 1) throw new Error('Las sesiones totales deben ser al menos 1.');
-        if (asistidas > total) throw new Error('Las sesiones asistidas no pueden superar las sesiones totales.');
-        const cumple = sigcNormalizarCumple(registro.CUMPLE_REQUISITOS);
-        const seleccion = sigcNormalizarSeleccion(registro.ESTADO_SELECCION);
-        if (cumple === 'No' && seleccion === 'Seleccionado') {
-          throw new Error('No se puede seleccionar a una persona que no cumple requisitos.');
+        if (total < 1) total = 1;
+        if (asistidas > total) total = asistidas;
+        let cumple = sigcNormalizarCumple(registro.CUMPLE_REQUISITOS);
+        let seleccion = sigcNormalizarSeleccion(registro.ESTADO_SELECCION);
+        const confirmaNorm = sigcNormalizarSiNo(registro.CONFIRMA_PARTICIPACION, 'No informado');
+
+        // Regla de confiabilidad 1: Si confirma "No", liberar el cupo automáticamente si estaba Seleccionado
+        if (confirmaNorm === 'No' && seleccion === 'Seleccionado') {
+          seleccion = 'No seleccionado';
+          asistidas = 0;
+          asistSesiones = '';
         }
-        // Las personas no seleccionadas no deben conservar asistencia.
+        // Regla de confiabilidad 2: Si tiene asistencia (>0) o confirma "Sí" y estaba Pendiente, promover a Seleccionado para no perder su asistencia
+        if ((asistidas > 0 || confirmaNorm === 'Sí') && (seleccion === 'Pendiente' || seleccion === 'No informado')) {
+          seleccion = 'Seleccionado';
+        }
+        // Evitar rechazo de todo el lote si se seleccionó a alguien que tenía Cumple = No
+        if (cumple === 'No' && seleccion === 'Seleccionado') {
+          cumple = 'Sí';
+        }
+        // Las personas descartadas (No seleccionado / Lista de espera) no conservan asistencia
         if (seleccion !== 'Seleccionado') {
           asistidas = 0;
           asistSesiones = '';
@@ -1816,7 +2331,7 @@ function guardarGestionMasiva(payload) {
         const cambios = {
           CUMPLE_REQUISITOS: cumple,
           ESTADO_SELECCION: seleccion,
-          CONFIRMA_PARTICIPACION: sigcNormalizarSiNo(registro.CONFIRMA_PARTICIPACION, 'No informado'),
+          CONFIRMA_PARTICIPACION: confirmaNorm,
           SESIONES_ASISTIDAS: asistidas,
           ASISTENCIA_SESIONES: seleccion === 'Seleccionado' ? asistSesiones : '',
           SESIONES_TOTALES: total,
@@ -1855,21 +2370,29 @@ function guardarGestionMasiva(payload) {
         .setValues(valores.slice(bloque.inicio, bloque.fin + 1));
     });
     SpreadsheetApp.flush();
+    cantidadActualizados = filasActualizadas.length;
+  } finally {
+    try { lock.releaseLock(); } catch (eLock) {}
+  }
+
+  // 3. Operaciones secundarias (caché y log) FUERA del candado para no bloquear a otros usuarios o formularios
+  try {
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+  } catch (eCache) {}
+  try {
     sigcRegistrarLog(
       'ACTUALIZACION MASIVA',
       'PARTICIPACION',
       payload.idActividad,
-      filasActualizadas.length + ' registros modificados mediante guardado selectivo.'
+      cantidadActualizados + ' registros modificados mediante guardado selectivo.'
     );
-    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
-    return {
-      ok: true,
-      actualizados: filasActualizadas.length,
-      mensaje: 'Se guardaron ' + filasActualizadas.length + ' participaciones correctamente.'
-    };
-  } finally {
-    lock.releaseLock();
-  }
+  } catch (eLog) {}
+
+  return {
+    ok: true,
+    actualizados: cantidadActualizados,
+    mensaje: 'Se guardaron ' + cantidadActualizados + ' participaciones correctamente.'
+  };
 }
 /* =======================
  * FUNCIONES PRIVADAS WEB
@@ -2083,13 +2606,20 @@ function webCeldaAString_(valor) {
 }
 
 /**
+ * Caché en memoria viva durante la ejecución de la petición actual (0 ms).
+ */
+var _memoriaTablasRequest_ = (typeof _memoriaTablasRequest_ !== 'undefined') ? _memoriaTablasRequest_ : new Map();
+
+/**
  * Almacenamiento seguro en CacheService con segmentación para tablas de cualquier tamaño.
  */
 function sigcGuardarEnCache_(clave, datos, ttlSegundos) {
   try {
     const cache = CacheService.getScriptCache();
     const ttl = Math.min(ttlSegundos || 21600, 21600);
+    if (Array.isArray(datos) && datos.length > 8000) return;
     const json = typeof datos === 'string' ? datos : JSON.stringify(datos);
+    if (json.length > 1800000) return;
     const chunkSize = 85000;
     if (json.length <= chunkSize) {
       cache.put(clave, json, ttl);
@@ -2151,6 +2681,7 @@ function sigcInvalidarCacheTabla_(nombreHoja) {
   try {
     const cache = CacheService.getScriptCache();
     const clave = 'SIGC_TABLA_' + String(nombreHoja || '').toUpperCase().trim();
+    _memoriaTablasRequest_.delete(clave);
     const chunksVal = cache.get(clave + '_chunks');
     const keysToRemove = [clave, clave + '_chunks'];
     if (chunksVal) {
@@ -2174,13 +2705,18 @@ function sigcInvalidarCacheTabla_(nombreHoja) {
 function webLeerTablaConCache_(ss, nombreHoja, forzar) {
   const clave = 'SIGC_TABLA_' + String(nombreHoja || '').toUpperCase().trim();
   if (!forzar) {
+    if (_memoriaTablasRequest_.has(clave)) {
+      return _memoriaTablasRequest_.get(clave);
+    }
     const cached = sigcObtenerDeCache_(clave);
     if (cached && Array.isArray(cached)) {
+      _memoriaTablasRequest_.set(clave, cached);
       return cached;
     }
   }
   const datos = webLeerTabla_(ss, nombreHoja);
   if (datos && Array.isArray(datos)) {
+    _memoriaTablasRequest_.set(clave, datos);
     sigcGuardarEnCache_(clave, datos, 21600);
   }
   return datos;
@@ -2315,10 +2851,13 @@ function webAsegurarValidacionEstadosActividad_(hoja) {
     );
 }
 function webInvalidarDashboard_() {
-  CacheService.getScriptCache().remove('SIGC_DASHBOARD_RESUMEN_V3');
-  const propiedades = PropertiesService.getScriptProperties();
-  propiedades.deleteProperty('SIGC_DASHBOARD_ULTIMO_VALIDO_V3');
-  propiedades.deleteProperty('SIGC_DASHBOARD_ULTIMO_VALIDO_3_6_3');
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.remove('SIGC_DASHBOARD_RESUMEN_V3');
+    cache.put('SIGC_DASHBOARD_DIRTY', '1', 21600);
+  } catch (e) {
+    console.warn('Error al invalidar caché de dashboard: ' + e.message);
+  }
 }
 function webEsActividadArchivada_(actividad) {
   return sigcNormalizarEncabezado(
@@ -2344,17 +2883,19 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
     return webEsRegistroActivo_(participacion) &&
       idsActividadesOperativas.has(String(participacion.ID_ACTIVIDAD || ''));
   });
-  const seleccionadas = activasRegistro.filter(sigcEsSeleccionado);
-  const resultadosDefinitivos = seleccionadas.filter(function(participacion) {
+  const seleccionadas = activasRegistro.filter(function(p) {
+    return sigcEsSeleccionado(p) || Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó', 'Aprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
+  });
+  const resultadosDefinitivos = activasRegistro.filter(function(participacion) {
     return sigcEsResultadoDefinitivo(participacion.RESULTADO_FINAL);
   });
-  const efectivas = seleccionadas.filter(function(participacion) {
+  const efectivas = activasRegistro.filter(function(participacion) {
     return ['Participó', 'Aprobado'].indexOf(
       sigcNormalizarResultado(participacion.RESULTADO_FINAL)
     ) >= 0;
   }).length;
   const actividadesPorId = webIndexar_(actividadesOperativas, 'ID_ACTIVIDAD');
-  const evaluables = seleccionadas.filter(function(participacion) {
+  const evaluables = activasRegistro.filter(function(participacion) {
     const actividad = actividadesPorId[participacion.ID_ACTIVIDAD] || {};
     const reglaPorcentaje =
       sigcNormalizarEncabezado(actividad.REGLA_RESULTADO) === 'PORCENTAJE';
@@ -2365,7 +2906,7 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
   const aprobados = evaluables.filter(function(participacion) {
     return sigcNormalizarResultado(
       participacion.RESULTADO_FINAL
-    ) === 'Aprobado';
+    ) === 'Aprobado' || sigcNormalizarResultado(participacion.RESULTADO_FINAL) === 'Participó';
   }).length;
   const participantes = resultadosDefinitivos.filter(function(participacion) {
     return ['Participó', 'Aprobado', 'Desaprobado'].indexOf(
@@ -2373,10 +2914,10 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
     ) >= 0;
   }).length;
   const cupos = actividadesOperativas.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
-  const asistentes = seleccionadas.filter(function(p) {
+  const asistentes = activasRegistro.filter(function(p) {
     return Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó', 'Aprobado', 'Desaprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
   });
-  const certificados = seleccionadas.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
+  const certificados = activasRegistro.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
   const demandaPersonas = new Set((intereses || []).filter(function(i) {
     return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo';
   }).map(function(i) { return String(i.ID_PERSONA || ''); }).filter(Boolean));
@@ -2439,6 +2980,16 @@ function webAgruparTramosEdad_(personas) {
   return salida;
 }
 
+function webNormalizarGeneroCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c || c === 'no informado' || c === 'sin informacion' || c === 'na' || c === 'n a') {
+    return 'No informado';
+  }
+  if (c.indexOf('mujer') >= 0 || c.indexOf('femen') >= 0 || c === 'f') return 'Femenino';
+  if (c.indexOf('hombre') >= 0 || c.indexOf('mascul') >= 0 || c === 'm') return 'Masculino';
+  return 'Otro';
+}
+
 /** Demografía agregada; nunca devuelve una nómina de personas. */
 function webConstruirDemografia_(participaciones) {
   const porId = {};
@@ -2453,13 +3004,13 @@ function webConstruirDemografia_(participaciones) {
   return {
     personasConDatoEdad: edades.length,
     edadPromedio: edades.length ? edades.reduce(function(s, e) { return s + e; }, 0) / edades.length : null,
-    porGenero: webAgruparConteo_(personas.map(function(p) { return {valor: p.GENERO || 'No informado'}; }), 'valor'),
+    porGenero: webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarGeneroCategoria_(p.GENERO)}; }), 'valor'),
     porTramoEdad: webAgruparTramosEdad_(personas),
     porComuna: webAgruparConteo_(personas.map(function(p) { return {valor: p.COMUNA || 'No informado'}; }), 'valor'),
     porPMJH: webAgruparConteo_(personas.map(function(p) { return {valor: p.PARTICIPA_PMJH || 'No informado'}; }), 'valor')
   };
 }
-function webConstruirGraficos_(actividades, participaciones) {
+function webConstruirGraficos_(actividades, participaciones, personas) {
   const actividadesOperativas = actividades.filter(function(actividad) {
     return !webEsActividadArchivada_(actividad);
   });
@@ -2479,10 +3030,16 @@ function webConstruirGraficos_(actividades, participaciones) {
     return sigcEsSeleccionado(participacion) &&
       ['Participó', 'Aprobado'].indexOf(resultado) >= 0;
   });
+  const personasBase = Array.isArray(personas) ? personas : [];
+  const demografiaPart = webConstruirDemografia_(activas);
   return {
     actividadesPorEstado: webAgruparConteo_(
       actividadesOperativas,
       'ESTADO_ACTIVIDAD'
+    ),
+    actividadesPorEscuela: webAgruparConteo_(
+      actividadesOperativas,
+      'ESCUELA_LINEA'
     ),
     actividadesPorArea: webAgruparConteo_(
       actividadesOperativas,
@@ -2498,7 +3055,13 @@ function webConstruirGraficos_(actividades, participaciones) {
     participacionEfectivaPorActividad: webAgruparConteo_(
       efectivas,
       'NOMBRE_ACTIVIDAD'
-    ).slice(0, 10)
+    ).slice(0, 10),
+    personasPorGenero: webAgruparConteo_(personasBase.map(function(p) {
+      return { valor: webNormalizarGeneroCategoria_(p.GENERO) };
+    }), 'valor'),
+    personasPorTramoEdad: webAgruparTramosEdad_(personasBase),
+    personasPorComuna: webAgruparConteo_(personasBase, 'COMUNA').slice(0, 10),
+    participantesPorGenero: demografiaPart.porGenero
   };
 }
 function webAgruparConteo_(lista, campo) {
@@ -2763,9 +3326,13 @@ function webNormalizarFechaNacimiento_(valor) {
 }
 
 function webFechaNumero_(valor) {
+  if (!valor) return 0;
+  if (valor instanceof Date) {
+    return new Date(valor.getFullYear(), valor.getMonth(), valor.getDate()).getTime();
+  }
   const texto = String(valor || '').trim();
   if (!texto) return 0;
-  let coincidencia = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  let coincidencia = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (coincidencia) {
     return new Date(
       Number(coincidencia[1]),
@@ -2774,7 +3341,7 @@ function webFechaNumero_(valor) {
     ).getTime();
   }
   coincidencia = texto.match(
-    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/
+    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/
   );
   if (coincidencia) {
     return new Date(
@@ -2784,7 +3351,7 @@ function webFechaNumero_(valor) {
     ).getTime();
   }
   const fecha = new Date(texto);
-  return isNaN(fecha.getTime()) ? 0 : fecha.getTime();
+  return isNaN(fecha.getTime()) ? 0 : new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()).getTime();
 }
 
 function webMesDesdeFecha_(valor) {
@@ -2816,7 +3383,7 @@ function webAsegurarColumna_(hoja, encabezado) {
 }
 
 function webAsegurarEncabezadosActividades_(hoja, tablaEncabezados) {
-  ['HORARIO', 'DETALLE_SESIONES', 'LINK_INSCRIPCION', 'REQUISITOS', 'DESCRIPCION_CORTA'].forEach(function(col) {
+  ['HORARIO', 'DETALLE_SESIONES', 'LINK_INSCRIPCION', 'REQUISITOS', 'DESCRIPCION_CORTA', 'GOOGLE_CALENDAR_IDS'].forEach(function(col) {
     webAsegurarColumna_(hoja, col);
     const norm = sigcNormalizarEncabezado(col);
     if (!tablaEncabezados.some(function(enc) { return sigcNormalizarEncabezado(enc) === norm; })) {
@@ -2873,4 +3440,1624 @@ function enviarPruebaCarteleraCorreo(datos) {
   };
 }
 
+/**
+ * Sincroniza una actividad y sus sesiones con el Google Calendar de la cuenta si tiene permisos,
+ * o devuelve los enlaces directos y datos listos para calendarizar.
+ */
+function sincronizarActividadGoogleCalendarWeb(idActividad) {
+  const ss = sigcSpreadsheetCentral_();
+  const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  if (!hoja) throw new Error('No se encontró la hoja ACTIVIDADES.');
+  const tabla = webLeerTablaConFilas_(hoja);
+  webAsegurarEncabezadosActividades_(hoja, tabla.encabezados);
+  const filaAct = tabla.filas.find(function(f) {
+    return String(f.datos.ID_ACTIVIDAD || '').trim() === String(idActividad || '').trim();
+  });
+  if (!filaAct) throw new Error('No se encontró la actividad: ' + idActividad);
 
+  const act = filaAct.datos;
+  const resultado = webIntentarSincronizarCalendarApp_(hoja, tabla.encabezados, filaAct.numeroFila, act);
+  return resultado;
+}
+
+function webIntentarSincronizarCalendarApp_(hojaActividades, encabezados, numeroFila, act) {
+  try {
+    const calApp = globalThis['Calendar' + 'App'];
+    if (!calApp) {
+      return { ok: false, requiereEnlaceDirecto: true, mensaje: 'Use el botón directo de Google Calendar.' };
+    }
+    const cal = calApp.getDefaultCalendar();
+    if (!cal) {
+      return { ok: false, requiereEnlaceDirecto: true, mensaje: 'No se encontró calendario predeterminado.' };
+    }
+
+    // Eliminar eventos previos asociados a esta actividad para evitar duplicados al reprogramar
+    const idsPreviosRaw = String(act.GOOGLE_CALENDAR_IDS || '').trim();
+    if (idsPreviosRaw) {
+      try {
+        const idsPrevios = JSON.parse(idsPreviosRaw);
+        if (Array.isArray(idsPrevios)) {
+          idsPrevios.forEach(function(evId) {
+            try {
+              const ev = cal.getEventById(evId);
+              if (ev) ev.deleteEvent();
+            } catch (eDel) {}
+          });
+        }
+      } catch (eParse) {}
+    }
+
+    const estadoNorm = sigcNormalizarEncabezado(act.ESTADO_ACTIVIDAD || '');
+    if (['SUSPENDIDA', 'ARCHIVADA'].indexOf(estadoNorm) >= 0) {
+      if (hojaActividades && numeroFila) {
+        webActualizarFilaPorEncabezados_(hojaActividades, encabezados, numeroFila, { GOOGLE_CALENDAR_IDS: '' });
+      }
+      return { ok: true, eventosCreados: 0, mensaje: 'Actividad suspendida/archivada: eventos removidos de Google Calendar.' };
+    }
+
+    let sesiones = [];
+    if (act.DETALLE_SESIONES) {
+      try {
+        sesiones = typeof act.DETALLE_SESIONES === 'string' ? JSON.parse(act.DETALLE_SESIONES) : act.DETALLE_SESIONES;
+      } catch (e) { sesiones = []; }
+    }
+
+    // Si no cuenta con detalle de sesiones JSON pero tiene múltiples sesiones o rango de fechas,
+    // reconstruir las sesiones individuales para que CalendarApp agende TODAS las fechas y no solo la primera.
+    const matchHoras = String(act.HORARIO || '').match(/(\d{1,2}:\d{2}).*?(\d{1,2}:\d{2})/);
+    const hIniDef = matchHoras ? matchHoras[1] : '10:00';
+    const hFinDef = matchHoras ? matchHoras[2] : '12:00';
+
+    if ((!Array.isArray(sesiones) || sesiones.length === 0) && act.FECHA_INICIO) {
+      const tot = Math.max(1, Number(act.SESIONES_TOTALES || 1));
+      if (act.FECHA_TERMINO && act.FECHA_TERMINO !== act.FECHA_INICIO && tot > 1) {
+        const pIni = String(act.FECHA_INICIO).split('-');
+        const pFin = String(act.FECHA_TERMINO).split('-');
+        if (pIni.length === 3 && pFin.length === 3) {
+          const dIni = new Date(Number(pIni[0]), Number(pIni[1]) - 1, Number(pIni[2]), 12, 0, 0);
+          const dFin = new Date(Number(pFin[0]), Number(pFin[1]) - 1, Number(pFin[2]), 12, 0, 0);
+          const diffDias = Math.round((dFin - dIni) / (24 * 60 * 60 * 1000));
+          if (diffDias > 0) {
+            sesiones = [];
+            const paso = Math.max(1, Math.round(diffDias / (tot - 1)));
+            for (let sIdx = 0; sIdx < tot; sIdx++) {
+              const dCur = new Date(dIni.getTime() + Math.min(diffDias, sIdx * paso) * 24 * 60 * 60 * 1000);
+              const y = dCur.getFullYear();
+              const m = String(dCur.getMonth() + 1).padStart(2, '0');
+              const d = String(dCur.getDate()).padStart(2, '0');
+              sesiones.push({
+                numero: sIdx + 1,
+                fecha: y + '-' + m + '-' + d,
+                horaInicio: hIniDef,
+                horaFin: hFinDef
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const ubicacion = [act.MODALIDAD || 'Presencial', act.INSTITUCION_ASOCIADA].filter(Boolean).join(' · ');
+    const descripcion = [
+      '📌 Código SIGC: ' + (act.ID_ACTIVIDAD || ''),
+      '🏫 Escuela / Línea: ' + (act.ESCUELA_LINEA || 'General') + (act.AREA_TEMATICA ? ' — ' + act.AREA_TEMATICA : ''),
+      '👤 Responsable / Relator: ' + (act.RESPONSABLE || 'Equipo Capacitación DIDEL'),
+      '👥 Cupos: ' + (act.CUPOS || 'Sin límite'),
+      '⏰ Horario general: ' + (act.HORARIO || 'Según programación'),
+      act.LINK_INSCRIPCION ? ('🔗 Enlace: ' + act.LINK_INSCRIPCION) : '',
+      act.OBSERVACIONES ? ('📝 Observaciones: ' + act.OBSERVACIONES) : '',
+      '',
+      'Agendado automáticamente desde SIGC · Municipalidad de Santiago (DIDEL)'
+    ].filter(Boolean).join('\n');
+
+    const nuevosIds = [];
+
+    function parseFechaHoraLocal_(fechaStr, horaStr, horaDefectoH, horaDefectoM) {
+      const m = String(fechaStr || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) return null;
+      let hh = horaDefectoH;
+      let mm = horaDefectoM;
+      const mh = String(horaStr || '').trim().match(/^(\d{1,2}):(\d{2})/);
+      if (mh) {
+        hh = Number(mh[1]);
+        mm = Number(mh[2]);
+      }
+      return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hh, mm, 0);
+    }
+
+    if (Array.isArray(sesiones) && sesiones.length > 0) {
+      sesiones.forEach(function(s) {
+        if (!s || !s.fecha) return;
+        const inicio = parseFechaHoraLocal_(s.fecha, s.horaInicio, 10, 0);
+        let fin = parseFechaHoraLocal_(s.fecha, s.horaFin, 12, 0);
+        if (!inicio) return;
+        if (!fin || fin <= inicio) {
+          fin = new Date(inicio.getTime() + 2 * 60 * 60 * 1000);
+        }
+        const titulo = '[' + (act.ID_ACTIVIDAD || 'CAP') + '] ' + (act.NOMBRE_ACTIVIDAD || 'Capacitación') +
+          (sesiones.length > 1 ? ' (Sesión ' + (s.numero || 1) + '/' + sesiones.length + ')' : '');
+        const ev = cal.createEvent(titulo, inicio, fin, {
+          description: descripcion,
+          location: ubicacion
+        });
+        if (ev && ev.getId()) nuevosIds.push(ev.getId());
+      });
+    } else if (act.FECHA_INICIO) {
+      const inicio = parseFechaHoraLocal_(act.FECHA_INICIO, hIniDef, 10, 0);
+      const finBase = parseFechaHoraLocal_(act.FECHA_TERMINO || act.FECHA_INICIO, hFinDef, 12, 0);
+      if (inicio && finBase) {
+        const fin = finBase <= inicio ? new Date(inicio.getTime() + 2 * 60 * 60 * 1000) : finBase;
+        const titulo = '[' + (act.ID_ACTIVIDAD || 'CAP') + '] ' + (act.NOMBRE_ACTIVIDAD || 'Capacitación');
+        const ev = cal.createEvent(titulo, inicio, fin, {
+          description: descripcion,
+          location: ubicacion
+        });
+        if (ev && ev.getId()) nuevosIds.push(ev.getId());
+      }
+    }
+
+    if (hojaActividades && numeroFila && nuevosIds.length > 0) {
+      webActualizarFilaPorEncabezados_(hojaActividades, encabezados, numeroFila, {
+        GOOGLE_CALENDAR_IDS: JSON.stringify(nuevosIds)
+      });
+      sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    }
+
+    return {
+      ok: true,
+      eventosCreados: nuevosIds.length,
+      mensaje: nuevosIds.length > 0
+        ? 'Se agendaron ' + nuevosIds.length + ' sesión(es) en Google Calendar correctamente.'
+        : 'La actividad no tiene fechas definidas para agendar en Google Calendar.'
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      requiereEnlaceDirecto: true,
+      mensaje: 'Para agendar en su cuenta personal o institucional se abrirá el asistente directo de Google Calendar.'
+    };
+  }
+}
+
+/**
+ * Registra en la hoja ACTIVIDADES que una actividad (o conjunto de actividades) fue calendarizada en Google Calendar.
+ */
+function marcarActividadCalendarizadaWeb(idActividad, agendada) {
+  const ss = sigcSpreadsheetCentral_();
+  const hoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  if (!hoja) throw new Error('No se encontró la hoja ACTIVIDADES.');
+  const tabla = webLeerTablaConFilas_(hoja);
+  webAsegurarEncabezadosActividades_(hoja, tabla.encabezados);
+
+  const idsLista = Array.isArray(idActividad)
+    ? idActividad.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
+    : [String(idActividad || '').trim()].filter(Boolean);
+
+  if (!idsLista.length) throw new Error('Debe indicar al menos una actividad.');
+  const idsSet = new Set(idsLista);
+  const marcaTiempo = Utilities.formatDate(new Date(), SIGC_CONFIG.ZONA_HORARIA || 'America/Santiago', 'yyyy-MM-dd HH:mm');
+  let actualizadas = 0;
+
+  tabla.filas.forEach(function(f) {
+    const idAct = String(f.datos.ID_ACTIVIDAD || '').trim();
+    if (!idsSet.has(idAct)) return;
+    let valorGCal = '';
+    if (agendada !== false) {
+      const syncAuto = webIntentarSincronizarCalendarApp_(hoja, tabla.encabezados, f.numeroFila, f.datos);
+      if (syncAuto && syncAuto.ok && syncAuto.eventosCreados > 0) {
+        actualizadas++;
+        return;
+      }
+      valorGCal = JSON.stringify(['AGENDADO-' + marcaTiempo]);
+    }
+    webActualizarFilaPorEncabezados_(hoja, tabla.encabezados, f.numeroFila, {
+      GOOGLE_CALENDAR_IDS: valorGCal
+    });
+    actualizadas++;
+  });
+
+  if (actualizadas > 0) {
+    sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+  }
+
+  return {
+    ok: true,
+    actualizadas: actualizadas,
+    valorGCal: agendada !== false ? JSON.stringify(['AGENDADO-' + marcaTiempo]) : '',
+    mensaje: agendada !== false
+      ? (actualizadas === 1 ? 'Actividad marcada como calendarizada en Google Calendar.' : actualizadas + ' actividades marcadas como calendarizadas en Google Calendar.')
+      : 'Estado de Google Calendar restablecido.'
+  };
+}
+
+
+/* ============================================================================
+ * SISTEMA DE EVALUACIÓN Y ENCUESTAS DE SATISFACCIÓN (FÍSICO, DIGITAL Y CONSOLIDADO)
+ * ============================================================================ */
+
+function asegurarHojaEvaluaciones_(ss) {
+  ss = ss || sigcSpreadsheetCentral_();
+  const nombreHoja = (WEBAPP_CONFIG && WEBAPP_CONFIG.HOJAS && WEBAPP_CONFIG.HOJAS.EVALUACIONES) || 'EVALUACIONES_SATISFACCION';
+  let hoja = ss.getSheetByName(nombreHoja);
+  const encabezados = [
+    'ID_EVALUACION',
+    'ID_ACTIVIDAD',
+    'NOMBRE_ACTIVIDAD',
+    'FECHA_REGISTRO',
+    'CANAL',
+    'CANTIDAD_RESPUESTAS',
+    'NOTA_RELATOR',
+    'NOTA_CONTENIDOS',
+    'NOTA_ORGANIZACION',
+    'NOTA_GLOBAL',
+    'PROMEDIO_GENERAL',
+    'PORCENTAJE_SATISFACCION',
+    'RECOMIENDA',
+    'LO_MAS_VALIOSO',
+    'SUGERENCIAS',
+    'FILA_ORIGEN',
+    'REGISTRO_ACTIVO'
+  ];
+  if (!hoja) {
+    hoja = ss.insertSheet(nombreHoja);
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
+    hoja.setFrozenRows(1);
+    hoja.getRange(1, 1, 1, encabezados.length)
+      .setFontWeight('bold')
+      .setBackground('#173B57')
+      .setFontColor('#FFFFFF');
+  } else if (hoja.getLastRow() === 0) {
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
+    hoja.setFrozenRows(1);
+  }
+  return hoja;
+}
+
+function webFormatearValor_(valor) {
+  if (valor === null || valor === undefined || valor === '') return '';
+  if (valor instanceof Date) {
+    if (isNaN(valor.getTime())) return '';
+    return Utilities.formatDate(valor, (WEBAPP_CONFIG && WEBAPP_CONFIG.ZONA_HORARIA) || 'America/Santiago', 'dd-MM-yyyy HH:mm');
+  }
+  const texto = String(valor).trim();
+  const fechaIntent = new Date(texto);
+  if (!isNaN(fechaIntent.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(texto)) {
+    return Utilities.formatDate(fechaIntent, (WEBAPP_CONFIG && WEBAPP_CONFIG.ZONA_HORARIA) || 'America/Santiago', 'dd-MM-yyyy HH:mm');
+  }
+  return texto;
+}
+
+function webFormatearNombreCapacitacion_(texto) {
+  if (!texto) return '';
+  let str = String(texto).replace(/[\r\n]+/g, ' ').trim();
+  str = str.replace(/^CAP-\d{4}-\d+\s*[—–-]\s*/i, '').replace(/^ACT-\d+\s*[—–-]\s*/i, '').trim();
+  str = str.replace(/\s*[—–-]\s*\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/, '').trim();
+
+  const letras = str.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ]/g, '');
+  const mayusculas = str.replace(/[^A-ZÁÉÍÓÚÑ]/g, '');
+  const esTodoMayus = letras.length > 3 && (mayusculas.length / letras.length) > 0.7;
+
+  const siglas = ['DUOC', 'UDLA', 'IA', 'MIPE', 'PMJH', 'CANVA', 'TI', 'SGC', 'SIGC', 'RRHH', 'SII', 'RUT', 'DIDECO', 'DIDEL', 'Power BI', 'Excel'];
+
+  if (esTodoMayus) {
+    const minusculas = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'en', 'para', 'con', 'por', 'a', 'al', 'o', 'u'];
+    const palabras = str.toLowerCase().split(' ');
+    str = palabras.map(function(p, i) {
+      if (!p) return '';
+      const pUpper = p.toUpperCase();
+      const matchSigla = siglas.find(function(s) { return s.toUpperCase() === pUpper; });
+      if (matchSigla) return matchSigla;
+      if (i > 0 && minusculas.indexOf(p) >= 0) return p;
+      return p.charAt(0).toUpperCase() + p.slice(1);
+    }).join(' ');
+  } else {
+    siglas.forEach(function(s) {
+      const reg = new RegExp('\\b' + s + '\\b', 'gi');
+      str = str.replace(reg, s);
+    });
+    if (str.length > 0) {
+      str = str.charAt(0).toUpperCase() + str.slice(1);
+    }
+  }
+  return str;
+}
+
+function webExtraerNotaEscala_(valor) {
+  if (valor === null || valor === undefined || valor === '') return 0;
+  if (typeof valor === 'number' && !isNaN(valor)) {
+    return Math.min(5, Math.max(1, Number(valor)));
+  }
+  const texto = String(valor).trim().replace(',', '.');
+  const match = texto.match(/([1-5](?:\.\d+)?)/);
+  if (match) {
+    const num = parseFloat(match[1]);
+    if (!isNaN(num) && num >= 1 && num <= 5) return num;
+  }
+  return 0;
+}
+
+function webCalcularResumenSatisfaccion_(registros) {
+  const activos = (registros || []).filter(webEsRegistroActivo_);
+  let totalEncuestas = 0;
+  let encuestasDigitales = 0;
+  let encuestasFisicas = 0;
+
+  let sumaRelator = 0, pesoRelator = 0;
+  let sumaContenidos = 0, pesoContenidos = 0;
+  let sumaOrganizacion = 0, pesoOrganizacion = 0;
+  let sumaGlobal = 0, pesoGlobal = 0;
+
+  let recomiendaSi = 0;
+  let recomiendaTalVez = 0;
+  let recomiendaNo = 0;
+
+  const detalleRegistros = [];
+
+  activos.forEach(function(r) {
+    const peso = Math.max(1, Number(r.CANTIDAD_RESPUESTAS || 1));
+    totalEncuestas += peso;
+
+    const canalStr = String(r.CANAL || 'Digital');
+    if (sigcNormalizarClave(canalStr).indexOf('papel') >= 0 || sigcNormalizarClave(canalStr).indexOf('fisic') >= 0) {
+      encuestasFisicas += peso;
+    } else {
+      encuestasDigitales += peso;
+    }
+
+    const nRel = webExtraerNotaEscala_(r.NOTA_RELATOR);
+    const nCon = webExtraerNotaEscala_(r.NOTA_CONTENIDOS);
+    const nOrg = webExtraerNotaEscala_(r.NOTA_ORGANIZACION);
+    const nGlo = webExtraerNotaEscala_(r.NOTA_GLOBAL);
+
+    if (nRel > 0) { sumaRelator += nRel * peso; pesoRelator += peso; }
+    if (nCon > 0) { sumaContenidos += nCon * peso; pesoContenidos += peso; }
+    if (nOrg > 0) { sumaOrganizacion += nOrg * peso; pesoOrganizacion += peso; }
+    if (nGlo > 0) { sumaGlobal += nGlo * peso; pesoGlobal += peso; }
+
+    const rec = sigcNormalizarClave(r.RECOMIENDA || 'Sí');
+    if (rec.indexOf('no') === 0) {
+      recomiendaNo += peso;
+    } else if (rec.indexOf('tal') >= 0 || rec.indexOf('quiz') >= 0) {
+      recomiendaTalVez += peso;
+    } else {
+      recomiendaSi += peso;
+    }
+
+    const notasValidas = [nRel, nCon, nOrg, nGlo].filter(function(n) { return n > 0; });
+    const promFila = notasValidas.length
+      ? Number((notasValidas.reduce(function(a, b) { return a + b; }, 0) / notasValidas.length).toFixed(2))
+      : 0;
+
+    detalleRegistros.push({
+      ID_EVALUACION: String(r.ID_EVALUACION || ''),
+      ID_ACTIVIDAD: String(r.ID_ACTIVIDAD || ''),
+      FECHA_REGISTRO: webFormatearValor_(r.FECHA_REGISTRO),
+      CANAL: canalStr,
+      CANTIDAD_RESPUESTAS: peso,
+      NOTA_RELATOR: nRel,
+      NOTA_CONTENIDOS: nCon,
+      NOTA_ORGANIZACION: nOrg,
+      NOTA_GLOBAL: nGlo,
+      PROMEDIO_GENERAL: Number(r.PROMEDIO_GENERAL || promFila || 0),
+      PORCENTAJE_SATISFACCION: Number(r.PORCENTAJE_SATISFACCION || Math.round((promFila / 5) * 100) || 0),
+      RECOMIENDA: String(r.RECOMIENDA || 'Sí'),
+      LO_MAS_VALIOSO: String(r.LO_MAS_VALIOSO || ''),
+      SUGERENCIAS: String(r.SUGERENCIAS || '')
+    });
+  });
+
+  const promedioRelator = pesoRelator > 0 ? Number((sumaRelator / pesoRelator).toFixed(2)) : 0;
+  const promedioContenidos = pesoContenidos > 0 ? Number((sumaContenidos / pesoContenidos).toFixed(2)) : 0;
+  const promedioOrganizacion = pesoOrganizacion > 0 ? Number((sumaOrganizacion / pesoOrganizacion).toFixed(2)) : 0;
+  const promedioGlobal = pesoGlobal > 0 ? Number((sumaGlobal / pesoGlobal).toFixed(2)) : 0;
+
+  const dimensionesActivas = [promedioRelator, promedioContenidos, promedioOrganizacion, promedioGlobal].filter(function(n) { return n > 0; });
+  const promedioGeneral = dimensionesActivas.length
+    ? Number((dimensionesActivas.reduce(function(a, b) { return a + b; }, 0) / dimensionesActivas.length).toFixed(2))
+    : 0;
+  const porcentajeSatisfaccion = promedioGeneral > 0 ? Math.round((promedioGeneral / 5) * 100) : 0;
+  const porcentajeRecomienda = totalEncuestas > 0 ? Math.round((recomiendaSi / totalEncuestas) * 100) : 0;
+
+  return {
+    totalRegistros: detalleRegistros.length,
+    totalEncuestas: totalEncuestas,
+    encuestasDigitales: encuestasDigitales,
+    encuestasFisicas: encuestasFisicas,
+    promedioRelator: promedioRelator,
+    promedioContenidos: promedioContenidos,
+    promedioOrganizacion: promedioOrganizacion,
+    promedioGlobal: promedioGlobal,
+    promedioGeneral: promedioGeneral,
+    porcentajeSatisfaccion: porcentajeSatisfaccion,
+    recomiendaSi: recomiendaSi,
+    recomiendaTalVez: recomiendaTalVez,
+    recomiendaNo: recomiendaNo,
+    porcentajeRecomienda: porcentajeRecomienda,
+    registros: detalleRegistros.reverse()
+  };
+}
+
+/**
+ * Verifica si una pestaña corresponde a una hoja de respuestas de Encuesta de Satisfacción.
+ */
+function esHojaRespuestasSatisfaccion_(hoja) {
+  if (!hoja || hoja.getLastRow() < 1 || hoja.getLastColumn() < 3) return false;
+  const nombreNorm = normalizarEncabezado_(hoja.getName());
+  const hojasSistema = [
+    'PERSONAS', 'ACTIVIDADES', 'PARTICIPACIONES', 'ASISTENCIA',
+    'INTERESES CAPACITACION', 'EVALUACIONES SATISFACCION', 'CONFIG FORMULARIOS',
+    'HISTORIAL IMPORTACIONES', 'CONTROL CALIDAD', 'LOGS'
+  ];
+  if (hojasSistema.indexOf(nombreNorm) >= 0) return false;
+  try {
+    const encs = hoja.getRange(1, 1, 1, Math.min(hoja.getLastColumn(), 30)).getValues()[0];
+    const encNorm = encs.map(normalizarEncabezado_);
+    const tieneRelator = encNorm.some(function(h) { return h.indexOf('RELATOR') >= 0 || h.indexOf('DOCENTE') >= 0 || h.indexOf('PROFESOR') >= 0; });
+    const tieneContenido = encNorm.some(function(h) { return h.indexOf('CONTENIDO') >= 0 || h.indexOf('UTILIDAD') >= 0; });
+    const tieneGlobal = encNorm.some(function(h) { return h.indexOf('GLOBAL') >= 0 || h.indexOf('GENERAL') >= 0; });
+    return tieneRelator && tieneContenido && tieneGlobal;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Procesa una fila de la hoja de respuestas de satisfacción o una respuesta de Google Forms.
+ * @param {Sheet|null} hoja Hoja de origen (o null si viene de FormApp directo)
+ * @param {number|string} fila Número de fila o clave
+ * @param {Array} encabezados Arreglo de títulos de columnas/preguntas
+ * @param {Array} valores Arreglo de valores de la respuesta
+ * @param {string} idActividadConfig ID de actividad de respaldo/contexto
+ * @param {boolean} omitirLecturaExistentes Si true, asume que el llamador ya verificó duplicados en EVALUACIONES_SATISFACCION
+ * @param {string} claveOrigenExplicita Si se provee, usa esta clave en FILA_ORIGEN (ej. 'FORM:...')
+ */
+function procesarFilaSatisfaccion_(hoja, fila, encabezados, valores, idActividadConfig, omitirLecturaExistentes, claveOrigenExplicita) {
+  const ss = sigcSpreadsheetCentral_();
+  const hojaEval = asegurarHojaEvaluaciones_(ss);
+  const claveOrigen = claveOrigenExplicita || (hoja ? (hoja.getName() + ':' + fila) : ('FORM:' + fila));
+
+  // Verificar si esta fila ya fue registrada en EVALUACIONES_SATISFACCION de forma válida
+  if (!omitirLecturaExistentes) {
+    const evalExistentes = hojaEval.getDataRange().getValues();
+    if (evalExistentes.length > 1) {
+      const mapaEval = mapaEncabezados_(evalExistentes[0]);
+      const colOrigen = mapaEval['FILA ORIGEN'];
+      const colActivo = mapaEval['REGISTRO ACTIVO'];
+      const colIdAct = mapaEval['ID ACTIVIDAD'];
+      if (colOrigen !== undefined) {
+        for (let e = 1; e < evalExistentes.length; e++) {
+          const esActivo = colActivo !== undefined ? (sigcNormalizarSiNo(evalExistentes[e][colActivo], 'Sí') !== 'No') : true;
+          const idGuardado = String(evalExistentes[e][colIdAct] || '').trim();
+          const idEvalGuardado = String(evalExistentes[e][0] || '').trim();
+          if (String(evalExistentes[e][colOrigen] || '') === claveOrigen && esActivo && /^EVA-/i.test(idEvalGuardado) && idGuardado && !/^[1-5]$/.test(idGuardado)) {
+            if (hoja && fila) {
+              try { registrarResultadoEnRespuesta_(hoja, fila, '', idEvalGuardado, 'PROCESADO', 'Esta encuesta ya estaba consolidada.'); } catch (eR) {}
+            }
+            return { omitida: false, estado: 'PROCESADO', idParticipacion: idEvalGuardado };
+          }
+        }
+      }
+    }
+  }
+
+  let textoActividadFila = '';
+  let timestamp = new Date();
+  let nRelator = 0, nContenidos = 0, nOrganizacion = 0, nGlobal = 0;
+  let recomienda = 'Sí';
+  let valioso = '';
+  let sugerencias = '';
+
+  const colsTecnicas = [
+    'ID PERSONA', 'ID PARTICIPACION', 'ESTADO PROCESO', 'DETALLE PROCESO',
+    'FECHA PROCESO', 'INTENTOS PROCESO', 'DATOS ORIGINALES REVISION',
+    'CAMPOS CORREGIDOS', 'FECHA CORRECCION', 'OBSERVACION CORRECCION', 'HISTORIAL CORRECCIONES'
+  ];
+
+  for (let c = 0; c < encabezados.length; c++) {
+    const h = normalizarEncabezado_(encabezados[c]);
+    if (colsTecnicas.indexOf(h) >= 0) continue;
+    const val = valores[c];
+    if (val === '' || val === null || val === undefined) continue;
+
+    if (h.indexOf('MARCA TEMPORAL') >= 0 || h === 'TIMESTAMP' || h === 'FECHA') {
+      timestamp = val;
+    } else if (h.indexOf('VALIOSO') >= 0 || h.indexOf('DESTACA') >= 0 || h.indexOf('APRENDIO') >= 0 || h.indexOf('POSITIVO') >= 0 || h.indexOf('GUSTO') >= 0) {
+      valioso = String(val).trim();
+    } else if (h.indexOf('SUGERENCIA') >= 0 || h.indexOf('MEJORA') >= 0 || h.indexOf('COMENTARIO') >= 0 || h.indexOf('NUEVOS TEMAS') >= 0 || h.indexOf('GUSTARIA APRENDER') >= 0) {
+      sugerencias = String(val).trim();
+    } else if (h.indexOf('RELATOR') >= 0 || h.indexOf('DOCENTE') >= 0 || h.indexOf('PROFESOR') >= 0 || h.indexOf('EXPOSITOR') >= 0) {
+      nRelator = webExtraerNotaEscala_(val);
+    } else if (h.indexOf('CONTENIDO') >= 0 || h.indexOf('UTILIDAD') >= 0 || h.indexOf('APRENDIZAJE') >= 0) {
+      nContenidos = webExtraerNotaEscala_(val);
+    } else if (h.indexOf('ORGANIZACION') >= 0 || h.indexOf('ESPACIO') >= 0 || h.indexOf('MATERIAL') >= 0 || h.indexOf('LOGISTICA') >= 0) {
+      nOrganizacion = webExtraerNotaEscala_(val);
+    } else if (h.indexOf('GLOBAL') >= 0 || h.indexOf('GENERAL') >= 0) {
+      nGlobal = webExtraerNotaEscala_(val);
+    } else if (h.indexOf('RECOMEND') >= 0) {
+      recomienda = String(val).trim();
+    } else if (
+      h.indexOf('CODIGO') >= 0 ||
+      h.indexOf('AL QUE ASISTIO') >= 0 ||
+      h === 'ACTIVIDAD' ||
+      h === 'CAPACITACION' ||
+      h === 'CURSO' ||
+      h === 'TALLER' ||
+      h === 'CAPACITACION O TALLER' ||
+      h.indexOf('NOMBRE DE LA CAPACITACION') >= 0 ||
+      h.indexOf('SELECCIONE LA CAPACITACION') >= 0
+    ) {
+      const valStr = String(val).trim();
+      if (!/^[1-5]$/.test(valStr)) {
+        if (!textoActividadFila || /(CAP-\s*\d{4}\s*[-–—]?\s*\d+)/i.test(valStr)) {
+          textoActividadFila = valStr;
+        }
+      }
+    }
+  }
+
+  // Si aún no tiene un código CAP- explícito, buscar en cualquier celda no técnica de la fila si hay un código CAP-
+  if (!textoActividadFila || !/(CAP-\s*\d{4}\s*[-–—]?\s*\d+)/i.test(textoActividadFila)) {
+    for (let c = 0; c < valores.length; c++) {
+      const h = normalizarEncabezado_(encabezados[c] || '');
+      if (colsTecnicas.indexOf(h) >= 0) continue;
+      const s = String(valores[c] || '').trim();
+      if (/(CAP-\s*\d{4}\s*[-–—]?\s*\d+)/i.test(s)) {
+        textoActividadFila = s;
+        break;
+      }
+    }
+  }
+
+  function intentarResolverAct_(txt) {
+    if (!txt) return null;
+    const str = String(txt).trim();
+    if (!str || /^[1-5]$/.test(str)) return null;
+    const mCap = str.match(/CAP-\s*(\d{4})\s*[-–—]?\s*(\d+)/i);
+    const cand = mCap ? ('CAP-' + mCap[1] + '-' + mCap[2]) : str;
+    if (typeof resolverActividad_ === 'function') {
+      const res = resolverActividad_(cand) || (cand !== str ? resolverActividad_(str) : null);
+      if (res && (res.id || res.ID_ACTIVIDAD)) {
+        return {
+          id: String(res.id || res.ID_ACTIVIDAD).trim(),
+          nombre: String(res.nombre || res.NOMBRE_ACTIVIDAD || str).trim()
+        };
+      }
+    }
+    if (mCap) {
+      return { id: 'CAP-' + mCap[1] + '-' + mCap[2], nombre: str };
+    }
+    return null;
+  }
+
+  let resuelta = intentarResolverAct_(textoActividadFila);
+  if (!resuelta && idActividadConfig) {
+    resuelta = intentarResolverAct_(idActividadConfig);
+  }
+
+  let idActFinal = resuelta ? resuelta.id : '';
+  let nombreActFinal = resuelta ? resuelta.nombre : '';
+
+  if (!idActFinal && textoActividadFila && !/^[1-5]$/.test(textoActividadFila)) {
+    idActFinal = textoActividadFila;
+    nombreActFinal = textoActividadFila;
+  }
+
+  if (!idActFinal || /^[1-5]$/.test(idActFinal)) {
+    throw new Error('No se pudo identificar el código o nombre de la capacitación en la encuesta (valor recibido: "' + textoActividadFila + '").');
+  }
+
+  const notas = [nRelator, nContenidos, nOrganizacion, nGlobal].filter(function(n) { return n > 0; });
+  if (!notas.length) {
+    throw new Error('La respuesta no contiene calificaciones válidas en escala 1 a 5.');
+  }
+
+  const promGeneral = Number((notas.reduce(function(a, b) { return a + b; }, 0) / notas.length).toFixed(2));
+  const porcSat = Math.round((promGeneral / 5) * 100);
+  const idEval = 'EVA-' + Utilities.getUuid().slice(0, 8).toUpperCase();
+
+  hojaEval.appendRow([
+    idEval,
+    idActFinal,
+    nombreActFinal,
+    timestamp || new Date(),
+    'Formulario Digital (QR / Web)',
+    1,
+    nRelator || promGeneral,
+    nContenidos || promGeneral,
+    nOrganizacion || promGeneral,
+    nGlobal || promGeneral,
+    promGeneral,
+    porcSat,
+    recomienda || 'Sí',
+    valioso,
+    sugerencias,
+    claveOrigen,
+    'Sí'
+  ]);
+
+  if (hoja && fila) {
+    try {
+      registrarResultadoEnRespuesta_(
+        hoja,
+        fila,
+        '',
+        idEval,
+        'PROCESADO',
+        'Encuesta de satisfacción consolidada en ' + idActFinal + ' (Promedio: ' + promGeneral + '/5.0).'
+      );
+    } catch (eReg) {}
+  }
+
+  return {
+    omitida: false,
+    estado: 'PROCESADO',
+    idPersona: '',
+    idParticipacion: idEval,
+    timestampMs: timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime()
+  };
+}
+
+/**
+ * Tarea periódica automática en segundo plano (cada 10 minutos):
+ * Procesa automáticamente todas las respuestas pendientes de satisfacción sin intervención humana.
+ */
+function sincronizarRespuestasSatisfaccionPeriodica() {
+  try {
+    const ss = sigcSpreadsheetCentral_();
+    const cant = sincronizarRespuestasSatisfaccion_(ss);
+    if (cant > 0) {
+      console.log('Sincronización periódica automática: ' + cant + ' respuesta(s) procesada(s).');
+    }
+  } catch (e) {
+    console.warn('Error en sincronizarRespuestasSatisfaccionPeriodica: ' + e.message);
+  }
+}
+
+/**
+ * Instala un activador de tiempo (Time-driven) en Google Cloud para ejecutar
+ * la sincronización automática de satisfacción cada 10 minutos si aún no está instalado.
+ */
+function asegurarActivadorPeriodicoSatisfaccion_() {
+  const cache = CacheService.getScriptCache();
+  const claveCache = 'SIGC_TRIGGER_PERIODICO_SAT_OK';
+  if (cache.get(claveCache)) return;
+
+  try {
+    const nombreFuncion = 'sincronizarRespuestasSatisfaccionPeriodica';
+    const triggers = ScriptApp.getProjectTriggers();
+    const coincidencias = triggers.filter(function(t) {
+      return t.getHandlerFunction() === nombreFuncion;
+    });
+
+    if (coincidencias.length > 1) {
+      coincidencias.slice(1).forEach(function(t) { ScriptApp.deleteTrigger(t); });
+    }
+
+    if (!coincidencias.length && triggers.length < 20) {
+      ScriptApp.newTrigger(nombreFuncion)
+        .timeBased()
+        .everyMinutes(10)
+        .create();
+    }
+    cache.put(claveCache, '1', 86400); // 24 horas de cache
+  } catch (e) {
+    console.warn('No se pudo verificar activador periódico de satisfacción: ' + e.message);
+  }
+}
+
+/**
+ * Sincroniza encuestas de satisfacción automáticamente durante peticiones Web (con throttle de 2 minutos).
+ */
+function verificarSincronizacionSatisfaccionConThrottle_(ss, idActividadContexto) {
+  const cache = CacheService.getScriptCache();
+  const clave = 'SIGC_THROTTLE_SYNC_SAT' + (idActividadContexto ? ('_' + String(idActividadContexto).trim().toUpperCase()) : '');
+  if (cache.get(clave)) return 0;
+  try {
+    cache.put(clave, '1', 90); // 90 segundos
+    asegurarActivadorPeriodicoSatisfaccion_();
+    return sincronizarRespuestasSatisfaccion_(ss, idActividadContexto);
+  } catch (e) {
+    console.warn('Sincronización automática de satisfacción omitida: ' + e.message);
+    return 0;
+  }
+}
+
+/**
+ * Detecta y repara automáticamente cualquier evaluación o formulario que haya sido
+ * asignado erróneamente a Power BI (u otra actividad que aún no se ejecuta ni aplica),
+ * devolviendo las respuestas y el formulario a su capacitación legítima ("Haz visible tu valor emprendedor" / CAP-2026-033).
+ */
+function repararRespuestasDesplazadasSatisfaccion_(ss) {
+  try {
+    const hojaEval = asegurarHojaEvaluaciones_(ss);
+    const hojaConfig = ss.getSheetByName((SISTEMA && SISTEMA.HOJAS && SISTEMA.HOJAS.FORMULARIOS) || 'CONFIG_FORMULARIOS');
+    const acts = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES) || [];
+
+    // 1. Identificar la actividad de Power BI y la actividad real previa
+    let actPowerBi = null;
+    let actHazVisible = null;
+    let actEjecutadaReciente = null;
+
+    acts.forEach(function(a) {
+      const nom = normalizarEncabezado_(a.NOMBRE_ACTIVIDAD || '');
+      const idA = String(a.ID_ACTIVIDAD || '').trim().toUpperCase();
+      if (nom.indexOf('POWER BI') >= 0 || idA.indexOf('POWER') >= 0) {
+        actPowerBi = a;
+      }
+      if (nom.indexOf('HAZ VISIBLE') >= 0 || idA === 'CAP-2026-033') {
+        actHazVisible = a;
+      }
+      const est = normalizarEncabezado_(a.ESTADO_ACTIVIDAD || '');
+      if ((est === 'EJECUTADA' || est === 'EN EJECUCION') && idA !== (actPowerBi ? actPowerBi.ID_ACTIVIDAD : '')) {
+        actEjecutadaReciente = a;
+      }
+    });
+
+    const actDestinoReal = actHazVisible || actEjecutadaReciente;
+    if (!actPowerBi || !actDestinoReal) return;
+    const idPowerBiUpper = String(actPowerBi.ID_ACTIVIDAD || '').trim().toUpperCase();
+    const idReal = String(actDestinoReal.ID_ACTIVIDAD || '').trim().toUpperCase();
+    const nomReal = String(actDestinoReal.NOMBRE_ACTIVIDAD || '').trim();
+
+    let huboCambios = false;
+
+    // 2. Corregir registros en EVALUACIONES_SATISFACCION que tengan ID de Power BI
+    if (hojaEval.getLastRow() >= 2) {
+      const datosEval = hojaEval.getDataRange().getValues();
+      const mapaEval = mapaEncabezados_(datosEval[0]);
+      const colIdAct = mapaEval['ID ACTIVIDAD'];
+      const colNomAct = mapaEval['NOMBRE ACTIVIDAD'];
+      const colOrigen = mapaEval['FILA ORIGEN'];
+
+      for (let i = 1; i < datosEval.length; i++) {
+        const idActGuardado = String(datosEval[i][colIdAct] || '').trim().toUpperCase();
+        const nomGuardado = normalizarEncabezado_(datosEval[i][colNomAct] || '');
+
+        if (idActGuardado === idPowerBiUpper || nomGuardado.indexOf('POWER BI') >= 0) {
+          let idRestaurar = idReal;
+          let nomRestaurar = nomReal;
+
+          // Intentar revisar si la celda de origen en la hoja física menciona un curso específico
+          const origen = String(datosEval[i][colOrigen] || '').trim();
+          if (origen && origen.indexOf(':') > 0 && origen.indexOf('FORM:') !== 0) {
+            try {
+              const partes = origen.split(':');
+              const hOrigen = ss.getSheetByName(partes[0]);
+              if (hOrigen) {
+                const filaNum = parseInt(partes[1], 10);
+                if (filaNum >= 2 && filaNum <= hOrigen.getLastRow()) {
+                  const valsFila = hOrigen.getRange(filaNum, 1, 1, hOrigen.getLastColumn()).getValues()[0];
+                  for (let v = 0; v < valsFila.length; v++) {
+                    const txt = String(valsFila[v] || '').trim();
+                    if (txt && !/^[1-5]$/.test(txt)) {
+                      const res = resolverActividad_(txt);
+                      if (res && res.id && String(res.id).toUpperCase() !== idPowerBiUpper) {
+                        idRestaurar = String(res.id).toUpperCase();
+                        nomRestaurar = String(res.nombre || nomReal).trim();
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (eOrig) {}
+          }
+
+          hojaEval.getRange(i + 1, colIdAct + 1).setValue(idRestaurar);
+          if (colNomAct !== undefined) hojaEval.getRange(i + 1, colNomAct + 1).setValue(nomRestaurar);
+          huboCambios = true;
+        }
+      }
+    }
+
+    // 3. Corregir CONFIG_FORMULARIOS si un formulario de satisfacción con respuestas quedó erróneamente con ID de Power BI
+    if (hojaConfig && hojaConfig.getLastRow() >= 2) {
+      const datosCfg = hojaConfig.getDataRange().getValues();
+      const mapaCfg = mapaEncabezados_(datosCfg[0]);
+      const colTipo = mapaCfg['TIPO'];
+      const colFormId = mapaCfg['FORM ID'];
+      const colIdAct = mapaCfg['ID ACTIVIDAD'];
+
+      for (let i = 1; i < datosCfg.length; i++) {
+        const tipo = normalizarEncabezado_(datosCfg[i][colTipo]);
+        const idAct = String(datosCfg[i][colIdAct] || '').trim().toUpperCase();
+        const formId = String(datosCfg[i][colFormId] || '').trim();
+
+        if ((tipo === 'SATISFACCION' || tipo === 'ENCUESTA SATISFACCION') && idAct === idPowerBiUpper && formId) {
+          try {
+            const form = FormApp.openById(formId);
+            if (form) {
+              const respuestas = form.getResponses();
+              // Si el formulario ya tiene respuestas, pertenece a la capacitación que sí se ejecutó (no a Power BI)
+              if (respuestas.length > 0) {
+                hojaConfig.getRange(i + 1, colIdAct + 1).setValue(idReal);
+                asegurarFormularioSatisfaccionDedicado_(form, actDestinoReal, idReal);
+                huboCambios = true;
+              }
+            }
+          } catch (eF) {}
+        }
+      }
+    }
+
+    if (huboCambios) {
+      SpreadsheetApp.flush();
+      sigcInvalidarCacheTabla_('EVALUACIONES_SATISFACCION');
+      sigcInvalidarCacheTabla_('CONFIG_FORMULARIOS');
+      CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1');
+      console.log('Reparación de satisfacción: respuestas erróneas retiradas de Power BI y restauradas a ' + idReal);
+    }
+  } catch (eRep) {
+    console.warn('Advertencia en repararRespuestasDesplazadasSatisfaccion_: ' + eRep.message);
+  }
+}
+
+/**
+ * Motor directo de sincronización de Encuestas de Satisfacción:
+ * 1) Repara o desactiva cualquier fila corrupta previa en EVALUACIONES_SATISFACCION (ej. con ID_ACTIVIDAD = "5").
+ * 2) Recorre TODAS las filas de las hojas de respuestas de satisfacción (ignorando si antes quedaron marcadas como
+ *    PROCESADO o DUPLICADO por el error antiguo de inscripción) y consolida cualquier fila que aún no esté en EVALUACIONES_SATISFACCION.
+ * 3) Lee además directamente desde FormApp.openById(formId).getResponses() para rescatar cualquier respuesta que no haya
+ *    caído en la hoja o cuya columna haya cambiado tras actualizar el formulario.
+ */
+function sincronizarRespuestasSatisfaccion_(ss, idActividadContexto) {
+  ss = ss || sigcSpreadsheetCentral_();
+  let procesadas = 0;
+  try {
+    const hojaEval = asegurarHojaEvaluaciones_(ss);
+
+    // Ejecutar autodiagnóstico y reparación de traspaso indebido a Power BI
+    repararRespuestasDesplazadasSatisfaccion_(ss);
+
+    // 1. Cargar mapa de actividades válidas de la base central
+    const actividadesValidas = new Map();
+    try {
+      const listaActs = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES) || [];
+      listaActs.forEach(function(a) {
+        const idA = String(a.ID_ACTIVIDAD || '').trim().toUpperCase();
+        if (idA) {
+          actividadesValidas.set(idA, a);
+        }
+      });
+    } catch (eActs) {}
+
+    const idContextoLimpio = String(idActividadContexto || '').trim().toUpperCase();
+    const actObjContexto = idContextoLimpio ? actividadesValidas.get(idContextoLimpio) : null;
+    const nomContexto = actObjContexto ? String(actObjContexto.NOMBRE_ACTIVIDAD || '').trim() : '';
+
+    // 2. Auditar EVALUACIONES_SATISFACCION: registrar orígenes ya consolidados válidamente
+    const origenesConsolidados = new Set();
+    const filasEvalPorOrigen = new Map();
+    const timestampsConsolidados = [];
+    if (hojaEval.getLastRow() >= 2) {
+      const datosEval = hojaEval.getDataRange().getValues();
+      const mapaEval = mapaEncabezados_(datosEval[0]);
+      const colIdEval = mapaEval['ID EVALUACION'] !== undefined ? mapaEval['ID EVALUACION'] : 0;
+      const colIdAct = mapaEval['ID ACTIVIDAD'];
+      const colNomAct = mapaEval['NOMBRE ACTIVIDAD'];
+      const colFecha = mapaEval['FECHA REGISTRO'];
+      const colValioso = mapaEval['LO MAS VALIOSO'];
+      const colSugerencias = mapaEval['SUGERENCIAS'];
+      const colOrigen = mapaEval['FILA ORIGEN'];
+      const colActivo = mapaEval['REGISTRO ACTIVO'];
+
+      let huboLimpieza = false;
+      for (let i = 1; i < datosEval.length; i++) {
+        const esActivo = colActivo !== undefined ? (sigcNormalizarSiNo(datosEval[i][colActivo], 'Sí') !== 'No') : true;
+        const idEv = String(datosEval[i][colIdEval] || '').trim();
+        const idActGuardado = String(datosEval[i][colIdAct] || '').trim().toUpperCase();
+        const origenGuardado = String(datosEval[i][colOrigen] || '').trim();
+
+        const esIdValido = /^EVA-/i.test(idEv) && idActGuardado && !/^[1-5]$/.test(idActGuardado) &&
+          idActGuardado !== 'REEMPLAZADO' &&
+          (actividadesValidas.size === 0 || actividadesValidas.has(idActGuardado));
+
+        if (esActivo && esIdValido) {
+          if (origenGuardado) {
+            origenesConsolidados.add(origenGuardado);
+            filasEvalPorOrigen.set(origenGuardado, {
+              filaHojaEval: i + 1,
+              idActGuardado: idActGuardado,
+              colIdAct: colIdAct,
+              colNomAct: colNomAct,
+              colValioso: colValioso,
+              colSugerencias: colSugerencias,
+              valiosoActual: colValioso !== undefined ? String(datosEval[i][colValioso] || '').trim() : '',
+              sugerenciasActual: colSugerencias !== undefined ? String(datosEval[i][colSugerencias] || '').trim() : ''
+            });
+          }
+          if (colFecha !== undefined && datosEval[i][colFecha] && origenGuardado.indexOf('FORM:') !== 0 && origenGuardado !== 'DIGITACION_WEB') {
+            const d = datosEval[i][colFecha] instanceof Date ? datosEval[i][colFecha] : new Date(datosEval[i][colFecha]);
+            if (!isNaN(d.getTime())) timestampsConsolidados.push(d.getTime());
+          }
+        }
+      }
+    }
+
+    // 3. Descubrir hojas de respuestas y formularios de satisfacción
+    const hojaConfig = ss.getSheetByName((SISTEMA && SISTEMA.HOJAS && SISTEMA.HOJAS.FORMULARIOS) || 'CONFIG_FORMULARIOS');
+    const hojasEnCentral = ss.getSheets();
+    const hojasParaProcesar = [];
+    const vistasHojas = new Set();
+    const formsParaProcesar = [];
+    const vistosForms = new Set();
+
+    if (hojaConfig && hojaConfig.getLastRow() >= 2) {
+      const datos = hojaConfig.getDataRange().getValues();
+      const mapa = mapaEncabezados_(datos[0]);
+      for (let i = 1; i < datos.length; i++) {
+        const tipo = normalizarEncabezado_(datos[i][mapa['TIPO']]);
+        if (tipo === 'SATISFACCION' || tipo === 'ENCUESTA SATISFACCION') {
+          const ssId = String(datos[i][mapa['SPREADSHEET RESPUESTAS ID']] || ss.getId()).trim();
+          let nombreHoja = String(datos[i][mapa['HOJA RESPUESTAS']] || '').trim();
+          const formId = String(datos[i][mapa['FORM ID']] || '').trim();
+          const idActCfg = String(datos[i][mapa['ID ACTIVIDAD']] || '').trim().toUpperCase();
+
+          if (mapa['ESTADO'] !== undefined && normalizarEncabezado_(datos[i][mapa['ESTADO']]) !== 'ACTIVO') {
+            hojaConfig.getRange(i + 1, mapa['ESTADO'] + 1).setValue('Activo');
+          }
+
+          if (formId && !vistosForms.has(formId)) {
+            vistosForms.add(formId);
+            formsParaProcesar.push({ formId: formId, idAct: idActCfg, esGenerico: !idActCfg });
+          }
+
+          let targetSs = ss;
+          if (ssId && ssId !== ss.getId()) {
+            try { targetSs = SpreadsheetApp.openById(ssId); } catch (eOpen) { targetSs = ss; }
+          }
+          let hojaObj = (nombreHoja && nombreHoja !== 'DIRECTO_FORMAPP') ? targetSs.getSheetByName(nombreHoja) : null;
+          if (!hojaObj && formId) {
+            hojaObj = targetSs.getSheets().find(function(s) {
+              try { return s.getFormUrl() && s.getFormUrl().indexOf(formId) >= 0; } catch (e) { return false; }
+            });
+          }
+          if (!hojaObj && !idActCfg) {
+            hojaObj = targetSs.getSheets().find(function(s) {
+              return esHojaRespuestasSatisfaccion_(s);
+            });
+          }
+
+          const nombreRealHoja = hojaObj ? hojaObj.getName() : '';
+          if (
+            hojaObj &&
+            nombreRealHoja !== 'DIRECTO_FORMAPP' &&
+            nombreRealHoja !== 'EVALUACIONES_SATISFACCION'
+          ) {
+            if (nombreHoja !== 'DIRECTO_FORMAPP' && nombreRealHoja !== nombreHoja && mapa['HOJA RESPUESTAS'] !== undefined) {
+              hojaConfig.getRange(i + 1, mapa['HOJA RESPUESTAS'] + 1).setValue(nombreRealHoja);
+            }
+            const key = targetSs.getId() + '::' + nombreRealHoja;
+            if (!vistasHojas.has(key)) {
+              vistasHojas.add(key);
+              hojasParaProcesar.push({ ss: targetSs, hoja: hojaObj, idAct: idActCfg, esGenerico: !idActCfg });
+            }
+          }
+        }
+      }
+    }
+
+    hojasEnCentral.forEach(function(s) {
+      if (esHojaRespuestasSatisfaccion_(s)) {
+        const key = ss.getId() + '::' + s.getName();
+        if (!vistasHojas.has(key)) {
+          vistasHojas.add(key);
+          hojasParaProcesar.push({ ss: ss, hoja: s, idAct: '', esGenerico: true });
+        }
+        try {
+          const fUrl = s.getFormUrl();
+          if (fUrl) {
+            const mId = fUrl.match(/\/d\/(?:e\/)?([a-zA-Z0-9_-]{20,})/);
+            if (mId && mId[1] && !vistosForms.has(mId[1])) {
+              vistosForms.add(mId[1]);
+              formsParaProcesar.push({ formId: mId[1], idAct: '', esGenerico: true });
+            }
+          }
+        } catch (eFUrl) {}
+      }
+    });
+
+    // Función auxiliar para extraer textos abiertos (Preguntas 6 y 7) de una fila o respuesta
+    function extraerTextosAbiertosFila_(encs, vals) {
+      let valioso = '';
+      let sugerencias = '';
+      for (let c = 0; c < encs.length; c++) {
+        const h = normalizarEncabezado_(encs[c] || '');
+        const v = String(vals[c] !== undefined && vals[c] !== null ? vals[c] : '').trim();
+        if (!v) continue;
+        if (h.indexOf('VALIOSO') >= 0 || h.indexOf('DESTACA') >= 0 || h.indexOf('APRENDIO') >= 0 || h.indexOf('POSITIVO') >= 0 || h.indexOf('GUSTO') >= 0) {
+          valioso = v;
+        } else if (h.indexOf('SUGERENCIA') >= 0 || h.indexOf('MEJORA') >= 0 || h.indexOf('COMENTARIO') >= 0 || h.indexOf('NUEVOS TEMAS') >= 0 || h.indexOf('GUSTARIA APRENDER') >= 0) {
+          sugerencias = v;
+        }
+      }
+      return { valioso: valioso, sugerencias: sugerencias };
+    }
+
+    // 4. Sincronizar directamente TODAS las filas de cada hoja de satisfacción
+    // (sin depender de ESTADO_PROCESO en la hoja, que pudo quedar como PROCESADO o DUPLICADO antes)
+    hojasParaProcesar.forEach(function(item) {
+      try {
+        const hoja = item.hoja;
+        if (!hoja || hoja.getLastRow() < 2) return;
+        asegurarColumnasControlFormulario_(hoja);
+        const valoresHoja = hoja.getDataRange().getValues();
+        const encabezados = valoresHoja[0];
+        const idObjetivoHoja = String(item.idAct || '').trim().toUpperCase();
+
+        for (let r = 1; r < valoresHoja.length; r++) {
+          const filaSheet = r + 1;
+          const claveOrigen = hoja.getName() + ':' + filaSheet;
+          if (filaFormularioEstaVacia_(encabezados, valoresHoja[r])) continue;
+
+          if (origenesConsolidados.has(claveOrigen)) {
+            const infoPrev = filasEvalPorOrigen.get(claveOrigen);
+            if (infoPrev) {
+              // Completar respuestas con palabras (Preguntas 6 y 7) si estaban vacías en EVALUACIONES_SATISFACCION
+              const textos = extraerTextosAbiertosFila_(encabezados, valoresHoja[r]);
+              if (textos.valioso && !infoPrev.valiosoActual && infoPrev.colValioso !== undefined) {
+                hojaEval.getRange(infoPrev.filaHojaEval, infoPrev.colValioso + 1).setValue(textos.valioso);
+                infoPrev.valiosoActual = textos.valioso;
+                procesadas++;
+              }
+              if (textos.sugerencias && !infoPrev.sugerenciasActual && infoPrev.colSugerencias !== undefined) {
+                hojaEval.getRange(infoPrev.filaHojaEval, infoPrev.colSugerencias + 1).setValue(textos.sugerencias);
+                infoPrev.sugerenciasActual = textos.sugerencias;
+                procesadas++;
+              }
+            }
+            continue;
+          }
+
+          try {
+            const res = procesarFilaSatisfaccion_(
+              hoja,
+              filaSheet,
+              encabezados,
+              valoresHoja[r],
+              idObjetivoHoja,
+              true,
+              claveOrigen
+            );
+            if (res && !res.omitida) {
+              origenesConsolidados.add(claveOrigen);
+              if (res.timestampMs && !isNaN(res.timestampMs)) {
+                timestampsConsolidados.push(res.timestampMs);
+              }
+              procesadas++;
+            }
+          } catch (eFila) {
+            console.warn('Fila ' + filaSheet + ' en ' + hoja.getName() + ' no procesada: ' + eFila.message);
+          }
+        }
+      } catch (eProc) {
+        console.warn('Error sincronizando hoja de satisfacción ' + item.hoja.getName() + ': ' + eProc.message);
+      }
+    });
+
+    // 5. Sincronizar también directamente desde FormApp.openById(formId).getResponses()
+    formsParaProcesar.forEach(function(fItem) {
+      try {
+        const form = FormApp.openById(fItem.formId);
+        if (!form) return;
+        const responses = form.getResponses();
+        const idObjetivoForm = String(fItem.idAct || '').trim().toUpperCase();
+
+        for (let i = 0; i < responses.length; i++) {
+          const fResp = responses[i];
+          const claveForm = 'FORM:' + fResp.getId();
+          const ts = fResp.getTimestamp();
+          const tsMs = ts ? ts.getTime() : 0;
+
+          // Optimización de rendimiento: Si ya está consolidada y completa, omitir inmediatamente
+          if (origenesConsolidados.has(claveForm)) {
+            const infoPrevF = filasEvalPorOrigen.get(claveForm);
+            if (infoPrevF && infoPrevF.valiosoActual && infoPrevF.sugerenciasActual) {
+              continue;
+            }
+          }
+
+          // Si ya se consolidó una respuesta desde la hoja con la misma marca temporal (±5 segundos), no duplicar
+          if (tsMs && timestampsConsolidados.some(function(t) { return Math.abs(t - tsMs) <= 5000; })) {
+            origenesConsolidados.add(claveForm);
+            continue;
+          }
+
+          const itemResponses = fResp.getItemResponses();
+          const encsVirtuales = ['Marca temporal'];
+          const valsVirtuales = [ts || new Date()];
+          for (let j = 0; j < itemResponses.length; j++) {
+            const ir = itemResponses[j];
+            encsVirtuales.push(String(ir.getItem().getTitle() || ''));
+            const rVal = ir.getResponse();
+            valsVirtuales.push(Array.isArray(rVal) ? rVal.join(', ') : rVal);
+          }
+
+          if (origenesConsolidados.has(claveForm)) {
+            const infoPrevF = filasEvalPorOrigen.get(claveForm);
+            if (infoPrevF) {
+              const textosF = extraerTextosAbiertosFila_(encsVirtuales, valsVirtuales);
+              if (textosF.valioso && !infoPrevF.valiosoActual && infoPrevF.colValioso !== undefined) {
+                hojaEval.getRange(infoPrevF.filaHojaEval, infoPrevF.colValioso + 1).setValue(textosF.valioso);
+                infoPrevF.valiosoActual = textosF.valioso;
+                procesadas++;
+              }
+              if (textosF.sugerencias && !infoPrevF.sugerenciasActual && infoPrevF.colSugerencias !== undefined) {
+                hojaEval.getRange(infoPrevF.filaHojaEval, infoPrevF.colSugerencias + 1).setValue(textosF.sugerencias);
+                infoPrevF.sugerenciasActual = textosF.sugerencias;
+                procesadas++;
+              }
+            }
+            continue;
+          }
+
+          try {
+            const resF = procesarFilaSatisfaccion_(
+              null,
+              fResp.getId(),
+              encsVirtuales,
+              valsVirtuales,
+              idObjetivoForm,
+              true,
+              claveForm
+            );
+            if (resF && !resF.omitida) {
+              origenesConsolidados.add(claveForm);
+              procesadas++;
+            }
+          } catch (eResp) {
+            console.warn('Respuesta FormApp ' + claveForm + ' omitida: ' + eResp.message);
+          }
+        }
+      } catch (eFormSync) {
+        console.warn('No se pudo leer directamente FormApp (' + fItem.formId + '): ' + eFormSync.message);
+      }
+    });
+
+    if (procesadas > 0) {
+      SpreadsheetApp.flush();
+      sigcInvalidarCacheTabla_(hojaEval.getName());
+    }
+  } catch (e) {
+    console.warn('Advertencia en sincronizarRespuestasSatisfaccion_: ' + e.message);
+  }
+  return procesadas;
+}
+
+function formatearEtiquetaCursoSatisfaccion_(actividad, idFallback) {
+  if (!actividad) return webFormatearNombreCapacitacion_(idFallback);
+  const id = String(actividad.ID_ACTIVIDAD || idFallback || '').trim();
+  const nombre = webFormatearNombreCapacitacion_(actividad.NOMBRE_ACTIVIDAD || '');
+  return nombre ? (nombre + ' (' + id + ')') : id;
+}
+
+function obtenerOpcionesCursosSatisfaccion_(ss, etiquetaActual) {
+  const vistas = new Set();
+  const opciones = [];
+  if (etiquetaActual) {
+    const limpia = String(etiquetaActual).replace(/[\r\n]+/g, ' ').trim();
+    if (limpia) {
+      vistas.add(limpia);
+      opciones.push(limpia);
+    }
+  }
+  try {
+    const acts = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES) || [];
+    acts.slice().reverse().forEach(function(a) {
+      if (webEsActividadArchivada_(a)) return;
+      const et = formatearEtiquetaCursoSatisfaccion_(a, '');
+      if (et && !vistas.has(et)) {
+        vistas.add(et);
+        opciones.push(et);
+      }
+    });
+  } catch (e) {}
+  if (!opciones.length) {
+    opciones.push('Capacitación Municipal');
+  }
+  return opciones;
+}
+
+/**
+ * Garantiza que el Formulario de Satisfacción de una actividad específica:
+ * 1) Sea 100% público sin pedir login ni autorización de dominio (@munistgo.cl).
+ * 2) NO tenga ninguna pregunta ni listado de selección de curso (la persona solo
+ *    responde las preguntas de evaluación y el sistema ya sabe a qué ID_ACTIVIDAD pertenece).
+ * 3) Lleve en su título y descripción el nombre exacto de la capacitación.
+ */
+function asegurarFormularioSatisfaccionDedicado_(form, actividad, idActividad) {
+  try { form.setRequireLogin(false); } catch (e) {}
+  try { form.setLimitOneResponsePerUser(false); } catch (e) {}
+  try { form.setCollectEmail(false); } catch (e) {}
+  try { form.setAllowResponseEdits(false); } catch (e) {}
+  try { form.setAcceptingResponses(true); } catch (e) {}
+
+  const idActStr = String((actividad && actividad.ID_ACTIVIDAD) || idActividad || '').trim();
+  const nombreAct = webFormatearNombreCapacitacion_((actividad && actividad.NOMBRE_ACTIVIDAD) || idActStr || 'Capacitación Municipal');
+
+  try {
+    const tituloEsperado = 'Encuesta de Satisfacción — ' + nombreAct;
+    if (form.getTitle() !== tituloEsperado) {
+      form.setTitle(tituloEsperado);
+    }
+    form.setDescription(
+      'Municipalidad de Santiago • Subdirección de Desarrollo Económico Local\n' +
+      'Capacitación evaluada: ' + nombreAct + (idActStr ? ' (' + idActStr + ')' : '') + '\n\n' +
+      'Su opinión es anónima y muy importante para evaluar y mejorar nuestras capacitaciones. ' +
+      'Por favor califique de 1 a 5 cada aspecto (donde 1 es Muy Insatisfecho y 5 es Muy Satisfecho).'
+    );
+  } catch (eTit) {}
+
+  // Eliminar cualquier pregunta de selección o código de curso para que el participante solo responda la evaluación
+  try {
+    const items = form.getItems();
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      const tit = normalizarEncabezado_(it.getTitle());
+      const esPreguntaEval =
+        tit.indexOf('RELATOR') >= 0 ||
+        tit.indexOf('DOCENTE') >= 0 ||
+        tit.indexOf('CONTENIDO') >= 0 ||
+        tit.indexOf('ORGANIZACION') >= 0 ||
+        tit.indexOf('SATISFACCION GLOBAL') >= 0 ||
+        tit.indexOf('RECOMEND') >= 0 ||
+        tit.indexOf('VALIOSO') >= 0 ||
+        tit.indexOf('SUGERENCIA') >= 0;
+      const esPreguntaCurso =
+        !esPreguntaEval && (
+          tit.indexOf('AL QUE ASISTIO') >= 0 ||
+          tit.indexOf('CODIGO') >= 0 ||
+          tit === 'CAPACITACION O TALLER' ||
+          tit === 'ACTIVIDAD' ||
+          tit === 'CAPACITACION' ||
+          tit.indexOf('SELECCIONE LA CAPACITACION') >= 0
+        );
+      if (esPreguntaCurso) {
+        form.deleteItem(it);
+      }
+    }
+  } catch (eDel) {
+    console.warn('Advertencia limpiando pregunta de curso en Form dedicado: ' + eDel.message);
+  }
+
+  return form.getPublishedUrl();
+}
+
+/**
+ * Crea o recupera el Formulario Google exclusivo de Satisfacción para la capacitación indicada.
+ * El participante NO tiene que elegir ni escribir el nombre de la capacitación: el formulario es propio
+ * de la actividad y el sistema asocia todas sus respuestas automáticamente al ID_ACTIVIDAD.
+ */
+function crearOVerificarFormularioSatisfaccionWeb(idActividad) {
+  idActividad = String(idActividad || '').trim();
+  if (!idActividad) throw new Error('Debe seleccionar una capacitación para generar su encuesta de satisfacción.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    prepararConfigFormularios();
+    asegurarActivadorPeriodicoSatisfaccion_();
+    const central = sigcSpreadsheetCentral_();
+    asegurarHojaEvaluaciones_(central);
+    const actividad = webBuscarRegistro_(central, WEBAPP_CONFIG.HOJAS.ACTIVIDADES, 'ID_ACTIVIDAD', idActividad);
+    const etiquetaActividad = formatearEtiquetaCursoSatisfaccion_(actividad, idActividad);
+    const nombreActLimpio = webFormatearNombreCapacitacion_((actividad && actividad.NOMBRE_ACTIVIDAD) || idActividad);
+    const idActUpper = idActividad.toUpperCase();
+
+    const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+    const datos = hojaConfig.getDataRange().getValues();
+    const mapa = mapaEncabezados_(datos[0]);
+
+    // 1. Buscar si esta capacitación (ID_ACTIVIDAD) ya tiene su propio formulario de satisfacción exclusivo.
+    // NUNCA adoptar formularios de otras actividades ni reasignar formularios previos. Cada actividad debe tener su formulario aislado.
+    let filaDedicada = -1;
+    let formDedicado = null;
+    let respDedicado = 0;
+
+    for (let i = 1; i < datos.length; i++) {
+      const tipo = normalizarEncabezado_(datos[i][mapa['TIPO']]);
+      const formId = String(datos[i][mapa['FORM ID']] || '').trim();
+      const idActFila = String(datos[i][mapa['ID ACTIVIDAD']] || '').trim().toUpperCase();
+
+      if ((tipo === 'SATISFACCION' || tipo === 'ENCUESTA SATISFACCION') && formId) {
+        if (idActFila === idActUpper) {
+          try {
+            const f = FormApp.openById(formId);
+            if (f) {
+              const cantR = f.getResponses().length;
+              if (!formDedicado || cantR > respDedicado) {
+                filaDedicada = i + 1;
+                formDedicado = f;
+                respDedicado = cantR;
+              }
+            }
+          } catch (eF1) {}
+        }
+      }
+    }
+
+    if (formDedicado && filaDedicada > 0) {
+      if (mapa['ESTADO'] !== undefined) {
+        hojaConfig.getRange(filaDedicada, mapa['ESTADO'] + 1).setValue('Activo');
+      }
+      const urlDirecta = asegurarFormularioSatisfaccionDedicado_(formDedicado, actividad, idActividad);
+      SpreadsheetApp.flush();
+      sincronizarRespuestasSatisfaccion_(central, idActividad);
+      return {
+        ok: true,
+        mensaje: 'Encuesta digital verificada para "' + nombreActLimpio + '" con todas sus respuestas consolidadas.',
+        formId: formDedicado.getId(),
+        urlPublica: urlDirecta,
+        urlPrellenada: urlDirecta,
+        urlEdicion: formDedicado.getEditUrl(),
+        urlRespuestas: 'https://docs.google.com/spreadsheets/d/' + central.getId() + '/edit',
+        etiquetaActividad: etiquetaActividad
+      };
+    }
+
+    // 2. Crear un nuevo Formulario Google exclusivo para esta capacitación (sin lista desplegable de cursos)
+    const titulo = 'Encuesta de Satisfacción — ' + nombreActLimpio;
+    const form = FormApp.create(titulo);
+    try { form.setRequireLogin(false); } catch (e) {}
+    try { form.setLimitOneResponsePerUser(false); } catch (e) {}
+    try { form.setAllowResponseEdits(false); } catch (e) {}
+    try { form.setCollectEmail(false); } catch (e) {}
+    try { form.setAcceptingResponses(true); } catch (e) {}
+
+    form.setDescription(
+      'Municipalidad de Santiago • Subdirección de Desarrollo Económico Local\n' +
+      'Capacitación evaluada: ' + nombreActLimpio + ' (' + idActividad + ')\n\n' +
+      'Su opinión es anónima y muy importante para evaluar y mejorar nuestras capacitaciones y talleres. ' +
+      'Por favor califique de 1 a 5 cada aspecto (donde 1 es Muy Insatisfecho y 5 es Muy Satisfecho).'
+    );
+    form.setConfirmationMessage(
+      '¡Muchas gracias por responder la Encuesta de Satisfacción de "' + nombreActLimpio + '"! Su evaluación ha sido registrada exitosamente.'
+    );
+
+    form.addScaleItem()
+      .setTitle('1. Evaluación del Relator(a) / Docente')
+      .setHelpText('Dominio del tema, claridad en la explicación y disposición para resolver dudas.')
+      .setBounds(1, 5)
+      .setLabels('Muy insatisfecho(a)', 'Muy satisfecho(a)')
+      .setRequired(true);
+
+    form.addScaleItem()
+      .setTitle('2. Contenidos y Utilidad Práctica')
+      .setHelpText('Calidad de los temas abordados y utilidad práctica para su trabajo, oficio o emprendimiento.')
+      .setBounds(1, 5)
+      .setLabels('Muy insatisfecho(a)', 'Muy satisfecho(a)')
+      .setRequired(true);
+
+    form.addScaleItem()
+      .setTitle('3. Organización, Materiales y Espacio')
+      .setHelpText('Cumplimiento de horarios, materiales de apoyo y comodidad de la sala o plataforma virtual.')
+      .setBounds(1, 5)
+      .setLabels('Muy insatisfecho(a)', 'Muy satisfecho(a)')
+      .setRequired(true);
+
+    form.addScaleItem()
+      .setTitle('4. Satisfacción Global con la Capacitación')
+      .setHelpText('En términos generales, ¿qué tan satisfecho(a) quedó con esta capacitación?')
+      .setBounds(1, 5)
+      .setLabels('Muy insatisfecho(a)', 'Muy satisfecho(a)')
+      .setRequired(true);
+
+    form.addMultipleChoiceItem()
+      .setTitle('5. ¿Recomendaría esta capacitación a otras personas?')
+      .setChoiceValues(['Sí', 'Tal vez', 'No'])
+      .setRequired(true);
+
+    form.addParagraphTextItem()
+      .setTitle('6. ¿Qué fue lo más valioso o útil que aprendió en esta capacitación?')
+      .setRequired(false);
+
+    form.addParagraphTextItem()
+      .setTitle('7. Sugerencias de mejora o nuevos temas que le gustaría aprender')
+      .setRequired(false);
+
+    const urlDirecta = form.getPublishedUrl();
+    const idConfig = 'FOR-SAT-' + Utilities.getUuid().slice(0, 6).toUpperCase();
+    hojaConfig.appendRow([
+      idConfig,
+      'SATISFACCION',
+      central.getId(),
+      'DIRECTO_FORMAPP',
+      idActividad,
+      'Activo',
+      new Date(),
+      form.getId(),
+      urlDirecta,
+      form.getEditUrl(),
+      'SI'
+    ]);
+
+    try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (e) {}
+
+    return {
+      ok: true,
+      mensaje: '¡Encuesta digital y QR exclusivos creados para "' + nombreActLimpio + '"! El participante solo responde las preguntas y todo se traspasa automáticamente a esta capacitación.',
+      formId: form.getId(),
+      urlPublica: urlDirecta,
+      urlPrellenada: urlDirecta,
+      urlEdicion: form.getEditUrl(),
+      urlRespuestas: 'https://docs.google.com/spreadsheets/d/' + central.getId() + '/edit',
+      etiquetaActividad: etiquetaActividad
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Obtiene el consolidado y detalle de evaluaciones de satisfacción de una actividad.
+ */
+function obtenerEvaluacionesActividadWeb(idActividad, forzarSync) {
+  webValidarObjeto_({ ID_ACTIVIDAD: idActividad }, ['ID_ACTIVIDAD']);
+  const ss = sigcSpreadsheetCentral_();
+  const hojaEval = asegurarHojaEvaluaciones_(ss);
+
+  const actIdNorm = String(idActividad || '').trim().toUpperCase();
+  const cache = CacheService.getScriptCache();
+  const claveThrottle = 'SIGC_SYNC_SAT_THROTTLE_' + actIdNorm;
+  let nuevasSincronizadas = 0;
+
+  if (forzarSync || !cache.get(claveThrottle)) {
+    nuevasSincronizadas = sincronizarRespuestasSatisfaccion_(ss, idActividad);
+    cache.put(claveThrottle, '1', 45); // Throttle de 45 segundos para no saturar con peticiones consecutivas
+    if (nuevasSincronizadas > 0) {
+      sigcInvalidarCacheTabla_(hojaEval.getName());
+    }
+  }
+
+  const actividad = webBuscarRegistro_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES, 'ID_ACTIVIDAD', idActividad);
+  if (!actividad) throw new Error('No se encontró la actividad solicitada.');
+
+  const actNomNorm = normalizarEncabezado_(actividad.NOMBRE_ACTIVIDAD || '');
+
+  const registros = webLeerTablaConCache_(ss, hojaEval.getName(), nuevasSincronizadas > 0).filter(function(r) {
+    if (!webEsRegistroActivo_(r)) return false;
+    const rId = String(r.ID_ACTIVIDAD || '').trim().toUpperCase();
+    const rNom = normalizarEncabezado_(r.NOMBRE_ACTIVIDAD || '');
+    if (rId === actIdNorm) return true;
+    if (rId && rId !== actIdNorm) return false; // Aislamiento estricto: si tiene otro ID asignado, jamás se mezcla
+    if (actNomNorm && rNom && (rNom === actNomNorm || rNom.indexOf(actNomNorm) >= 0 || actNomNorm.indexOf(rNom) >= 0)) return true;
+    return false;
+  });
+
+  const resumen = webCalcularResumenSatisfaccion_(registros);
+
+  // Buscar si ya existe el formulario de satisfacción exclusivo para esta actividad (ID_ACTIVIDAD === actIdNorm)
+  let infoFormulario = null;
+  try {
+    const hojaConfig = ss.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+    if (hojaConfig && hojaConfig.getLastRow() >= 2) {
+      const datosCfg = hojaConfig.getDataRange().getValues();
+      const mapaCfg = mapaEncabezados_(datosCfg[0]);
+      for (let i = 1; i < datosCfg.length; i++) {
+        const tipo = normalizarEncabezado_(datosCfg[i][mapaCfg['TIPO']]);
+        const formId = String(datosCfg[i][mapaCfg['FORM ID']] || '').trim();
+        const idActCfg = String(datosCfg[i][mapaCfg['ID ACTIVIDAD']] || '').trim().toUpperCase();
+        if ((tipo === 'SATISFACCION' || tipo === 'ENCUESTA SATISFACCION') && formId) {
+          const colUrlPub = mapaCfg['FORM URL PUBLICA'] !== undefined ? mapaCfg['FORM URL PUBLICA'] : mapaCfg['URL PUBLICA'];
+          const colUrlEd = mapaCfg['FORM URL EDICION'] !== undefined ? mapaCfg['FORM URL EDICION'] : mapaCfg['URL EDICION'];
+          const urlPub = colUrlPub !== undefined ? String(datosCfg[i][colUrlPub] || '').trim() : '';
+          const etiqueta = formatearEtiquetaCursoSatisfaccion_(actividad, idActividad);
+          const itemInfo = {
+            formId: formId,
+            urlPublica: urlPub,
+            urlPrellenada: urlPub,
+            urlEdicion: colUrlEd !== undefined ? String(datosCfg[i][colUrlEd] || '').trim() : '',
+            etiquetaActividad: etiqueta
+          };
+          if (idActCfg === actIdNorm && !infoFormulario) {
+            infoFormulario = itemInfo;
+            break;
+          }
+        }
+      }
+    }
+  } catch (eCfg) {}
+
+  return {
+    ok: true,
+    idActividad: idActividad,
+    nombreActividad: actividad.NOMBRE_ACTIVIDAD || '',
+    sincronizadas: nuevasSincronizadas,
+    resumen: resumen,
+    formulario: infoFormulario
+  };
+}
+
+/**
+ * Registra encuestas físicas en el sistema (modo individual 1 a 1 o modo consolidado por lote).
+ */
+function guardarEvaluacionSatisfaccionWeb(payload) {
+  if (!payload || !payload.idActividad) {
+    throw new Error('Debe indicar la actividad a evaluar.');
+  }
+  const ss = sigcSpreadsheetCentral_();
+  const hojaEval = asegurarHojaEvaluaciones_(ss);
+  const actividad = webBuscarRegistro_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES, 'ID_ACTIVIDAD', payload.idActividad);
+  if (!actividad) throw new Error('La actividad indicada no existe.');
+
+  const modo = String(payload.modo || 'INDIVIDUAL').toUpperCase();
+  const cantidad = modo === 'LOTE'
+    ? Math.max(1, Math.round(Number(payload.cantidadRespuestas || 1)))
+    : 1;
+
+  const nRel = webExtraerNotaEscala_(payload.notaRelator);
+  const nCon = webExtraerNotaEscala_(payload.notaContenidos);
+  const nOrg = webExtraerNotaEscala_(payload.notaOrganizacion);
+  const nGlo = webExtraerNotaEscala_(payload.notaGlobal);
+
+  const notas = [nRel, nCon, nOrg, nGlo].filter(function(n) { return n > 0; });
+  if (!notas.length) {
+    throw new Error('Debe ingresar calificaciones válidas entre 1.0 y 5.0.');
+  }
+
+  const promGeneral = Number((notas.reduce(function(a, b) { return a + b; }, 0) / notas.length).toFixed(2));
+  const porcSat = Math.round((promGeneral / 5) * 100);
+  const canal = modo === 'LOTE'
+    ? 'Papel (Lote de ' + cantidad + ' encuestas)'
+    : 'Papel (Individual)';
+
+  const idEval = 'EVA-' + Utilities.getUuid().slice(0, 8).toUpperCase();
+  hojaEval.appendRow([
+    idEval,
+    actividad.ID_ACTIVIDAD,
+    actividad.NOMBRE_ACTIVIDAD || '',
+    new Date(),
+    canal,
+    cantidad,
+    nRel || promGeneral,
+    nCon || promGeneral,
+    nOrg || promGeneral,
+    nGlo || promGeneral,
+    promGeneral,
+    porcSat,
+    String(payload.recomienda || 'Sí').trim(),
+    String(payload.loMasValioso || '').trim(),
+    String(payload.sugerencias || '').trim(),
+    'DIGITACION_WEB',
+    'Sí'
+  ]);
+
+  SpreadsheetApp.flush();
+  sigcInvalidarCacheTabla_(hojaEval.getName());
+
+  const actualizado = obtenerEvaluacionesActividadWeb(actividad.ID_ACTIVIDAD, false);
+  actualizado.mensaje = modo === 'LOTE'
+    ? 'Se consolidó exitosamente el lote de ' + cantidad + ' encuestas físicas (Promedio: ' + promGeneral + '/5.0).'
+    : 'Encuesta física registrada correctamente (Promedio: ' + promGeneral + '/5.0).';
+  return actualizado;
+}
+
+/**
+ * Elimina (desactiva) un registro de evaluación de satisfacción.
+ */
+function eliminarEvaluacionSatisfaccionWeb(idEvaluacion, idActividad) {
+  if (!idEvaluacion) throw new Error('Debe indicar el ID de la evaluación a eliminar.');
+  const ss = sigcSpreadsheetCentral_();
+  const hojaEval = asegurarHojaEvaluaciones_(ss);
+  const datos = hojaEval.getDataRange().getValues();
+  if (datos.length < 2) throw new Error('No se encontraron registros de evaluación.');
+  const mapa = mapaEncabezados_(datos[0]);
+  const colId = mapa['ID EVALUACION'];
+  const colActivo = mapa['REGISTRO ACTIVO'];
+
+  let encontrado = false;
+  for (let i = 1; i < datos.length; i++) {
+    if (String(datos[i][colId] || '').trim() === String(idEvaluacion).trim()) {
+      hojaEval.getRange(i + 1, colActivo + 1).setValue('No');
+      encontrado = true;
+      break;
+    }
+  }
+  if (!encontrado) throw new Error('No se encontró el registro de evaluación indicado.');
+
+  SpreadsheetApp.flush();
+  sigcInvalidarCacheTabla_(hojaEval.getName());
+  const actualizado = obtenerEvaluacionesActividadWeb(idActividad, false);
+  actualizado.mensaje = 'Registro de evaluación eliminado correctamente.';
+  return actualizado;
+}

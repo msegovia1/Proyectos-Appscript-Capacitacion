@@ -1,7 +1,10 @@
 <section id="formularios" class="view">
         <div class="section-head">
-          <div><h2>Formularios</h2><p>Administre el registro público de intereses, formularios de inscripción y respuestas que requieran revisión.</p></div>
-          <button class="btn secondary" type="button" onclick="cargarFormularios(true)">Actualizar conteos</button>
+          <div><h2>Formularios</h2><p>Administre el formulario público de intereses (Base Madre) y las inscripciones por capacitación.</p></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" type="button" onclick="recuperarTodosFormulariosWeb()">⚡ Sincronizar pendientes</button>
+            <button class="btn secondary" type="button" onclick="cargarFormularios(true)">Actualizar conteos</button>
+          </div>
         </div>
         <div class="card panel" style="margin-bottom:18px">
           <h3>Formulario público de registro e intereses</h3>
@@ -18,7 +21,59 @@
         <div class="card panel" style="margin-bottom:18px">
           <h3>Vincular formulario de inscripción</h3>
           <div class="form-grid">
-            <div class="field"><label>Actividad para vincular *</label><select id="formularioActividad"><option value="">Seleccione una actividad...</option></select></div>
+            <div class="field full" style="position:relative;">
+              <!-- Cabecera del selector con Filtros Rápidos de Estado -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                <label style="margin:0; font-weight:600; color:var(--texto);">Actividad para vincular *</label>
+                <div class="actividad-filtro-chips" id="actFiltroChips_Formulario" style="display:flex; gap:4px;">
+                  <button type="button" class="chip-filtro-act active" data-filtro="activas" onclick="cambiarFiltroEstadoActGen('Formulario', 'activas')">⚡ En curso / Activas</button>
+                  <button type="button" class="chip-filtro-act " data-filtro="todas" onclick="cambiarFiltroEstadoActGen('Formulario', 'todas')">📋 Todas</button>
+                  <button type="button" class="chip-filtro-act " data-filtro="finalizadas" onclick="cambiarFiltroEstadoActGen('Formulario', 'finalizadas')">🏁 Finalizadas</button>
+                </div>
+              </div>
+
+              <!-- Input de Búsqueda Predictiva -->
+              <div id="contenedorBuscadorAct_Formulario" style="position:relative;">
+                <div style="position:relative; display:flex; align-items:center;">
+                  <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+                  <input id="inputBuscarAct_Formulario" type="text" placeholder="🔍 Buscar actividad para vincular formulario por código, nombre o escuela..." autocomplete="off" style="width:100%; padding-left:36px; padding-right:32px; height:42px;" onfocus="buscarActividadesPredictivoGen('Formulario', true)" oninput="buscarActividadesPredictivoGenConPausa('Formulario')" onkeydown="manejarTecladoActividadGen(event, 'Formulario')">
+                  <button type="button" id="btnLimpiarBuscarAct_Formulario" style="display:none; position:absolute; right:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:2px 6px; border-radius:50%;" onclick="limpiarTextoBuscarActividadGen('Formulario')" title="Limpiar búsqueda">✕</button>
+                </div>
+
+                <!-- Dropdown de resultados predictivos -->
+                <div id="dropdownResultadosAct_Formulario" class="dropdown-predictivo-actividades" style="display:none;">
+                  <!-- Se puebla dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Tarjeta de Actividad Seleccionada -->
+              <div id="cardActSeleccionada_Formulario" class="card-actividad-seleccionada" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+                  <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+                    <span style="font-size:24px; line-height:1;">🎓</span>
+                    <div style="min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                        <span id="cardActId_Formulario" class="badge-actividad-id">CAP-2026-000</span>
+                        <span id="cardActEstado_Formulario" class="badge">Estado</span>
+                        <span id="cardActModalidad_Formulario" class="badge-subtle">Presencial</span>
+                      </div>
+                      <strong id="cardActNombre_Formulario" style="font-size:14px; color:var(--azul-2,#1e3a8a); display:block; word-break:break-word;">Nombre de la actividad</strong>
+                      <div style="font-size:12px; color:var(--gris,#64748b); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                        <span id="cardActFecha_Formulario">📅 Fecha</span>
+                        <span id="cardActEscuela_Formulario">🏫 Escuela</span>
+                        <span id="cardActCupos_Formulario">👥 Cupos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn secondary compact" onclick="deseleccionarActividadGen('Formulario')" style="white-space:nowrap;">✕ Cambiar actividad</button>
+                </div>
+              </div>
+
+              <!-- Select original en el DOM para retrocompatibilidad 100% -->
+              <select id="formularioActividad" style="display:none;">
+                <option value="">Seleccione una actividad...</option>
+              </select>
+            </div>
             <div class="field full"><label>URL de la hoja de respuestas *</label><input id="formularioUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit?...gid=..."></div>
             <div class="notice">Pegue el enlace de la <strong>Google Sheet de respuestas</strong>, no el enlace público del Form. El ID interno de la actividad nunca se pregunta al ciudadano.</div>
             <div class="form-actions"><button class="btn" type="button" onclick="vincularFormularioWeb()">Vincular formulario</button></div>
@@ -38,6 +93,18 @@
         <div id="estadoActualizacionFormularios" class="muted" style="margin-bottom:10px"></div>
         <div class="notice" style="margin-bottom:14px"><strong>Capacidad:</strong> el límite se consume por archivo de Google Sheets, no por formulario ni por pestaña. Varios Forms pueden guardar sus respuestas en pestañas diferentes de una misma Sheet institucional y compartir un solo activador.</div>
         <div class="notice" style="margin-bottom:14px">Una respuesta incorrecta ya no detiene el sistema. Los errores de formato corregibles se normalizan automáticamente; si un dato esencial no puede validarse con seguridad, solo esa respuesta queda marcada para revisión. Si aparecen pendientes o falta el activador, use <strong>Reparar y recuperar</strong>.</div>
+        <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; background:var(--bg-card,#fff); padding:12px 16px; border-radius:10px; border:1px solid var(--border,#e2e8f0); box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+          <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:280px; max-width:480px; position:relative;">
+            <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+            <input id="inputBuscarFormularios" type="text" placeholder="Buscar formulario por actividad, código o planilla..." style="width:100%; padding-left:36px; padding-right:28px; height:38px; border-radius:6px; border:1px solid var(--border,#cbd5e1); font-size:13px;" oninput="filtrarTablaFormulariosWeb()">
+            <button type="button" id="btnLimpiarBuscarFormularios" style="display:none; position:absolute; right:8px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:13px;" onclick="limpiarBuscarFormulariosWeb()" title="Limpiar">✕</button>
+          </div>
+          <div class="actividad-filtro-chips" style="display:flex; gap:6px; align-items:center;">
+            <button type="button" id="btnFiltroForm_todos" class="chip-filtro-act active" data-filtro-form="todos" onclick="cambiarFiltroEstadoFormulariosWeb('todos')">📋 Todos (<span id="contFiltroForm_todos">0</span>)</button>
+            <button type="button" id="btnFiltroForm_activos" class="chip-filtro-act" data-filtro-form="activos" onclick="cambiarFiltroEstadoFormulariosWeb('activos')">⚡ Activos (<span id="contFiltroForm_activos">0</span>)</button>
+            <button type="button" id="btnFiltroForm_inactivos" class="chip-filtro-act" data-filtro-form="inactivos" onclick="cambiarFiltroEstadoFormulariosWeb('inactivos')">⏸️ Inactivos (<span id="contFiltroForm_inactivos">0</span>)</button>
+          </div>
+        </div>
         <div class="table-container"><table><thead><tr><th>Actividad</th><th>Hoja de respuestas</th><th>Estado</th><th>Automatización</th><th>Total</th><th>Procesadas</th><th>Advertencias</th><th>Revisión</th><th>Detalle</th><th>Acciones</th></tr></thead><tbody id="tablaFormularios"><tr><td colspan="10" class="empty-state">Cargando vinculaciones...</td></tr></tbody></table></div>
         <div id="panelCasosRevision" class="card panel review-panel" hidden>
           <div class="edit-head">

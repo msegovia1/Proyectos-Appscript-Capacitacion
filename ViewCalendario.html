@@ -4,7 +4,11 @@
       <h2>Calendario de capacitaciones</h2>
       <p>Cronograma mensual y próximas actividades programadas en la Municipalidad de Santiago.</p>
     </div>
-    <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" type="button" onclick="abrirModalSincronizarGoogleCalendar()" style="background:#0284c7; color:#fff; font-weight:600;">📅 Calendarizar en Google Calendar</button>
+      <button class="btn secondary" type="button" onclick="exportarCalendarioGoogleIcs()" style="border-color:#2563eb; color:#1d4ed8; background:#eff6ff; font-weight:600;" title="Descargar archivo .ics compatible con Google Calendar y Outlook con todas las capacitaciones y sesiones programadas">📅 Exportar a Google Calendar (.ics)</button>
+      <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
+    </div>
   </div>
 
   <!-- KPIs de Resumen del Calendario -->
@@ -124,8 +128,9 @@
           <div class="detalle-item full"><label>Observaciones:</label><p id="calDetalleObs">—</p></div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="flex-wrap:wrap; gap:8px;">
         <button class="btn secondary" type="button" onclick="cerrarDetalleActividadCalendario()">Cerrar</button>
+        <a id="btnCalAgendarGCal" href="#" target="_blank" rel="noopener noreferrer" class="btn secondary" style="border-color:#0284c7; color:#0369a1; background:#f0f9ff; font-weight:600; text-decoration:none; display:inline-flex; align-items:center;">📅 Agendar en Google Calendar ↗</a>
         <button id="btnCalIrGestion" class="btn" type="button">Gestionar participantes</button>
         <button id="btnCalIrEditar" class="btn secondary" type="button">Editar actividad</button>
       </div>

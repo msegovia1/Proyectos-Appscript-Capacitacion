@@ -104,9 +104,15 @@ function consultarPlanillaActiva_() {
     .probarConexionSIGC();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function arrancarJsUI_() {
   setTimeout(consultarPlanillaActiva_, 1500);
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', arrancarJsUI_);
+} else {
+  arrancarJsUI_();
+}
 
 function abrirModalConfiguracion() {
   const modal = document.getElementById('modalConfiguracion');

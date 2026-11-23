@@ -5,7 +5,7 @@ function normHeader_(value) {
   return String(value || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[_/\\-]+/g, ' ')
-    .replace(/[^\w\s]/g, '')
+    .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
@@ -17,10 +17,15 @@ function sigcNormalizarEncabezado(valor) {
   return String(valor || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[_/\\-]+/g, ' ')
-    .replace(/[^\w\s]/g, '')
+    .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
+}
+function sigcEncabezadoSinNumeroPregunta(valor) {
+  return sigcNormalizarEncabezado(valor)
+    .replace(/^\d+\s+/, '')
+    .trim();
 }
 function sigcNormalizarTexto(valor) {
   return String(valor || '')
@@ -34,6 +39,8 @@ function sigcNormalizarClave(valor) {
     .toLowerCase();
 }
 function sigcNormalizarNombre(valor) {
+  const strVal = String(valor || '').trim();
+  if (/^CAP-\d+/i.test(strVal) || /^ACT-\d+/i.test(strVal)) return '';
   const texto = sigcNormalizarTexto(valor).toLowerCase();
   if (!texto) return '';
   const minusculas = ['de', 'del', 'la', 'las', 'los', 'y', 'e'];
@@ -45,6 +52,16 @@ function sigcNormalizarNombre(valor) {
 function sigcNormalizarRut(valor) {
   if (!valor) return '';
   const str = String(valor).trim().toUpperCase();
+  if (/^CAP-\d+/i.test(str) || /^ACT-\d+/i.test(str)) return '';
+  // Si contiene un patrón explícito de RUT con guión (ej: "9613662-5 88903073" o "18.234.567-K")
+  const matchRutGuion = str.match(/(\d{1,2}(?:\.\d{3}){2}|\d{6,8})\s*-\s*([0-9K])/);
+  if (matchRutGuion) {
+    const cExplicito = matchRutGuion[1].replace(/\D/g, '');
+    const dvExplicito = matchRutGuion[2];
+    if (cExplicito.length >= 6) {
+      return cExplicito + '-' + dvExplicito;
+    }
+  }
   // Si ya contiene guión explícito (ej: "18.234.567-8" o "18234567-K")
   if (str.indexOf('-') >= 0) {
     const partes = str.split('-');
@@ -72,6 +89,14 @@ function sigcNormalizarRut(valor) {
     limpio = repMatchSinDv[1];
   }
 
+  // Si tiene 8 o 9 caracteres y ya es un RUT válido con DV incluido (ej: "128707182" -> "12870718-2" o "89511704" -> "8951170-4")
+  if (/^\d{7,8}[0-9K]$/.test(limpio)) {
+    const candConDv = limpio.slice(0, -1) + '-' + limpio.slice(-1);
+    if (sigcValidarRut(candConDv)) {
+      return candConDv;
+    }
+  }
+
   // Si son 7 u 8 dígitos puros sin guión previo (es el cuerpo al que le falta el DV)
   if (/^\d{7,8}$/.test(limpio)) {
     let suma = 0;
@@ -88,6 +113,8 @@ function sigcNormalizarRut(valor) {
   return limpio.slice(0, -1) + '-' + limpio.slice(-1);
 }
 function sigcValidarRut(valor) {
+  const strVal = String(valor || '').trim();
+  if (/^CAP-\d+/i.test(strVal) || /^ACT-\d+/i.test(strVal)) return false;
   const limpio = String(valor || '').toUpperCase().replace(/[^0-9K]/g, '');
   if (!/^\d{7,8}[0-9K]$/.test(limpio)) return false;
   const cuerpo = limpio.slice(0, -1);
@@ -200,12 +227,31 @@ function sigcValidarCorreo(valor) {
   return !correo || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo);
 }
 function sigcNormalizarTelefono(valor) {
-  let limpio = String(valor || '').replace(/\D/g, '');
-  if (!limpio) return '';
-  if (limpio.indexOf('0056') === 0) limpio = limpio.substring(2);
-  if (limpio.length === 9) limpio = '56' + limpio;
-  if (limpio.length === 8) limpio = '562' + limpio;
-  return limpio;
+  const raw = String(valor || '').trim();
+  if (!raw) return '';
+  function normalizarUnFono_(txt) {
+    let d = String(txt || '').replace(/\D/g, '');
+    if (!d) return '';
+    if (d.indexOf('0056') === 0) d = d.substring(2);
+    if (d.length === 9) d = '56' + d;
+    if (d.length === 8) d = '562' + d;
+    return d;
+  }
+  const directo = normalizarUnFono_(raw);
+  if (/^56\d{9}$/.test(directo)) return directo;
+  const fragmentos = raw.split(/[/,;|\n]+|\s+-\s+|\s+[oyOY]\s+/);
+  if (fragmentos.length > 1) {
+    for (let i = 0; i < fragmentos.length; i++) {
+      const cand = normalizarUnFono_(fragmentos[i]);
+      if (/^56\d{9}$/.test(cand)) return cand;
+    }
+  }
+  const matchMovil = raw.replace(/\s+/g, '').match(/(?:\+?56)?9\d{8}/);
+  if (matchMovil) {
+    const candMovil = normalizarUnFono_(matchMovil[0]);
+    if (/^56\d{9}$/.test(candMovil)) return candMovil;
+  }
+  return directo;
 }
 function sigcValidarTelefono(valor) {
   const telefono = sigcNormalizarTelefono(valor);
@@ -306,7 +352,9 @@ function sigcDocumentoVisible(persona) {
 function sigcNormalizarSiNo(valor, defecto) {
   const clave = sigcNormalizarClave(valor);
   if (['si', 'sí', 's', 'yes', '1', 'true'].indexOf(clave) >= 0) return 'Sí';
+  if (/confirmad|confirmo|asistira|asistirá/.test(clave)) return 'Sí';
   if (['no', 'n', '0', 'false'].indexOf(clave) >= 0) return 'No';
+  if (/no asiste|no podra asistir|no podrá asistir|rechaza/.test(clave)) return 'No';
   if (clave.indexOf('no informado') >= 0 || clave.indexOf('sin informacion') >= 0) return 'No informado';
   return defecto || 'No informado';
 }
@@ -407,26 +455,40 @@ function sigcFormatearFechaChile(fecha, patron) {
     patron || 'dd-MM-yyyy'
   );
 }
+let _cachedEmailUsuarioActivo = null;
+
 function sigcRegistrarLog(accion, entidad, idEntidad, detalle) {
-  sigcInvalidarCache_();
-  const ss = SpreadsheetApp.openById(SIGC_CONFIG.SPREADSHEET_ID);
-  let hoja = ss.getSheetByName(SIGC_CONFIG.HOJAS.LOG);
-  if (!hoja) {
-    hoja = ss.insertSheet(SIGC_CONFIG.HOJAS.LOG);
+  try {
+    const ss = typeof sigcSpreadsheetCentral_ === 'function'
+      ? sigcSpreadsheetCentral_()
+      : SpreadsheetApp.openById(SIGC_CONFIG.SPREADSHEET_ID);
+    let hoja = ss.getSheetByName(SIGC_CONFIG.HOJAS.LOG);
+    if (!hoja) {
+      hoja = ss.insertSheet(SIGC_CONFIG.HOJAS.LOG);
+      hoja.appendRow([
+        'FECHA_HORA', 'USUARIO', 'ACCION',
+        'ENTIDAD', 'ID_ENTIDAD', 'DETALLE'
+      ]);
+      hoja.setFrozenRows(1);
+    }
+    if (_cachedEmailUsuarioActivo === null) {
+      try {
+        _cachedEmailUsuarioActivo = Session.getActiveUser().getEmail() || 'No identificado';
+      } catch (eU) {
+        _cachedEmailUsuarioActivo = 'No identificado';
+      }
+    }
     hoja.appendRow([
-      'FECHA_HORA', 'USUARIO', 'ACCION',
-      'ENTIDAD', 'ID_ENTIDAD', 'DETALLE'
+      new Date(),
+      _cachedEmailUsuarioActivo,
+      accion,
+      entidad,
+      idEntidad || '',
+      detalle || ''
     ]);
-    hoja.setFrozenRows(1);
+  } catch (eLog) {
+    console.warn('Advertencia al escribir log: ' + eLog.message);
   }
-  hoja.appendRow([
-    new Date(),
-    Session.getActiveUser().getEmail() || 'No identificado',
-    accion,
-    entidad,
-    idEntidad || '',
-    detalle || ''
-  ]);
 }
 /**
  * Ejecuta una operación mutante de datos protegida por LockService (control de concurrencia).

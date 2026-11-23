@@ -16,8 +16,62 @@
     <div class="card panel" style="margin-bottom:18px">
       <div class="form-grid">
         <div class="field"><label>Origen del público</label><select id="comFuente" onchange="actualizarControlesComunicacion()"><option value="actividad">Actividad</option><option value="interes">Interés de capacitación</option><option value="base">Base general</option></select></div>
-        <div class="field com-actividad"><label>Actividad</label><select id="comActividad"></select></div>
-        <div class="field com-actividad"><label>Grupo</label><select id="comGrupo"><option>Seleccionados</option><option>Inscritos</option><option>Confirmados</option><option>Asistentes</option></select></div>
+        <!-- Selector y Buscador Predictivo de Actividades para Comunicaciones -->
+        <div class="field com-actividad" style="position:relative; grid-column: span 2; min-width:320px;">
+          <!-- Cabecera del selector con Filtros Rápidos de Estado -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+            <label style="margin:0; font-weight:600; color:var(--texto);">Actividad de capacitación</label>
+            <div class="actividad-filtro-chips" id="comFiltroChips" style="display:flex; gap:4px;">
+              <button type="button" class="chip-filtro-act active" data-filtro="activas" onclick="cambiarFiltroEstadoCom('activas')">⚡ En curso / Activas</button>
+              <button type="button" class="chip-filtro-act" data-filtro="todas" onclick="cambiarFiltroEstadoCom('todas')">📋 Todas</button>
+              <button type="button" class="chip-filtro-act" data-filtro="finalizadas" onclick="cambiarFiltroEstadoCom('finalizadas')">🏁 Finalizadas</button>
+            </div>
+          </div>
+
+          <!-- Input de Búsqueda Predictiva -->
+          <div id="contenedorBuscadorActividadCom" style="position:relative;">
+            <div style="position:relative; display:flex; align-items:center;">
+              <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+              <input id="inputBuscarActividadCom" type="text" placeholder="Buscar por código (ej: 018), nombre, relator o temática..." autocomplete="off" style="width:100%; padding-left:36px; padding-right:32px; height:42px;" onfocus="buscarActividadesPredictivoCom(true)" oninput="buscarActividadesPredictivoComConPausa()" onkeydown="manejarTecladoActividadCom(event)">
+              <button type="button" id="btnLimpiarBuscarActCom" style="display:none; position:absolute; right:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:2px 6px; border-radius:50%;" onclick="limpiarTextoBuscarActividadCom()" title="Limpiar búsqueda">✕</button>
+            </div>
+            
+            <!-- Dropdown de resultados predictivos -->
+            <div id="dropdownResultadosActividadesCom" class="dropdown-predictivo-actividades" style="display:none;">
+              <!-- Se puebla dinámicamente -->
+            </div>
+          </div>
+
+          <!-- Tarjeta de Actividad Seleccionada -->
+          <div id="cardActividadSeleccionadaCom" class="card-actividad-seleccionada" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+              <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+                <span style="font-size:24px; line-height:1;">🎓</span>
+                <div style="min-width:0; flex:1;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                    <span id="cardActividadComId" class="badge-actividad-id">CAP-2026-000</span>
+                    <span id="cardActividadComEstado" class="badge">Estado</span>
+                    <span id="cardActividadComModalidad" class="badge-subtle">Presencial</span>
+                  </div>
+                  <strong id="cardActividadComNombre" style="font-size:14px; color:var(--azul-2,#1e3a8a); display:block; word-break:break-word;">Nombre de la actividad</strong>
+                  <div style="font-size:12px; color:var(--gris,#64748b); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                    <span id="cardActividadComFecha">📅 Fecha</span>
+                    <span id="cardActividadComEscuela">🏫 Escuela</span>
+                    <span id="cardActividadComCupos">👥 Cupos</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn secondary compact" onclick="deseleccionarActividadCom()" style="white-space:nowrap;">✕ Cambiar actividad</button>
+            </div>
+          </div>
+
+          <!-- Select original en el DOM para retrocompatibilidad 100% -->
+          <select id="comActividad" style="display:none;" onchange="alCambiarActividadCom(this.value)">
+            <option value="">Seleccione una actividad...</option>
+          </select>
+        </div>
+
+        <div class="field com-actividad"><label>Grupo</label><select id="comGrupo" onchange="if(document.getElementById('comActividad')?.value) buscarDestinatarios()"><option>Confirmados</option><option>Seleccionados</option><option>Inscritos</option><option>Asistentes</option></select></div>
         <div class="field com-interes" hidden><label>Escuela / línea</label><select id="comEscuela" onchange="actualizarAreasComunicacion()"><option value="">Todas</option><option>Empleo</option><option>Emprendimiento</option><option>Transversal</option></select></div>
         <div class="field com-interes" hidden><label>Área temática</label><select id="comArea"><option value="">Todas</option></select></div>
         <div class="field"><label>Comuna</label><input id="comComuna" placeholder="Todas"></div>

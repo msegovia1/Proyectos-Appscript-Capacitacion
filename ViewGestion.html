@@ -7,15 +7,68 @@
         </div>
         <div class="card panel">
           <div class="gestion-selector">
-            <div class="field">
-              <label>Actividad de capacitación</label>
-              <select id="gestionActividad" onchange="alCambiarActividadGestion(this.value)">
+            <div class="field gestion-selector-field" style="position:relative; flex:1; min-width:320px;">
+              <!-- Cabecera del selector con Filtros Rápidos de Estado -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                <label style="margin:0; font-weight:600; color:var(--texto);">Actividad de capacitación</label>
+                <div class="actividad-filtro-chips" id="gestionFiltroChips" style="display:flex; gap:4px;">
+                  <button type="button" class="chip-filtro-act active" data-filtro="activas" onclick="cambiarFiltroEstadoGestion('activas')">⚡ En curso / Activas</button>
+                  <button type="button" class="chip-filtro-act" data-filtro="todas" onclick="cambiarFiltroEstadoGestion('todas')">📋 Todas</button>
+                  <button type="button" class="chip-filtro-act" data-filtro="finalizadas" onclick="cambiarFiltroEstadoGestion('finalizadas')">🏁 Finalizadas</button>
+                </div>
+              </div>
+
+              <!-- Input de Búsqueda Predictiva -->
+              <div id="contenedorBuscadorActividadGestion" style="position:relative;">
+                <div style="position:relative; display:flex; align-items:center;">
+                  <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+                  <input id="inputBuscarActividadGestion" type="text" placeholder="Buscar por código (ej: 018), nombre, relator o temática..." autocomplete="off" style="width:100%; padding-left:36px; padding-right:32px; height:42px;" onfocus="buscarActividadesPredictivoGestion(true)" oninput="buscarActividadesPredictivoGestionConPausa()" onkeydown="manejarTecladoActividadGestion(event)">
+                  <button type="button" id="btnLimpiarBuscarActGestion" style="display:none; position:absolute; right:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:2px 6px; border-radius:50%;" onclick="limpiarTextoBuscarActividadGestion()" title="Limpiar búsqueda">✕</button>
+                </div>
+                
+                <!-- Dropdown de resultados predictivos -->
+                <div id="dropdownResultadosActividadesGestion" class="dropdown-predictivo-actividades" style="display:none;">
+                  <!-- Se puebla dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Tarjeta de Actividad Seleccionada -->
+              <div id="cardActividadSeleccionadaGestion" class="card-actividad-seleccionada" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+                  <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+                    <span style="font-size:24px; line-height:1;">🎓</span>
+                    <div style="min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                        <span id="cardActividadId" class="badge-actividad-id">CAP-2026-000</span>
+                        <span id="cardActividadEstado" class="badge">Estado</span>
+                        <span id="cardActividadModalidad" class="badge-subtle">Presencial</span>
+                      </div>
+                      <strong id="cardActividadNombre" style="font-size:14px; color:var(--azul-2,#1e3a8a); display:block; word-break:break-word;">Nombre de la actividad</strong>
+                      <div style="font-size:12px; color:var(--gris,#64748b); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                        <span id="cardActividadFecha">📅 Fecha</span>
+                        <span id="cardActividadEscuela">🏫 Escuela</span>
+                        <span id="cardActividadCupos">👥 Cupos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn secondary compact" onclick="deseleccionarActividadGestion()" style="white-space:nowrap;">✕ Cambiar actividad</button>
+                </div>
+              </div>
+
+              <!-- Select original en el DOM para retrocompatibilidad 100% -->
+              <select id="gestionActividad" style="display:none;" onchange="alCambiarActividadGestion(this.value)">
                 <option value="">Seleccione una actividad...</option>
               </select>
             </div>
             <button class="btn" type="button" onclick="cargarGestionActividad(true)" title="Forzar recarga fresca desde Google Sheets">↻ Cargar participantes</button>
             <button class="btn secondary" type="button" onclick="depurarDuplicadosGestion()" title="Detectar y unificar participantes duplicados en esta actividad">🧹 Depurar duplicados</button>
             <button class="btn secondary" type="button" onclick="abrirModalTraspasoPostulantes()" title="Traspasar postulantes no seleccionados o en lista de espera desde una versión o capacitación previa">📥 Traspasar de otra actividad</button>
+            <button class="btn secondary" type="button" onclick="imprimirListaFirmasGestion()" title="Generar e imprimir hoja física de asistencia y firmas para sala (PDF / Papel)">🖨️ Imprimir Lista de Firmas</button>
+            <button class="btn secondary" type="button" onclick="abrirModalImportarAsistencia()" style="border-color:#059669; color:#047857; background:#ecfdf5; font-weight:600;" title="Importar asistencia rápida desde Excel, CSV o reporte de Zoom/Meet">📋 Importar Asistencia</button>
+            <button class="btn secondary" type="button" onclick="abrirModalEvaluacionSatisfaccion()" style="border-color:#d97706; color:#b45309; background:#fffbeb; font-weight:700;" title="Imprimir encuesta física en papel/Word, generar QR de formulario digital, digitar respuestas y consolidar satisfacción">⭐ Encuesta de Satisfacción</button>
+            <button class="btn secondary" type="button" onclick="agendarActividadActualGestionGCal()" style="border-color:#0284c7; color:#0369a1; background:#f0f9ff; font-weight:600;" title="Agendar esta capacitación en Google Calendar">📅 Agendar en Google Calendar</button>
+            <button class="btn" id="btnGuardarGestionTop" type="button" onclick="guardarGestion()" style="display:none;background:#16a34a;color:#fff;font-weight:600;align-items:center;gap:6px;" title="Guardar todos los cambios en Google Sheets">💾 Guardar cambios (<span id="countCambiosTop">0</span>)</button>
+            <span id="indicadorAutoGuardadoGestion" style="font-size:12px;color:#64748b;display:none;align-items:center;gap:4px;"></span>
           </div>
           <div class="module-kpis">
             <div class="card module-kpi accent-blue"><span>Inscritos</span><strong id="gInscritos">0</strong></div>
@@ -25,6 +78,7 @@
             <div class="card module-kpi accent-teal"><span>Confirmados</span><strong id="gConfirmados">0</strong></div>
             <div class="card module-kpi accent-amber"><span>Con asistencia</span><strong id="gAsistentes">0</strong></div>
             <div class="card module-kpi accent-emerald"><span>Aprobados</span><strong id="gAprobados">0</strong></div>
+            <div class="card module-kpi accent-amber" style="border-left:4px solid #f59e0b; cursor:pointer;" onclick="abrirModalEvaluacionSatisfaccion()" title="Clic para abrir el panel de Encuestas de Satisfacción"><span>Satisfacción</span><strong id="gSatisfaccion" style="color:#d97706">—</strong></div>
           </div>
           <!-- ZONA 1: ACCIONES MASIVAS (EDICIÓN EN LOTE) -->
           <div class="bulk-panel">
@@ -168,6 +222,15 @@
                 </select>
               </div>
 
+              <div class="gestion-filtro-item">
+                <label for="filtroGestionPenalizados">Historial inasistencia:</label>
+                <select id="filtroGestionPenalizados" class="filtro-gestion-select" onchange="renderGestion()">
+                  <option value="">Todos (Penalizados al final)</option>
+                  <option value="sin_penalizacion">Solo sin penalización</option>
+                  <option value="penalizados">⚠️ Solo penalizados (Confirmó y no asistió)</option>
+                </select>
+              </div>
+
               <button type="button" class="btn secondary compact btn-limpiar-filtros" onclick="limpiarFiltrosGestion()" title="Restablecer todos los filtros a sus valores predeterminados">
                 ✕ Limpiar filtros
               </button>
@@ -231,7 +294,7 @@
             </table>
           </div>
           <div class="sticky-actions">
-            <button class="btn secondary" type="button" onclick="cargarGestionActividad()">Descartar cambios</button>
+            <button class="btn secondary" type="button" onclick="cargarGestionActividad(true)">Descartar cambios</button>
             <button class="btn" type="button" onclick="guardarGestion()">Guardar cambios</button>
           </div>
         </div>
@@ -249,6 +312,7 @@
               <button class="btn" type="button" onclick="cargarReporteAsistencias()">Generar nómina</button>
               <button class="btn secondary" type="button" onclick="exportarAsistenciasCsv(false)" title="Descargar todos los participantes de la nómina en Excel">📥 Descargar para Excel</button>
               <button class="btn secondary" type="button" onclick="exportarAsistenciasCsv(true)" style="border-color:#10b981;color:#047857;background:#ecfdf5;font-weight:600" title="Descargar en Excel únicamente participantes con Confirmación = Sí">✅ Descargar solo confirmados</button>
+              <button class="btn secondary" type="button" onclick="imprimirListaFirmasGestion()" style="border-color:#0284c7;color:#0369a1;background:#f0f9ff;font-weight:600" title="Imprimir hoja física de firmas en formato Carta/A4 con membrete municipal">🖨️ Imprimir Lista de Firmas</button>
             </div>
           </div>
         </div>
@@ -325,15 +389,69 @@
               </div>
 
               <div class="form-grid">
-                <div class="field full">
-                  <label for="traspasoActividadOrigen"><strong>1. Actividad de origen (de dónde extraer postulantes) *</strong></label>
-                  <select id="traspasoActividadOrigen" onchange="alCambiarOrigenTraspaso()">
-                    <option value="">Seleccione la actividad o versión anterior...</option>
-                  </select>
+                <div class="field full" style="position:relative;">
+                  <!-- Cabecera del selector con Filtros Rápidos de Estado -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                <label style="margin:0;"><strong>1. Actividades de origen (puede agregar 1, 2 o más versiones previas) *</strong></label>
+                <div class="actividad-filtro-chips" id="actFiltroChips_Traspaso" style="display:flex; gap:4px;">
+                  <button type="button" class="chip-filtro-act " data-filtro="activas" onclick="cambiarFiltroEstadoActGen('Traspaso', 'activas')">⚡ En curso / Activas</button>
+                  <button type="button" class="chip-filtro-act active" data-filtro="todas" onclick="cambiarFiltroEstadoActGen('Traspaso', 'todas')">📋 Todas</button>
+                  <button type="button" class="chip-filtro-act " data-filtro="finalizadas" onclick="cambiarFiltroEstadoActGen('Traspaso', 'finalizadas')">🏁 Finalizadas</button>
+                </div>
+              </div>
+
+              <!-- Input de Búsqueda Predictiva -->
+              <div id="contenedorBuscadorAct_Traspaso" style="position:relative;">
+                <div style="position:relative; display:flex; align-items:center;">
+                  <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+                  <input id="inputBuscarAct_Traspaso" type="text" placeholder="Buscar versión anterior por código (ej: 015), nombre o temática..." autocomplete="off" style="width:100%; padding-left:36px; padding-right:32px; height:42px;" onfocus="buscarActividadesPredictivoGen('Traspaso', true)" oninput="buscarActividadesPredictivoGenConPausa('Traspaso')" onkeydown="manejarTecladoActividadGen(event, 'Traspaso')">
+                  <button type="button" id="btnLimpiarBuscarAct_Traspaso" style="display:none; position:absolute; right:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:2px 6px; border-radius:50%;" onclick="limpiarTextoBuscarActividadGen('Traspaso')" title="Limpiar búsqueda">✕</button>
+                </div>
+
+                <!-- Dropdown de resultados predictivos -->
+                <div id="dropdownResultadosAct_Traspaso" class="dropdown-predictivo-actividades" style="display:none;">
+                  <!-- Se puebla dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Tarjeta de Actividad Seleccionada -->
+              <div id="cardActSeleccionada_Traspaso" class="card-actividad-seleccionada" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+                  <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+                    <span style="font-size:24px; line-height:1;">🎓</span>
+                    <div style="min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                        <span id="cardActId_Traspaso" class="badge-actividad-id">CAP-2026-000</span>
+                        <span id="cardActEstado_Traspaso" class="badge">Estado</span>
+                        <span id="cardActModalidad_Traspaso" class="badge-subtle">Presencial</span>
+                      </div>
+                      <strong id="cardActNombre_Traspaso" style="font-size:14px; color:var(--azul-2,#1e3a8a); display:block; word-break:break-word;">Nombre de la actividad</strong>
+                      <div style="font-size:12px; color:var(--gris,#64748b); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                        <span id="cardActFecha_Traspaso">📅 Fecha</span>
+                        <span id="cardActEscuela_Traspaso">🏫 Escuela</span>
+                        <span id="cardActCupos_Traspaso">👥 Cupos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn secondary compact" onclick="deseleccionarActividadGen('Traspaso')" style="white-space:nowrap;">✕ Cambiar actividad</button>
+                </div>
+              </div>
+
+              <!-- Select original en el DOM para retrocompatibilidad 100% -->
+              <select id="traspasoActividadOrigen" style="display:none;" onchange="alCambiarOrigenTraspaso()">
+                <option value="">Seleccione una actividad...</option>
+              </select>
+              <div id="traspasoOrigenesChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
                 </div>
 
                 <div class="field full">
-                  <label><strong>2. ¿A quiénes desea traspasar según su estado anterior? *</strong></label>
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <label style="margin:0;"><strong>2. ¿A quiénes desea traspasar según su estado anterior? *</strong></label>
+                    <div style="display:flex; gap:6px;">
+                      <button type="button" class="btn secondary compact" style="font-size:11px; padding:2px 8px;" onclick="marcarTodosTraspaso(true)">☑ Marcar todos</button>
+                      <button type="button" class="btn secondary compact" style="font-size:11px; padding:2px 8px;" onclick="marcarTodosTraspaso(false)">☐ Desmarcar</button>
+                    </div>
+                  </div>
                   <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 6px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
                     <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
                       <input type="checkbox" id="chkTraspasoListaEspera" checked onchange="actualizarVistaPreviaTraspaso()">
@@ -346,6 +464,20 @@
                     <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
                       <input type="checkbox" id="chkTraspasoPendiente" onchange="actualizarVistaPreviaTraspaso()">
                       <span>⚪ Pendiente</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                      <input type="checkbox" id="chkTraspasoSeleccionado" onchange="actualizarVistaPreviaTraspaso()">
+                      <span>✅ Seleccionado</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                      <input type="checkbox" id="chkTraspasoOtros" onchange="actualizarVistaPreviaTraspaso()">
+                      <span>🏷️ Otros / Resto</span>
+                    </label>
+                  </div>
+                  <div style="margin-top:8px; padding:10px 12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; color:#1e3a8a;">
+                      <input type="checkbox" id="chkTraspasoSoloResiduos" checked onchange="alCambiarOrigenTraspaso()">
+                      <span>🎯 Acumular trayectoria: excluir a quienes ya asistieron o aprobaron en cualquiera de las actividades seleccionadas</span>
                     </label>
                   </div>
                 </div>
@@ -380,6 +512,529 @@
             <div class="modal-footer">
               <button class="btn secondary" type="button" onclick="cerrarModalTraspasoPostulantes()">Cancelar</button>
               <button id="btnEjecutarTraspaso" class="btn" type="button" onclick="ejecutarTraspasoPostulantesUI()" disabled>Confirmar Traspaso</button>
+            </div>
+          </div>
+        </div>
+      
+        <!-- Modal de Vista Previa e Impresión de Lista de Firmas -->
+        <div id="modalImprimirListaFirmas" class="modal-overlay" style="display: none;">
+          <div class="modal-box modal-firmas-box" style="max-width: 960px; width: 95%; max-height: 92vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+            <div class="modal-header no-print-firmas" style="background: #1e3a8a; color: #ffffff; padding: 14px 20px; border-bottom: 1px solid #1e40af;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:20px;">🖨️</span>
+                <div>
+                  <h3 style="margin:0; color:#ffffff; font-size:16px;">Lista de Asistencia y Control de Firmas</h3>
+                  <span style="font-size:12px; color:#bfdbfe;">Vista previa institucional en formato Carta / A4 lista para imprimir o descargar</span>
+                </div>
+              </div>
+              <button type="button" class="modal-close" style="color:#ffffff; opacity:0.85;" onclick="cerrarModalListaFirmas()">&times;</button>
+            </div>
+
+            <!-- Barra de controles interactivos (No se imprime en papel) -->
+            <div class="no-print-firmas" style="background: #eff6ff; border-bottom: 1px solid #bfdbfe; padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;">
+              <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+                <label style="font-size: 12px; font-weight: 600; color: #1e3a8a; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  Participantes:
+                  <select id="filtroImpresionFirmas" onchange="actualizarVistaPreviaListaFirmas()" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #93c5fd; font-size: 12.5px; background: #fff; color: #0f172a; font-weight: 600;">
+                    <option value="seleccionados_confirmados">Seleccionados y/o Confirmados</option>
+                    <option value="solo_confirmados">Solo Confirmados (Sí)</option>
+                    <option value="todos">Todos los inscritos (excepto No seleccionados)</option>
+                    <option value="absolutamente_todos">Nómina completa (Todos)</option>
+                  </select>
+                </label>
+                <label style="font-size: 12px; font-weight: 600; color: #1e3a8a; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  Sesión:
+                  <select id="sesionImpresionFirmas" onchange="actualizarVistaPreviaListaFirmas()" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #93c5fd; font-size: 12.5px; background: #fff; color: #0f172a;">
+                  </select>
+                </label>
+                <label style="font-size: 12px; font-weight: 600; color: #1e3a8a; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  Filas extra en blanco:
+                  <select id="filasExtraImpresionFirmas" onchange="actualizarVistaPreviaListaFirmas()" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #93c5fd; font-size: 12.5px; background: #fff; color: #0f172a;">
+                    <option value="0">0 filas</option>
+                    <option value="5" selected>+5 filas (para asistentes en sala)</option>
+                    <option value="10">+10 filas</option>
+                    <option value="15">+15 filas</option>
+                  </select>
+                </label>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn" style="background: #059669; color: #fff; font-weight: 700; padding: 8px 14px; border: none;" onclick="ejecutarImpresionDirectaListaFirmas()">
+                  🖨️ Imprimir / Guardar PDF
+                </button>
+                <button type="button" class="btn secondary" style="border-color: #2563eb; color: #1d4ed8; background: #ffffff; font-weight: 700; padding: 8px 14px;" onclick="descargarListaFirmasWord()">
+                  📄 Descargar en Word (.doc)
+                </button>
+              </div>
+            </div>
+
+            <!-- Área desplazable con la Hoja Institucional -->
+            <div class="modal-body" style="padding: 20px; overflow-y: auto; background: #cbd5e1; flex: 1;">
+              <div id="contenedorHojaFirmasImprimible" class="hoja-firmas-carta">
+                <div class="firmas-inst-header">
+                  <div class="firmas-inst-title">
+                    <h1>Lista de Asistencia y Control de Firmas</h1>
+                    <p>Municipalidad de Santiago · Subdirección de Desarrollo Económico Local (DIDEL) · Depto. de Capacitación</p>
+                  </div>
+                  <div class="firmas-inst-badge">
+                    <strong id="lblFirmasCodigoAct">CAP-0000</strong><br>
+                    <span id="lblFirmasResumenConteo">0 participante(s) en nómina</span>
+                  </div>
+                </div>
+
+                <table class="firmas-meta-grid">
+                  <tr>
+                    <td class="firmas-meta-label">Capacitación:</td>
+                    <td class="firmas-meta-val"><strong id="lblFirmasNombreAct">—</strong></td>
+                    <td class="firmas-meta-label">Escuela / Línea:</td>
+                    <td class="firmas-meta-val" id="lblFirmasEscuelaAct">—</td>
+                  </tr>
+                  <tr>
+                    <td class="firmas-meta-label">Sesión / Fecha:</td>
+                    <td class="firmas-meta-val"><strong id="lblFirmasSesionFecha">—</strong></td>
+                    <td class="firmas-meta-label">Modalidad / Lugar:</td>
+                    <td class="firmas-meta-val" id="lblFirmasModalidadLugar">—</td>
+                  </tr>
+                  <tr>
+                    <td class="firmas-meta-label">Relator / Resp.:</td>
+                    <td class="firmas-meta-val" id="lblFirmasResponsable">—</td>
+                    <td class="firmas-meta-label">Horario:</td>
+                    <td class="firmas-meta-val" id="lblFirmasHorario">—</td>
+                  </tr>
+                </table>
+
+                <table class="firmas-attendance-table">
+                  <thead>
+                    <tr>
+                      <th class="f-col-num">N°</th>
+                      <th class="f-col-nombre">Nombre Completo</th>
+                      <th class="f-col-rut">RUT / Documento</th>
+                      <th class="f-col-tel">Teléfono</th>
+                      <th class="f-col-correo">Correo Electrónico</th>
+                      <th class="f-col-firma" style="text-align:center;">Firma Asistente</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyModalListaFirmas">
+                    <tr><td colspan="6" style="text-align:center; padding:20px;">Cargando nómina...</td></tr>
+                  </tbody>
+                </table>
+
+                <div class="firmas-footer-signatures">
+                  <div class="firmas-sig-box">
+                    <strong>Nombre y Firma Relator(a) / Docente</strong><br>
+                    <span>Certifica asistencia de la sesión</span>
+                  </div>
+                  <div class="firmas-sig-box">
+                    <strong>Coordinación Capacitación DIDEL</strong><br>
+                    <span>Recepción y registro en SIGC</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-footer no-print-firmas" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: #64748b;">💡 Puede imprimir directamente en papel/PDF o descargar el archivo editable en Word (.doc).</span>
+              <div style="display:flex; gap:8px;">
+                <button class="btn secondary" type="button" onclick="cerrarModalListaFirmas()">Cerrar</button>
+                <button class="btn" type="button" style="background: #059669;" onclick="ejecutarImpresionDirectaListaFirmas()">🖨️ Imprimir ahora</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Modal Integral de Encuesta de Satisfacción (Consolidado, Digitación Papel, Impresión Física y QR Digital) -->
+        <div id="modalEvaluacionSatisfaccion" class="modal-overlay" style="display: none;">
+          <div class="modal-box" style="max-width: 960px; width: 95%; max-height: 92vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); color: #ffffff; padding: 14px 20px; border-bottom: 1px solid #1e40af;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:22px;">⭐</span>
+                <div>
+                  <h3 style="margin:0; color:#ffffff; font-size:16px;">Evaluación y Encuesta de Satisfacción</h3>
+                  <span id="lblSatSubtituloActividad" style="font-size:12px; color:#bfdbfe;">Consolidación de resultados, digitación de papel, formato físico imprimible y QR digital</span>
+                </div>
+              </div>
+              <button type="button" class="modal-close" style="color:#ffffff; opacity:0.85;" onclick="cerrarModalEvaluacionSatisfaccion()">&times;</button>
+            </div>
+
+            <!-- Pestañas de navegación del modal -->
+            <div class="sat-tabs-bar" style="display:flex; gap:6px; padding:10px 20px; background:#f1f5f9; border-bottom:1px solid #cbd5e1; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" id="btnTabSatConsolidado" class="sat-tab-btn active" onclick="cambiarTabSatisfaccion('consolidado')">📊 1. Consolidado y Resultados</button>
+                <button type="button" id="btnTabSatDigitar" class="sat-tab-btn" onclick="cambiarTabSatisfaccion('digitar')">✍️ 2. Digitar Encuestas en Papel</button>
+                <button type="button" id="btnTabSatFormatos" class="sat-tab-btn" onclick="cambiarTabSatisfaccion('formatos')">🖨️ 3. Formato Físico (Papel/Word) y QR Digital</button>
+              </div>
+              <button type="button" class="btn secondary compact" onclick="sincronizarEvaluacionesActividadUI()" title="Sincronizar nuevas respuestas digitales desde Google Forms">🔄 Sincronizar respuestas</button>
+            </div>
+
+            <div class="modal-body" style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
+              
+              <!-- PESTAÑA 1: CONSOLIDADO Y RESULTADOS -->
+              <div id="panelSatConsolidado" class="sat-tab-panel">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap:12px; margin-bottom:16px;">
+                  <div class="card" style="padding:14px; border-left:4px solid #f59e0b; background:#fff;">
+                    <span style="font-size:11.5px; color:#64748b; font-weight:700; text-transform:uppercase;">Nota Promedio (Escala 1 a 5)</span>
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-top:4px;">
+                      <strong id="satKpiPromedio" style="font-size:26px; color:#b45309;">—</strong>
+                      <span id="satKpiEstrellas" style="font-size:15px; color:#f59e0b;"></span>
+                    </div>
+                  </div>
+                  <div class="card" style="padding:14px; border-left:4px solid #10b981; background:#fff;">
+                    <span style="font-size:11.5px; color:#64748b; font-weight:700; text-transform:uppercase;">Índice de Satisfacción</span>
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-top:4px;">
+                      <strong id="satKpiPorcentaje" style="font-size:26px; color:#059669;">0%</strong>
+                      <span style="font-size:12px; color:#64748b;">satisfacción global</span>
+                    </div>
+                  </div>
+                  <div class="card" style="padding:14px; border-left:4px solid #2563eb; background:#fff;">
+                    <span style="font-size:11.5px; color:#64748b; font-weight:700; text-transform:uppercase;">Encuestas Consolidadas</span>
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-top:4px;">
+                      <strong id="satKpiTotal" style="font-size:26px; color:#1d4ed8;">0</strong>
+                      <span id="satKpiDesgloseCanal" style="font-size:11.5px; color:#64748b;">0 digitales · 0 papel</span>
+                    </div>
+                  </div>
+                  <div class="card" style="padding:14px; border-left:4px solid #7c3aed; background:#fff;">
+                    <span style="font-size:11.5px; color:#64748b; font-weight:700; text-transform:uppercase;">Recomendación del Curso</span>
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-top:4px;">
+                      <strong id="satKpiRecomienda" style="font-size:26px; color:#6d28d9;">0%</strong>
+                      <span id="satKpiRecomiendaDetalle" style="font-size:11.5px; color:#64748b;">lo recomienda</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Desglose por dimensión evaluada -->
+                <div class="card" style="padding:16px; background:#fff; margin-bottom:16px; border:1px solid #e2e8f0;">
+                  <h4 style="margin:0 0 12px 0; font-size:14px; color:#1e293b;">📈 Desglose Promedio por Dimensión Evaluada (Escala 1.0 a 5.0)</h4>
+                  <div id="contenedorBarrasDimensionesSat" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap:14px;">
+                    <!-- Se renderiza dinámicamente -->
+                  </div>
+                </div>
+
+                <!-- Respuestas de texto abierto (Preguntas 6 y 7: ¿Qué dice la gente?) -->
+                <div class="card" style="padding:16px; background:#fff; margin-bottom:16px; border:1px solid #cbd5e1;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                    <div>
+                      <h4 style="margin:0; font-size:14px; color:#1e293b;">💬 Respuestas Escritas por los Participantes: ¿Qué dice la gente? (Preguntas 6 y 7)</h4>
+                      <span style="font-size:12px; color:#64748b;">Lectura directa de todas las opiniones, aprendizajes y sugerencias escritas en la encuesta</span>
+                    </div>
+                    <span id="badgeTotalComentariosSat" class="badge info" style="font-size:11.5px;">0 respuestas escritas</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:14px;">
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px;">
+                      <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                        <span>✨</span>
+                        <span>6. ¿Qué fue lo más valioso o útil que aprendió en esta capacitación?</span>
+                      </div>
+                      <div id="listaComentariosValiosoSat" style="display:flex; flex-direction:column; gap:8px; max-height:240px; overflow-y:auto;">
+                        <div style="font-size:12px; color:#64748b; font-style:italic;">Aún no hay comentarios registrados en esta pregunta.</div>
+                      </div>
+                    </div>
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px;">
+                      <div style="font-weight:700; font-size:13px; color:#1e40af; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                        <span>💡</span>
+                        <span>7. Sugerencias de mejora o nuevos temas que le gustaría aprender</span>
+                      </div>
+                      <div id="listaComentariosSugerenciasSat" style="display:flex; flex-direction:column; gap:8px; max-height:240px; overflow-y:auto;">
+                        <div style="font-size:12px; color:#64748b; font-style:italic;">Aún no hay sugerencias registradas en esta pregunta.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Tabla de registros y comentarios -->
+                <div class="card" style="padding:16px; background:#fff; border:1px solid #e2e8f0;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    <h4 style="margin:0; font-size:14px; color:#1e293b;">📋 Registro Detallado de Evaluaciones (Digitales + Físicas)</h4>
+                    <div style="display:flex; gap:8px;">
+                      <button type="button" class="btn secondary compact" onclick="cambiarTabSatisfaccion('digitar')">+ Digitar encuestas de papel</button>
+                      <button type="button" class="btn secondary compact" onclick="cambiarTabSatisfaccion('formatos')">🖨️ Imprimir formato / QR</button>
+                    </div>
+                  </div>
+                  <div class="table-container" style="max-height:320px; overflow-y:auto;">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Canal / Origen</th>
+                          <th>Cant.</th>
+                          <th>Relator</th>
+                          <th>Contenidos</th>
+                          <th>Organización</th>
+                          <th>Global</th>
+                          <th>Promedio</th>
+                          <th>5. Recomienda</th>
+                          <th>6. ¿Qué fue lo más valioso?</th>
+                          <th>7. Sugerencias / Nuevos temas</th>
+                          <th>Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tbodyRegistrosSatisfaccion">
+                        <tr><td colspan="12" class="empty-state">No hay encuestas registradas para esta actividad aún.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PESTAÑA 2: DIGITAR ENCUESTAS EN PAPEL -->
+              <div id="panelSatDigitar" class="sat-tab-panel" style="display:none;">
+                <div class="notice" style="margin-bottom:14px; background:#eff6ff; border-left:4px solid #2563eb; padding:12px 16px; border-radius:8px;">
+                  <strong>💡 ¿Cómo consolidar las encuestas aplicadas en papel?</strong><br>
+                  Puede ingresar cada hoja física <strong>una por una</strong> (Modo Individual Rápido) o, si ya contó y promedió las hojas de la sala, ingresar el <strong>resumen del lote completo de una sola vez</strong> (Modo Lote Consolidado). Ambos se suman ponderadamente con las respuestas digitales.
+                </div>
+
+                <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+                  <button type="button" id="btnModoDigitarIndividual" class="btn" onclick="cambiarModoDigitacionSatisfaccion('INDIVIDUAL')">📄 Modo A: Digitar Hoja por Hoja (1 a 1)</button>
+                  <button type="button" id="btnModoDigitarLote" class="btn secondary" onclick="cambiarModoDigitacionSatisfaccion('LOTE')">📚 Modo B: Ingresar Lote Consolidado (N encuestas promediadas)</button>
+                </div>
+
+                <div class="card" style="padding:18px; background:#fff; border:1px solid #cbd5e1;">
+                  <input type="hidden" id="satModoDigitacion" value="INDIVIDUAL">
+                  
+                  <!-- Selector de cantidad solo visible en Modo Lote -->
+                  <div id="bloqueSatCantidadLote" style="display:none; margin-bottom:16px; padding:12px 16px; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                      <div>
+                        <strong style="color:#92400e; font-size:13.5px;">📚 Cantidad de encuestas físicas contabilizadas en este lote *</strong>
+                        <p style="margin:2px 0 0 0; font-size:12px; color:#b45309;">Indique cuántas encuestas en papel están representadas en los promedios que ingresará abajo (ej: 18 hojas).</p>
+                      </div>
+                      <input type="number" id="satInputCantidadLote" min="1" max="500" value="10" style="width:120px; font-size:16px; font-weight:700; text-align:center; border:2px solid #d97706;">
+                    </div>
+                  </div>
+
+                  <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:14px;">
+                    <div class="field">
+                      <label for="satInputNotaRelator"><strong>1. Relator(a) / Docente (1 a 5) *</strong></label>
+                      <span style="font-size:11px; color:#64748b; display:block; margin-bottom:4px;">Dominio del tema, claridad y disposición</span>
+                      <input type="number" id="satInputNotaRelator" min="1" max="5" step="0.1" value="5" style="font-size:15px; font-weight:700;">
+                    </div>
+                    <div class="field">
+                      <label for="satInputNotaContenidos"><strong>2. Contenidos y Utilidad (1 a 5) *</strong></label>
+                      <span style="font-size:11px; color:#64748b; display:block; margin-bottom:4px;">Relevancia y utilidad práctica</span>
+                      <input type="number" id="satInputNotaContenidos" min="1" max="5" step="0.1" value="5" style="font-size:15px; font-weight:700;">
+                    </div>
+                    <div class="field">
+                      <label for="satInputNotaOrganizacion"><strong>3. Organización y Espacio (1 a 5) *</strong></label>
+                      <span style="font-size:11px; color:#64748b; display:block; margin-bottom:4px;">Horarios, materiales y sala/plataforma</span>
+                      <input type="number" id="satInputNotaOrganizacion" min="1" max="5" step="0.1" value="5" style="font-size:15px; font-weight:700;">
+                    </div>
+                    <div class="field">
+                      <label for="satInputNotaGlobal"><strong>4. Satisfacción Global (1 a 5) *</strong></label>
+                      <span style="font-size:11px; color:#64748b; display:block; margin-bottom:4px;">Evaluación general de la actividad</span>
+                      <input type="number" id="satInputNotaGlobal" min="1" max="5" step="0.1" value="5" style="font-size:15px; font-weight:700;">
+                    </div>
+                  </div>
+
+                  <div class="form-grid" style="margin-top:14px;">
+                    <div class="field">
+                      <label for="satInputRecomienda"><strong>5. ¿Recomendaría esta capacitación?</strong></label>
+                      <select id="satInputRecomienda">
+                        <option value="Sí" selected>Sí</option>
+                        <option value="Tal vez">Tal vez</option>
+                        <option value="No">No</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="satInputValioso"><strong>6. ¿Qué fue lo más valioso o útil? (Opcional)</strong></label>
+                      <input type="text" id="satInputValioso" placeholder="Transcriba comentarios destacados de los participantes...">
+                    </div>
+                    <div class="field full">
+                      <label for="satInputSugerencias"><strong>7. Sugerencias de mejora o nuevos temas solicitados (Opcional)</strong></label>
+                      <input type="text" id="satInputSugerencias" placeholder="Ej: Más horas prácticas, nivel avanzado, etc.">
+                    </div>
+                  </div>
+
+                  <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:10px; align-items:center;">
+                    <button type="button" class="btn secondary" onclick="limpiarFormularioDigitacionSatisfaccion()">Limpiar campos</button>
+                    <button type="button" id="btnGuardarEvaluacionPapel" class="btn" style="background:#059669; font-weight:700;" onclick="guardarEvaluacionPapelUI()">💾 Guardar y Consolidar Encuesta(s)</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PESTAÑA 3: FORMATO FÍSICO (PAPEL/WORD) Y FORMULARIO DIGITAL (QR) -->
+              <div id="panelSatFormatos" class="sat-tab-panel" style="display:none;">
+                
+                <!-- Bloque Digital: Google Form Estándar + Código QR -->
+                <div class="card" style="padding:16px; background:#fff; border:1px solid #bfdbfe; margin-bottom:18px;">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
+                    <div style="flex:1; min-width:280px;">
+                      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                        <span style="font-size:20px;">📱</span>
+                        <h4 style="margin:0; font-size:15px; color:#1e3a8a;">Encuesta Digital Exclusiva por Capacitación (Google Forms + Código QR)</h4>
+                      </div>
+                      <p style="margin:0 0 12px 0; font-size:12.5px; color:#475569; line-height:1.5;">
+                        El sistema genera automáticamente un <strong>Formulario de Satisfacción propio para esta capacitación</strong>. El participante <strong>no tiene que buscar ni elegir el curso en ningún listado</strong>: solo responde las preguntas de evaluación y sus respuestas pasan solas a las métricas de esta capacitación.
+                      </p>
+                      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                        <button type="button" id="btnGenerarFormSatisfaccion" class="btn" style="background:#2563eb; font-weight:700;" onclick="generarFormularioSatisfaccionUI(false)">🔗 Obtener / Activar Enlace Digital y QR</button>
+                        <button type="button" id="btnImprimirCartelQrSat" class="btn secondary" style="display:none; border-color:#1e40af; color:#1e3a8a; font-weight:700;" onclick="imprimirCartelQrSatisfaccion()">🖨️ Imprimir Cartel QR para Sala</button>
+                      </div>
+                      <div id="contenedorUrlFormSatisfaccion" style="display:none; background:#f0fdf4; padding:10px 12px; border-radius:8px; border:1px solid #86efac;">
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; font-size:11.5px; color:#166534; font-weight:700;">
+                          <span>🔓 Acceso 100% Público (sin pedir autorización ni cuenta)</span>
+                          <span>·</span>
+                          <span id="lblSatCursoPreseleccionado">✅ Encuesta exclusiva de esta capacitación (sin listado de cursos)</span>
+                        </div>
+                        <label style="font-size:11px; font-weight:700; color:#15803d; text-transform:uppercase; display:block; margin-bottom:4px;">Enlace directo para compartir por Correo o QR (vinculado automáticamente a esta capacitación):</label>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                          <input type="text" id="inputUrlPrellenadaSat" readonly style="flex:1; min-width:220px; font-size:12px; background:#fff; color:#0f172a; padding:6px 10px;">
+                          <button type="button" class="btn secondary compact" onclick="copiarEnlaceSatisfaccionUI()">📋 Copiar enlace</button>
+                          <a id="linkAbrirFormSat" href="#" target="_blank" rel="noopener" class="btn secondary compact" style="text-decoration:none;">↗ Abrir</a>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Recuadro de código QR -->
+                    <div id="cajaQrSatisfaccion" style="display:none; text-align:center; padding:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; min-width:165px;">
+                      <img id="imgQrSatisfaccion" alt="Código QR Encuesta" style="width:135px; height:135px; object-fit:contain; background:#fff; padding:4px; border:1px solid #e2e8f0; border-radius:6px;">
+                      <div style="font-size:11px; font-weight:700; color:#1e3a8a; margin-top:4px;">Escanear con celular</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bloque Físico: Encuesta Imprimible en Papel / PDF / Word -->
+                <div class="card" style="padding:16px; background:#fff; border:1px solid #cbd5e1;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #e2e8f0;">
+                    <div>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:20px;">🖨️</span>
+                        <h4 style="margin:0; font-size:15px; color:#0f172a;">Formato Físico Estándar para Imprimir en Sala (Papel / PDF / Word)</h4>
+                      </div>
+                      <span style="font-size:12px; color:#64748b;">Autocompletado con los datos de la capacitación seleccionada</span>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                      <label style="font-size:12px; font-weight:600; color:#1e293b; display:flex; align-items:center; gap:6px; margin:0;">
+                        Diseño de página:
+                        <select id="selectDisenoImpresionSat" onchange="actualizarVistaPreviaEncuestaFisica()" style="padding:6px 10px; border-radius:6px; border:1px solid #94a3b8; font-size:12.5px; font-weight:600;">
+                          <option value="2_por_hoja" selected>✂️ 2 encuestas por hoja Carta (Ahorro de papel)</option>
+                          <option value="1_por_hoja">📄 1 encuesta por hoja Carta completa</option>
+                        </select>
+                      </label>
+                      <button type="button" class="btn" style="background:#059669; color:#fff; font-weight:700;" onclick="ejecutarImpresionEncuestaFisica()">🖨️ Imprimir / Guardar PDF</button>
+                      <button type="button" class="btn secondary" style="border-color:#2563eb; color:#1d4ed8; font-weight:700;" onclick="descargarEncuestaFisicaWord()">📄 Descargar Word (.doc)</button>
+                    </div>
+                  </div>
+
+                  <!-- Vista previa del formato físico -->
+                  <div style="background:#cbd5e1; padding:16px; border-radius:8px; max-height:420px; overflow-y:auto;">
+                    <div id="contenedorVistaPreviaEncuestaFisica" style="background:#fff; max-width:780px; margin:0 auto; padding:20px; border-radius:4px; box-shadow:0 4px 14px rgba(0,0,0,0.12);">
+                      <!-- Se renderiza dinámicamente -->
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: #64748b;">⭐ Sistema estandarizado de medición de satisfacción SIGC (Escala Likert 1 a 5).</span>
+              <button class="btn secondary" type="button" onclick="cerrarModalEvaluacionSatisfaccion()">Cerrar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Importador Exprés de Asistencia (Excel / CSV / Zoom / Meet) -->
+        <div id="modalImportarAsistencia" class="modal-backdrop" style="display:none; z-index: 9999;">
+          <div class="modal-content" style="max-width: 900px; width: 95%; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #065f46, #059669); color: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="margin:0; font-size:17px; color:#fff;">📋 Importar Asistencia Rápida</h3>
+                <p id="subtituloImportarAsistencia" style="margin:3px 0 0; font-size:12px; opacity:0.9; color:#d1fae5;">Actividad seleccionada</p>
+              </div>
+              <button type="button" class="btn-close-modal" onclick="cerrarModalImportarAsistencia()" style="background:none; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <div class="modal-body" style="padding: 18px 20px; overflow-y: auto; flex: 1;">
+              <!-- Paso 1: Descargar Plantilla Excel -->
+              <div class="card" style="padding:14px 16px; background:#f0fdf4; border:1px solid #bbf7d0; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <strong style="color:#065f46; font-size:13.5px; display:block;">1. ¿Necesitas la planilla Excel ordenada para llenar?</strong>
+                    <span style="font-size:12px; color:#047857;">Descarga el formato oficial sin conflictos de datos. Luego solo marca <strong>1</strong> o <strong>X</strong> en cada sesión y súbelo aquí.</span>
+                  </div>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="btn compact" style="background:#059669; color:#fff;" onclick="descargarPlantillaAsistenciaExcel(true)">📥 Plantilla con nómina del curso (.xlsx)</button>
+                    <button type="button" class="btn secondary compact" onclick="descargarPlantillaAsistenciaExcel(false)">📄 Plantilla limpia (.xlsx)</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Paso 2: Subir archivo o pegar tabla -->
+              <div class="card" style="padding:14px 16px; background:#fff; border:1px solid #e2e8f0; margin-bottom:14px;">
+                <strong style="color:#0f172a; font-size:13.5px; display:block; margin-bottom:8px;">2. Sube tu archivo Excel / CSV o pega el listado directamente</strong>
+
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:12px;">
+                  <div style="border:2px dashed #94a3b8; border-radius:10px; padding:14px; text-align:center; background:#f8fafc; cursor:pointer;" onclick="document.getElementById('asisArchivoInput').click()">
+                    <input type="file" id="asisArchivoInput" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none;" onchange="manejarArchivoAsistencia(event)">
+                    <div style="font-size:24px; margin-bottom:4px;">📂</div>
+                    <strong style="font-size:13px; color:#1e293b; display:block;">Seleccionar archivo Excel o CSV</strong>
+                    <span id="asisArchivoNombre" style="font-size:11.5px; color:#64748b;">Soporta .xlsx, .xls, .csv (incluye reportes de Zoom / Meet)</span>
+                  </div>
+
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div class="field" style="margin:0;">
+                      <label style="font-size:12px; font-weight:600;">¿Qué sesión(es) deseas marcar?</label>
+                      <select id="asisSesionDestino" onchange="reprocesarAsistenciaImportada()">
+                        <option value="auto">✨ Detectar automáticamente (columnas S1, S2, S3…)</option>
+                      </select>
+                    </div>
+                    <div id="asisContenedorMinutos" class="field" style="margin:0; display:none;">
+                      <label style="font-size:12px; font-weight:600;">Filtro de minutos (Zoom / Meet):</label>
+                      <input type="number" id="asisMinutosMinimos" min="0" value="0" placeholder="Ej: 30 (0 = todos)" oninput="reprocesarAsistenciaImportada()">
+                    </div>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#334155; cursor:pointer; margin-top:2px;">
+                      <input type="checkbox" id="asisPromoverSeleccionado" checked onchange="reprocesarAsistenciaImportada()">
+                      Promover a "Seleccionado" si aparece presente (estando Pendiente/Lista de espera)
+                    </label>
+                  </div>
+                </div>
+
+                <div class="field" style="margin:0;">
+                  <label style="font-size:12px; color:#64748b;">O pega aquí columnas copiadas desde Excel / Google Sheets (RUT, Correo o Nombre):</label>
+                  <textarea id="asisTextoPegado" rows="4" placeholder="Ejemplo:&#10;12.345.678-5&#9;1&#10;15.432.111-K&#9;1" oninput="procesarTextoAsistenciaConPausa()"></textarea>
+                </div>
+              </div>
+
+              <!-- Paso 3: Vista previa y resumen -->
+              <div id="asisContenedorPreview" style="display:none;">
+                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:12px;">
+                  <div class="card" style="padding:10px 14px; background:#ecfdf5; border:1px solid #a7f3d0; text-align:center;">
+                    <span style="font-size:11.5px; color:#047857; display:block;">✅ Coinciden en nómina</span>
+                    <strong id="asisKpiMatch" style="font-size:20px; color:#065f46;">0</strong>
+                  </div>
+                  <div class="card" style="padding:10px 14px; background:#fffbeb; border:1px solid #fde68a; text-align:center;">
+                    <span style="font-size:11.5px; color:#b45309; display:block;">⚠️ No inscritos en el curso</span>
+                    <strong id="asisKpiNoInscritos" style="font-size:20px; color:#92400e;">0</strong>
+                  </div>
+                  <div class="card" style="padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; text-align:center;">
+                    <span style="font-size:11.5px; color:#b91c1c; display:block;">❌ Sin identificar / Omitidas</span>
+                    <strong id="asisKpiError" style="font-size:20px; color:#991b1b;">0</strong>
+                  </div>
+                </div>
+
+                <div id="asisAlertaNoInscritos" class="notice" style="display:none; background:#fffbeb; border-color:#f59e0b; color:#92400e; margin-bottom:10px; font-size:12px;"></div>
+
+                <div class="table-container" style="max-height:240px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fila</th>
+                        <th>Dato detectado</th>
+                        <th>Participante en nómina</th>
+                        <th>Cruce</th>
+                        <th>Sesiones a marcar</th>
+                      </tr>
+                    </thead>
+                    <tbody id="asisTablaPreview"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; gap:10px;">
+              <span style="font-size: 12px; color: #64748b;">⚡ Los cambios se guardan directo en Google Sheets sin crear planillas externas.</span>
+              <div style="display:flex; gap:8px;">
+                <button class="btn secondary" type="button" onclick="cerrarModalImportarAsistencia()">Cancelar</button>
+                <button class="btn" id="btnAplicarImportacionAsistencia" type="button" onclick="aplicarAsistenciaImportada()" disabled style="background:#059669; color:#fff; font-weight:700;">✓ Aplicar asistencia al curso</button>
+              </div>
             </div>
           </div>
         </div>

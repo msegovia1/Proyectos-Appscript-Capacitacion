@@ -365,6 +365,7 @@ function repararIdsEnRespuestasFormulario() {
   ss.getSheets().forEach(function(hoja) {
     const nombre = sigcNormalizarEncabezado(hoja.getName());
     if (
+      nombre.indexOf('RESPUESTAS DE FORMULARIO') < 0 &&
       nombre.indexOf('RESPUESTAS FORMULARIO') < 0 &&
       nombre.indexOf('FORM RESPONSES') < 0
     ) return;

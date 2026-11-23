@@ -2,6 +2,7 @@
         <div class="section-head">
           <div><h2>Actividades</h2><p>Programas, cursos, jornadas y charlas.</p></div>
           <div style="display:flex;gap:8px">
+            <button class="btn secondary" type="button" onclick="abrirModalSincronizarGoogleCalendar()" style="border-color:#0284c7; color:#0369a1; background:#f0f9ff; font-weight:600;">📅 Calendarizar en Google Calendar</button>
             <button class="btn secondary" type="button" onclick="irAVista('calendario')">📅 Ver calendario</button>
             <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
           </div>
@@ -19,9 +20,14 @@
             <option value="Cerrada">Cerrada</option>
             <option value="Archivada">Archivada</option>
           </select>
+          <select id="filtroAsistenciaAct" onchange="reiniciarYRenderizar('actividades')">
+            <option value="">Todas (asistencia)</option>
+            <option value="con">✅ Con asistencia registrada</option>
+            <option value="sin">⚠️ Sin asistencia registrada</option>
+          </select>
           <label class="checkline"><input id="mostrarActividadesArchivadas" type="checkbox" onchange="reiniciarYRenderizar('actividades')"> Mostrar archivadas</label>
         </div>
-        <div class="table-container"><table><thead><tr><th>ID</th><th>Actividad</th><th>Tipo</th><th>Programa</th><th>Área</th><th>Año</th><th>Sesiones</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaActividades"></tbody></table></div>
+        <div class="table-container"><table><thead><tr><th>ID</th><th>Actividad</th><th>Tipo</th><th>Programa</th><th>Área</th><th>Año</th><th>Sesiones</th><th>Asistencia</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaActividades"></tbody></table></div>
         <div class="pager"><span id="paginaActividadesInfo"></span><button class="btn secondary" type="button" onclick="cambiarPagina('actividades',-1)">Anterior</button><button class="btn secondary" type="button" onclick="cambiarPagina('actividades',1)">Siguiente</button></div>
         <div id="panelEditarActividad" class="card panel edit-panel" hidden>
           <div class="edit-head">
@@ -126,6 +132,12 @@
             <div class="field full"><label>Carpeta Drive</label><input name="CARPETA_DRIVE" placeholder="https://drive.google.com/..."></div>
             <div class="field full"><label>Observaciones internas</label><textarea name="OBSERVACIONES"></textarea></div>
             <div class="notice">Al guardar una actividad, el sistema sincronizará las sesiones totales de sus participaciones. Si el estado es Ejecutada o Cerrada, recalculará automáticamente los resultados de las personas seleccionadas.</div>
+            <div class="field full" style="margin-top:4px;">
+              <label class="checkline" style="display:inline-flex; align-items:center; gap:8px; font-weight:600; color:#1e3a8a; background:#eff6ff; padding:10px 14px; border-radius:8px; border:1px solid #bfdbfe; cursor:pointer;">
+                <input type="checkbox" id="chkAgendarGCalAlEditar">
+                <span>📅 Abrir en Google Calendar al guardar para actualizar el evento en mi calendario</span>
+              </label>
+            </div>
             <div class="form-actions">
               <button class="btn secondary" type="button" onclick="cerrarEdicionActividad()">Cancelar</button>
               <button class="btn" type="submit">Guardar cambios</button>

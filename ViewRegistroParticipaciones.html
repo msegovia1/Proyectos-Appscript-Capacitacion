@@ -45,9 +45,58 @@
         <input type="hidden" id="selectPersona" name="ID_PERSONA" required value="">
       </div>
 
-      <div class="field full">
-        <label>Actividad de capacitación *</label>
-        <select id="selectActividad" name="ID_ACTIVIDAD" required onchange="sincronizarSesionesActividadReg()"></select>
+      <div class="field full" style="position:relative;">
+        <!-- Cabecera del selector con Filtros Rápidos de Estado -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                <label style="margin:0; font-weight:600; color:var(--texto);">Actividad de capacitación *</label>
+                <div class="actividad-filtro-chips" id="actFiltroChips_RegPart" style="display:flex; gap:4px;">
+                  <button type="button" class="chip-filtro-act active" data-filtro="activas" onclick="cambiarFiltroEstadoActGen('RegPart', 'activas')">⚡ En curso / Activas</button>
+                  <button type="button" class="chip-filtro-act " data-filtro="todas" onclick="cambiarFiltroEstadoActGen('RegPart', 'todas')">📋 Todas</button>
+                  <button type="button" class="chip-filtro-act " data-filtro="finalizadas" onclick="cambiarFiltroEstadoActGen('RegPart', 'finalizadas')">🏁 Finalizadas</button>
+                </div>
+              </div>
+
+              <!-- Input de Búsqueda Predictiva -->
+              <div id="contenedorBuscadorAct_RegPart" style="position:relative;">
+                <div style="position:relative; display:flex; align-items:center;">
+                  <span style="position:absolute; left:12px; font-size:14px; color:#94a3b8; pointer-events:none;">🔍</span>
+                  <input id="inputBuscarAct_RegPart" type="text" placeholder="🔍 Busque por código (ej: 018), nombre de la capacitación, relator o temática..." autocomplete="off" style="width:100%; padding-left:36px; padding-right:32px; height:42px;" onfocus="buscarActividadesPredictivoGen('RegPart', true)" oninput="buscarActividadesPredictivoGenConPausa('RegPart')" onkeydown="manejarTecladoActividadGen(event, 'RegPart')">
+                  <button type="button" id="btnLimpiarBuscarAct_RegPart" style="display:none; position:absolute; right:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:2px 6px; border-radius:50%;" onclick="limpiarTextoBuscarActividadGen('RegPart')" title="Limpiar búsqueda">✕</button>
+                </div>
+
+                <!-- Dropdown de resultados predictivos -->
+                <div id="dropdownResultadosAct_RegPart" class="dropdown-predictivo-actividades" style="display:none;">
+                  <!-- Se puebla dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Tarjeta de Actividad Seleccionada -->
+              <div id="cardActSeleccionada_RegPart" class="card-actividad-seleccionada" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+                  <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+                    <span style="font-size:24px; line-height:1;">🎓</span>
+                    <div style="min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                        <span id="cardActId_RegPart" class="badge-actividad-id">CAP-2026-000</span>
+                        <span id="cardActEstado_RegPart" class="badge">Estado</span>
+                        <span id="cardActModalidad_RegPart" class="badge-subtle">Presencial</span>
+                      </div>
+                      <strong id="cardActNombre_RegPart" style="font-size:14px; color:var(--azul-2,#1e3a8a); display:block; word-break:break-word;">Nombre de la actividad</strong>
+                      <div style="font-size:12px; color:var(--gris,#64748b); display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                        <span id="cardActFecha_RegPart">📅 Fecha</span>
+                        <span id="cardActEscuela_RegPart">🏫 Escuela</span>
+                        <span id="cardActCupos_RegPart">👥 Cupos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn secondary compact" onclick="deseleccionarActividadGen('RegPart')" style="white-space:nowrap;">✕ Cambiar actividad</button>
+                </div>
+              </div>
+
+              <!-- Select original en el DOM para retrocompatibilidad 100% -->
+              <select id="selectActividad" name="ID_ACTIVIDAD" style="display:none;" onchange="sincronizarSesionesActividadReg()">
+                <option value="">Seleccione una actividad...</option>
+              </select>
       </div>
 
       <div class="field"><label>Fecha inscripción</label><input name="FECHA_INSCRIPCION" type="date"></div>

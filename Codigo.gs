@@ -14,18 +14,25 @@ function asegurarEstructuraPersonas_() {
   asegurarColumna_(hoja, 'TIPO_DOCUMENTO');
   asegurarColumna_(hoja, 'NUMERO_DOCUMENTO');
 }
+let _cachedSpreadsheetCentralInstancia = null;
+
 function sigcSpreadsheetCentral_() {
+  if (_cachedSpreadsheetCentralInstancia) return _cachedSpreadsheetCentralInstancia;
   const id = SIGC_CONFIG.SPREADSHEET_ID;
   if (id && String(id).trim().length > 10) {
     try {
-      return SpreadsheetApp.openById(String(id).trim());
+      _cachedSpreadsheetCentralInstancia = SpreadsheetApp.openById(String(id).trim());
+      return _cachedSpreadsheetCentralInstancia;
     } catch (e) {
       console.warn('No se pudo abrir por ID (' + id + '): ' + e.message);
     }
   }
   try {
     const activa = SpreadsheetApp.getActiveSpreadsheet();
-    if (activa) return activa;
+    if (activa) {
+      _cachedSpreadsheetCentralInstancia = activa;
+      return activa;
+    }
   } catch (e) {}
   throw new Error('No se pudo conectar con la planilla de Google Sheets. Configure el ID en el botón Configurar.');
 }
@@ -79,6 +86,8 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
   const hojaOrigen = origen.getSheetByName(hojaRespuestas);
   if (!hojaOrigen) throw new Error('No existe la hoja de respuestas indicada.');
   validarHojaRespuestasVinculada_(hojaOrigen);
+  const esHojaSat = typeof esHojaRespuestasSatisfaccion_ === 'function' && esHojaRespuestasSatisfaccion_(hojaOrigen);
+  const tipoVinculacion = esHojaSat ? 'SATISFACCION' : 'INSCRIPCION';
   prepararConfigFormularios();
   const config = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.FORMULARIOS);
   const datos = config.getDataRange().getValues();
@@ -87,6 +96,7 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
     if (String(datos[i][mapa['SPREADSHEET RESPUESTAS ID']]) === spreadsheetRespuestasId &&
         String(datos[i][mapa['HOJA RESPUESTAS']]) === hojaRespuestas) {
       const activador = instalarTriggerFormularioVinculado_(spreadsheetRespuestasId);
+      if (mapa['TIPO'] !== undefined) config.getRange(i + 1, mapa['TIPO'] + 1).setValue(tipoVinculacion);
       config.getRange(i + 1, mapa['ID ACTIVIDAD'] + 1).setValue(idActividad);
       config.getRange(i + 1, mapa['ESTADO'] + 1).setValue('Activo');
       const recuperacion = procesarPendientesFormularioVinculado_(
@@ -94,7 +104,8 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
         hojaRespuestas,
         idActividad,
         SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO,
-        false
+        false,
+        tipoVinculacion
       );
       sigcInvalidarCache_();
       return {
@@ -108,7 +119,7 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
   }
   const activador = instalarTriggerFormularioVinculado_(spreadsheetRespuestasId);
   config.appendRow([
-    'FOR-' + Utilities.getUuid().slice(0, 8).toUpperCase(), 'INSCRIPCION',
+    'FOR-' + Utilities.getUuid().slice(0, 8).toUpperCase(), tipoVinculacion,
     spreadsheetRespuestasId, hojaRespuestas, idActividad, 'Activo', new Date()
   ]);
   const recuperacion = procesarPendientesFormularioVinculado_(
@@ -116,7 +127,8 @@ function vincularFormularioInscripcion(idActividad, spreadsheetRespuestasId, hoj
     hojaRespuestas,
     idActividad,
     SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO,
-    false
+    false,
+    tipoVinculacion
   );
   sigcInvalidarCache_();
   return {
@@ -183,17 +195,68 @@ function validarHojaRespuestasVinculada_(hoja) {
   if (!hoja || hoja.getLastColumn() < 1) {
     throw new Error('La pestaña seleccionada no contiene encabezados de formulario.');
   }
-  const encabezados = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getDisplayValues()[0];
-  const mapa = mapaEncabezados_(encabezados);
-  const tieneMarcaTemporal = ['MARCA TEMPORAL', 'TIMESTAMP', 'FECHA REGISTRO'].some(function(campo) {
-    return mapa[normalizarEncabezado_(campo)] !== undefined;
-  });
-  if (!tieneMarcaTemporal) {
-    throw new Error(
-      'La pestaña no parece ser una hoja de respuestas de Google Forms: falta la columna Marca temporal o Timestamp.'
-    );
+  const maxFilas = Math.min(hoja.getLastRow() || 1, 5);
+  const filasEncabezado = hoja.getRange(1, 1, maxFilas, hoja.getLastColumn()).getDisplayValues();
+  for (let r = 0; r < filasEncabezado.length; r++) {
+    const encabezados = filasEncabezado[r];
+    const mapa = mapaEncabezados_(encabezados);
+    const tieneMarcaTemporal = ['MARCA TEMPORAL', 'TIMESTAMP', 'FECHA REGISTRO', 'FECHA'].some(function(campo) {
+      return mapa[normalizarEncabezado_(campo)] !== undefined;
+    });
+    if (tieneMarcaTemporal) return true;
+
+    const claves = encabezados.map(function(h) { return sigcEncabezadoSinNumeroPregunta(h); }).filter(Boolean);
+    const tieneNombre = claves.some(function(k) {
+      return k.indexOf('NOMBRE') >= 0 && k.indexOf('EMPRENDIMIENTO') < 0 && k.indexOf('EMPRESA') < 0;
+    });
+    const tieneDoc = claves.some(function(k) {
+      return k.indexOf('RUT') >= 0 || k.indexOf('RUN') >= 0 || k.indexOf('DOCUMENTO') >= 0 || k.indexOf('CEDULA') >= 0 || k.indexOf('DNI') >= 0 || k.indexOf('PASAPORTE') >= 0;
+    });
+    if (tieneNombre && tieneDoc) return true;
   }
-  return true;
+  throw new Error(
+    'La pestaña no parece ser una hoja de respuestas de Google Forms: falta la columna Marca temporal o las columnas de Nombre y RUT/Documento.'
+  );
+}
+
+/**
+ * Determina si una fila de la hoja de respuestas está completamente vacía
+ * o es una fila residual al final de la hoja (sin marca temporal, ni nombre,
+ * ni RUT/documento).
+ */
+function filaFormularioEstaVacia_(encabezados, filaValores) {
+  if (!Array.isArray(filaValores) || !filaValores.length) return true;
+  const tecnicos = typeof encabezadosTecnicosFormulario_ === 'function' ? encabezadosTecnicosFormulario_() : {};
+  let tieneAlgunValor = false;
+  for (let i = 0; i < filaValores.length; i++) {
+    const hNorm = normalizarEncabezado_(encabezados && encabezados[i] || '');
+    if (!hNorm || tecnicos[hNorm]) continue;
+    const val = filaValores[i];
+    if (val === false) continue;
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      tieneAlgunValor = true;
+      break;
+    }
+    const str = val === null || val === undefined ? '' : String(val).trim();
+    if (str !== '' && str.toUpperCase() !== 'FALSE') {
+      tieneAlgunValor = true;
+      break;
+    }
+  }
+  if (!tieneAlgunValor) return true;
+
+  // En encuestas de satisfacción no se pide Nombre ni RUT: si tiene respuestas válidas, no está vacía
+  const encsNormFv = (encabezados || []).map(normalizarEncabezado_);
+  const esSatFv = encsNormFv.some(function(h) { return h.indexOf('RELATOR') >= 0 || h.indexOf('DOCENTE') >= 0 || h.indexOf('SATISFACCION GLOBAL') >= 0; });
+  if (esSatFv) return false;
+
+  const reg = registroDesdeFila_(encabezados || [], filaValores);
+  const tieneTimestamp = reg.timestamp !== null && reg.timestamp !== undefined && String(reg.timestamp).trim() !== '';
+  const tieneNombre = String(reg.nombre || '').trim() !== '';
+  const tieneDoc = String(reg.rut || '').trim() !== '' || String(reg.numeroDocumento || '').trim() !== '';
+  if (!tieneTimestamp && !tieneNombre && !tieneDoc) return true;
+
+  return false;
 }
 
 /**
@@ -254,6 +317,9 @@ function cerrarFormulariosYActivadoresActividad_(idActividad, nuevoEstado) {
   for (let i = 1; i < datos.length; i++) {
     const filaActId = String(datos[i][mapa['ID ACTIVIDAD']] || '').trim();
     if (filaActId !== idActividad) continue;
+
+    const tipoForm = mapa['TIPO'] !== undefined ? normalizarEncabezado_(datos[i][mapa['TIPO']]) : '';
+    if (tipoForm.indexOf('SATISFACCION') >= 0 || tipoForm.indexOf('ENCUESTA') >= 0) continue;
 
     const estadoForm = normalizarEncabezado_(datos[i][mapa['ESTADO']]);
     const formId = String(datos[i][mapa['FORM ID']] || '').trim();
@@ -341,17 +407,27 @@ function procesarFilaFormularioSeguro_(hoja, fila, configFormulario) {
 }
 
 function obtenerConfigFormulario_(spreadsheetId, hojaRespuestas) {
-  const hoja = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
-  if (!hoja || hoja.getLastRow() < 2) return null;
-  const datos = hoja.getDataRange().getValues();
-  const mapa = mapaEncabezados_(datos[0]);
-  for (let i = 1; i < datos.length; i++) {
-    if (String(datos[i][mapa['SPREADSHEET RESPUESTAS ID']]) === String(spreadsheetId) &&
-        String(datos[i][mapa['HOJA RESPUESTAS']]) === String(hojaRespuestas) &&
-        normalizarEncabezado_(datos[i][mapa['ESTADO']]) === 'ACTIVO') {
-      return {tipo: datos[i][mapa['TIPO']], idActividad: datos[i][mapa['ID ACTIVIDAD']]};
+  const central = sigcSpreadsheetCentral_();
+  const hoja = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+  if (hoja && hoja.getLastRow() >= 2) {
+    const datos = hoja.getDataRange().getValues();
+    const mapa = mapaEncabezados_(datos[0]);
+    for (let i = 1; i < datos.length; i++) {
+      if (String(datos[i][mapa['SPREADSHEET RESPUESTAS ID']]) === String(spreadsheetId) &&
+          String(datos[i][mapa['HOJA RESPUESTAS']]) === String(hojaRespuestas) &&
+          normalizarEncabezado_(datos[i][mapa['ESTADO']]) === 'ACTIVO') {
+        return {tipo: datos[i][mapa['TIPO']], idActividad: datos[i][mapa['ID ACTIVIDAD']]};
+      }
     }
   }
+  // Auto-detección por si la hoja tiene cabeceras de satisfacción aunque la fila en CONFIG_FORMULARIOS tenga otro nombre
+  try {
+    const ssTarget = String(spreadsheetId) === String(central.getId()) ? central : SpreadsheetApp.openById(spreadsheetId);
+    const hObj = ssTarget.getSheetByName(hojaRespuestas);
+    if (hObj && typeof esHojaRespuestasSatisfaccion_ === 'function' && esHojaRespuestasSatisfaccion_(hObj)) {
+      return {tipo: 'SATISFACCION', idActividad: ''};
+    }
+  } catch (eDet) {}
   return null;
 }
 
@@ -411,9 +487,8 @@ function resolverOrigenFormularioDesdeUrl_(url) {
 
 /** Entrega al módulo Formularios un resumen operativo sin exponer IDs técnicos y de forma optimizada. */
 function obtenerFormulariosVinculados() {
-  prepararConfigFormularios();
   const central = sigcSpreadsheetCentral_();
-  const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS);
+  const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
   if (!hojaConfig || hojaConfig.getLastRow() < 2) return [];
   const datos = hojaConfig.getDataRange().getValues();
   const mapa = mapaEncabezados_(datos[0]);
@@ -448,6 +523,12 @@ function obtenerFormulariosVinculados() {
     const nombreHoja = String(fila[mapa['HOJA RESPUESTAS']] || '').trim();
     const idActividad = String(fila[mapa['ID ACTIVIDAD']] || '').trim();
     const tipoFormulario = String(fila[mapa['TIPO']] || 'INSCRIPCION');
+    const esSatisfaccion = normalizarEncabezado_(tipoFormulario).indexOf('SATISFACCION') >= 0;
+
+    // Aislamiento: las Encuestas de Satisfacción se gestionan y analizan exclusivamente
+    // en los módulos de Reportes, Actividades y Gestión de Participantes. No se mezclan aquí.
+    if (esSatisfaccion) return null;
+
     const actividad = mapaActividades[idActividad] || null;
     const resumen = {
       total: 0, procesadas: 0, advertencias: 0, duplicadas: 0, revision: 0, pendientes: 0, detallesRevision: []
@@ -462,35 +543,41 @@ function obtenerFormulariosVinculados() {
         const respuestas = nombreHoja ? origen.getSheetByName(nombreHoja) : null;
         if (respuestas && respuestas.getLastRow() >= 2) {
           const ultimaFila = respuestas.getLastRow();
-          const ultimaColumna = Math.min(respuestas.getLastColumn(), 50);
-          const encabezados = respuestas.getRange(1, 1, 1, ultimaColumna).getValues()[0];
+          const ultimaColumna = Math.min(respuestas.getLastColumn(), 120);
+          const datosHoja = respuestas.getRange(1, 1, ultimaFila, ultimaColumna).getValues();
+          const encabezados = datosHoja[0];
           const mr = mapaEncabezados_(encabezados);
           const colEstado = mr['ESTADO PROCESO'];
           const colDetalle = mr['DETALLE PROCESO'];
-          const cantidad = ultimaFila - 1;
-          resumen.total = cantidad;
 
-          if (colEstado !== undefined) {
-            const estados = respuestas.getRange(2, colEstado + 1, cantidad, 1).getValues();
-            for (let i = 0; i < cantidad; i++) {
-              const estado = normalizarEncabezado_(estados[i][0]);
-              if (estado === 'PROCESADO') resumen.procesadas++;
-              else if (estado === 'PROCESADO CON ADVERTENCIA' || estado === 'PROCESADO_CON_ADVERTENCIA') resumen.advertencias++;
-              else if (estado === 'DUPLICADO') resumen.duplicadas++;
-              else if (estado === 'REVISION' || estado === 'ERROR') {
-                resumen.revision++;
-                if (resumen.detallesRevision.length < 5) {
-                  resumen.detallesRevision.push({
-                    fila: i + 2,
-                    detalle: 'Requiere revisión.'
-                  });
-                }
-              } else {
-                resumen.pendientes++;
+          for (let i = 1; i < datosHoja.length; i++) {
+            const filaDatos = datosHoja[i];
+            const estado = colEstado !== undefined ? normalizarEncabezado_(filaDatos[colEstado]) : '';
+            if (estado === 'PROCESADO') {
+              resumen.total++;
+              resumen.procesadas++;
+            } else if (estado === 'PROCESADO CON ADVERTENCIA' || estado === 'PROCESADO_CON_ADVERTENCIA') {
+              resumen.total++;
+              resumen.advertencias++;
+            } else if (estado === 'DUPLICADO') {
+              resumen.total++;
+              resumen.duplicadas++;
+            } else if (estado === 'REVISION' || estado === 'ERROR') {
+              resumen.total++;
+              resumen.revision++;
+              if (resumen.detallesRevision.length < 5) {
+                const detTexto = colDetalle !== undefined && String(filaDatos[colDetalle] || '').trim()
+                  ? String(filaDatos[colDetalle]).trim()
+                  : 'Requiere revisión.';
+                resumen.detallesRevision.push({
+                  fila: i + 1,
+                  detalle: detTexto
+                });
               }
+            } else if (!filaFormularioEstaVacia_(encabezados, filaDatos)) {
+              resumen.total++;
+              resumen.pendientes++;
             }
-          } else {
-            resumen.pendientes = cantidad;
           }
         }
       } catch (error) {
@@ -526,7 +613,7 @@ function obtenerFormulariosVinculados() {
         : {cantidad: 0, operativo: true, estado: 'No requerido'},
       resumen: resumen
     };
-  });
+  }).filter(Boolean);
 }
 
 /** Vinculaciones más capacidad real de activadores del proyecto. */
@@ -617,6 +704,8 @@ function crearFormularioRegistroInteresesDesdeWeb() {
         try {
           const formExistente = FormApp.openById(formId);
           if (formExistente) {
+            try { formExistente.setRequireLogin(false); } catch (e) {}
+            try { formExistente.setLimitOneResponsePerUser(false); } catch (e) {}
             if (ssRespId) {
               instalarTriggerFormularioVinculado_(ssRespId);
             }
@@ -648,6 +737,8 @@ function crearFormularioRegistroInteresesDesdeWeb() {
     form.setConfirmationMessage(
       '¡Muchas gracias por registrar sus datos e intereses! Su información ha sido incorporada al Sistema Integrado de Capacitaciones de la Municipalidad de Santiago.'
     );
+    try { form.setRequireLogin(false); } catch (e) {}
+    try { form.setLimitOneResponsePerUser(false); } catch (e) {}
     form.setAllowResponseEdits(false);
     form.setCollectEmail(false);
     
@@ -868,7 +959,7 @@ function repararYRecuperarFormulario(idConfig) {
     origen.spreadsheetId,
     origen.hoja,
     origen.idActividad,
-    Math.max(250, SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO || 100),
+    Math.max(1000, SIGC_CONFIG.LIMITE_RECUPERACION_FORMULARIO || 100),
     true,
     origen.tipo
   );
@@ -881,6 +972,65 @@ function repararYRecuperarFormulario(idConfig) {
       ' respuesta(s) procesada(s) correctamente, ' + recuperacion.revision +
       ' en revisión de ' + recuperacion.intentadas + ' revisadas.'
   };
+}
+
+/** Recupera respuestas pendientes o en revisión de todos los formularios activos de inscripción. */
+function recuperarTodosFormulariosActivosDesdeWeb() {
+  const formularios = obtenerFormulariosVinculados();
+  const activos = formularios.filter(function(f) {
+    return normalizarEncabezado_(f.estado) === 'ACTIVO' &&
+      normalizarEncabezado_(f.tipo) !== 'SATISFACCION';
+  });
+  let totalResueltas = 0;
+  let totalRevision = 0;
+  let procesados = 0;
+  activos.forEach(function(f) {
+    try {
+      const r = repararYRecuperarFormulario(f.idConfig);
+      if (r && r.recuperacion) {
+        totalResueltas += Number(r.recuperacion.resueltas || 0);
+        totalRevision += Number(r.recuperacion.revision || 0);
+      }
+      procesados++;
+    } catch (e) {
+      console.warn('Error recuperando formulario ' + f.idConfig + ': ' + e.message);
+    }
+  });
+  sigcInvalidarCache_();
+  return {
+    ok: true,
+    formularios: procesados,
+    resueltas: totalResueltas,
+    revision: totalRevision,
+    mensaje: 'Sincronización completada en ' + procesados + ' formulario(s): ' +
+      totalResueltas + ' respuesta(s) recuperada(s) y ' + totalRevision + ' en revisión.'
+  };
+}
+
+/** Recuperación única automática de Formaliza y Crece 3 (V2: verifica faltantes en PARTICIPACIONES). */
+function sigcRecuperarFormalizaCrece3_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('MIGRACION_RECUPERAR_FORMALIZA3_V2_OK') === 'true') return false;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return false;
+  try {
+    if (props.getProperty('MIGRACION_RECUPERAR_FORMALIZA3_V2_OK') === 'true') return false;
+    const formularios = obtenerFormulariosVinculados();
+    let recuperadas = 0;
+    formularios.forEach(function(f) {
+      const nom = normalizarEncabezado_(f.actividad || '');
+      if (nom.indexOf('FORMALIZA') >= 0 && nom.indexOf('CRECE') >= 0 && nom.indexOf('3') >= 0) {
+        try {
+          const r = repararYRecuperarFormulario(f.idConfig);
+          if (r && r.recuperacion) recuperadas += Number(r.recuperacion.resueltas || 0);
+        } catch (e) {}
+      }
+    });
+    props.setProperty('MIGRACION_RECUPERAR_FORMALIZA3_V2_OK', 'true');
+    return recuperadas > 0;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** Procesa pendientes de una única pestaña con un motor masivo en memoria ultrarrápido. */
@@ -962,6 +1112,7 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
     const partEncabezados = partDatos.length ? partDatos[0] : [];
     const mpart = mapaEncabezados_(partEncabezados);
     const participacionesExistentes = new Set();
+    const participacionesPorIdYAct = new Set();
     let maxIdPart = 0;
     const anioActual = new Date().getFullYear();
     const prefijoPartAnio = 'PAR-' + anioActual + '-';
@@ -979,6 +1130,7 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
         normalizarEncabezado_(ptFila[mpart['REGISTRO ACTIVO']]) !== 'NO';
       if (idP && idA && activo) {
         participacionesExistentes.add(idP + '|' + idA);
+        if (idPt) participacionesPorIdYAct.add(idPt + '|' + idA);
       }
     }
 
@@ -1000,22 +1152,50 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
     const tipoForm = normalizarEncabezado_(tipoFormulario || 'INSCRIPCION');
 
     for (let i = 1; i < valoresHoja.length; i++) {
-      const estadoActual = normalizarEncabezado_(colEstado === undefined ? '' : valoresHoja[i][colEstado]);
+      const filaSheet = i + 1;
+      const filaValores = valoresHoja[i];
+      const estadoActual = normalizarEncabezado_(colEstado === undefined ? '' : filaValores[colEstado]);
+      if (filaFormularioEstaVacia_(encabezados, filaValores)) {
+        if (estadoActual === 'REVISION' || estadoActual === 'ERROR' || estadoActual === 'REPROCESANDO') {
+          estadosActualizar.push({
+            fila: filaSheet,
+            idPersona: '',
+            idParticipacion: '',
+            estado: '',
+            detalle: ''
+          });
+        }
+        continue;
+      }
       const esPendiente = estadoActual === '';
       const esRevision = incluirRevisiones && (estadoActual === 'REVISION' || estadoActual === 'ERROR' || estadoActual === 'REPROCESANDO');
-      
-      if (!esPendiente && !esRevision) continue;
+      let faltaEnEstaActividad = false;
+      if (!esPendiente && !esRevision && incluirRevisiones && idActividad &&
+          ['PROCESADO', 'PROCESADO CON ADVERTENCIA', 'PROCESADO_CON_ADVERTENCIA', 'DUPLICADO'].indexOf(estadoActual) >= 0) {
+        const colIdPartF = mr['ID PARTICIPACION'] !== undefined ? mr['ID PARTICIPACION'] : mr['ID_PARTICIPACION'];
+        const colIdPerF = mr['ID PERSONA'] !== undefined ? mr['ID PERSONA'] : mr['ID_PERSONA'];
+        const idPtFila = colIdPartF !== undefined ? String(filaValores[colIdPartF] || '').trim() : '';
+        const idPerFila = colIdPerF !== undefined ? String(filaValores[colIdPerF] || '').trim() : '';
+        const existeEnEstaAct = (idPtFila && participacionesPorIdYAct.has(idPtFila + '|' + idActividad)) ||
+          (idPerFila && participacionesExistentes.has(idPerFila + '|' + idActividad));
+        if (!existeEnEstaAct) faltaEnEstaActividad = true;
+      }
+
+      if (!esPendiente && !esRevision && !faltaEnEstaActividad) continue;
       if (intentadas >= maximo) {
         restantes++;
         continue;
       }
       intentadas++;
-      const filaSheet = i + 1;
-      const filaValores = valoresHoja[i];
 
       try {
         if (tipoForm === 'INTERES GENERAL') {
           procesarFilaInteresGeneral_(hoja, filaSheet, encabezados, filaValores);
+          resueltas++;
+          continue;
+        }
+        if (tipoForm === 'SATISFACCION' || tipoForm === 'ENCUESTA SATISFACCION') {
+          procesarFilaSatisfaccion_(hoja, filaSheet, encabezados, filaValores, idActividad);
           resueltas++;
           continue;
         }
@@ -1027,19 +1207,27 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
           throw new Error('No se encontró la actividad asociada a este formulario.');
         }
 
-        // Validación y normalización de documento e identidad
+        // Validación y normalización de documento e identidad (tolerante si falta o tiene formato histórico)
+        const nombreNorm = sigcNormalizarNombre(registro.nombre);
+        if (!nombreNorm) throw new Error('El nombre completo es obligatorio.');
+
         const tipoDoc = sigcNormalizarTipoDocumento(registro.tipoDocumento, registro.rut);
         const docNormalizado = sigcNormalizarDocumento(tipoDoc, registro.numeroDocumento, registro.rut);
-        const docValidado = sigcValidarDocumento(tipoDoc, docNormalizado, registro.nacionalidad);
+        let docValidado;
+        try {
+          docValidado = sigcValidarDocumento(tipoDoc, docNormalizado, registro.nacionalidad);
+        } catch (eDoc) {
+          docValidado = typeof importacionesResolverDocumentoTolerante_ === 'function'
+            ? importacionesResolverDocumentoTolerante_(registro, nombreNorm)
+            : {tipo: 'Documento histórico', numero: docNormalizado || ('HIST-' + filaSheet), advertencia: eDoc.message};
+          if (docValidado.advertencia) advertencias.push(docValidado.advertencia);
+        }
         const rutValidado = docValidado.tipo === 'RUT' ? docValidado.numero : '';
-        const correoNorm = sigcNormalizarCorreo(registro.correo);
-        const telNorm = sigcNormalizarTelefono(registro.telefono);
-        const nombreNorm = sigcNormalizarNombre(registro.nombre);
+        const correoRaw = sigcNormalizarCorreo(registro.correo);
+        const telRaw = sigcNormalizarTelefono(registro.telefono);
+        const correoNorm = sigcValidarCorreo(correoRaw) ? correoRaw : '';
+        const telNorm = sigcValidarTelefono(telRaw) ? telRaw : '';
         const nacNorm = sigcNormalizarTexto(registro.nacionalidad);
-
-        if (!nombreNorm) throw new Error('El nombre completo es obligatorio.');
-        if (correoNorm && !sigcValidarCorreo(correoNorm)) throw new Error('El correo electrónico no es válido.');
-        if (telNorm && !sigcValidarTelefono(telNorm)) throw new Error('El teléfono no tiene un formato válido.');
 
         registro.tipoDocumento = docValidado.tipo;
         registro.numeroDocumento = docValidado.numero;
@@ -1251,6 +1439,30 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
 function reprocesarRevisionesFormulario(idConfig) {
   prepararConfigFormularios();
   const origen = resolverConfigFormularioPorId_(idConfig);
+  if (normalizarEncabezado_(origen.tipo).indexOf('SATISFACCION') >= 0) {
+    let cantSync = 0;
+    if (typeof sincronizarRespuestasSatisfaccion_ === 'function') {
+      cantSync = sincronizarRespuestasSatisfaccion_(sigcSpreadsheetCentral_(), origen.idActividad);
+    }
+    if (origen.hoja && origen.hoja !== 'DIRECTO_FORMAPP' && origen.hoja !== 'EVALUACIONES_SATISFACCION') {
+      try {
+        const resHoja = procesarPendientesFormularioVinculado_(
+          origen.spreadsheetId,
+          origen.hoja,
+          origen.idActividad,
+          500,
+          true,
+          origen.tipo
+        );
+        cantSync += Number(resHoja.resueltas || 0);
+      } catch (eH) {}
+    }
+    sigcInvalidarCache_();
+    return {
+      ok: true,
+      mensaje: 'Sincronización de satisfacción completada (' + cantSync + ' nueva(s) evaluación(es) consolidada(s)).'
+    };
+  }
   const resultado = procesarPendientesFormularioVinculado_(
     origen.spreadsheetId,
     origen.hoja,
@@ -1283,6 +1495,10 @@ function obtenerCasosRevisionFormulario(idConfig) {
   for (let i = 1; i < valores.length; i++) {
     const estado = normalizarEncabezado_(colEstado === undefined ? '' : valores[i][colEstado]);
     if (estado !== 'REVISION' && estado !== 'ERROR') continue;
+    if (filaFormularioEstaVacia_(encabezados, valores[i])) {
+      registrarResultadoEnRespuesta_(hoja, i + 1, '', '', '', '');
+      continue;
+    }
     const campos = encabezados.map(function(encabezado, indice) {
       return {
         encabezado: String(encabezado || ''),
@@ -1525,7 +1741,11 @@ function instalarActualizacionAutomaticaActividades() {
   };
 }
 
-/** Cambia a Ejecutada una capacitación desde el día posterior a su término. */
+/**
+ * Actualiza automáticamente el estado de las capacitaciones según sus fechas:
+ * 1. Pasa a 'En ejecución' cuando llega o pasa la fecha de inicio y aún no termina (estados previos: Planificada, Difusión, Inscripción abierta).
+ * 2. Pasa a 'Ejecutada' a partir del día posterior a su fecha de término, cerrando formularios vinculados.
+ */
 function actualizarEstadosActividadesVencidas() {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -1533,15 +1753,16 @@ function actualizarEstadosActividadesVencidas() {
     const ss = sigcSpreadsheetCentral_();
     const hoja = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
     if (!hoja || hoja.getLastRow() < 2) {
-      return {ok:true, actualizadas:0, ids:[]};
+      return {ok: true, actualizadas: 0, idsEjecutadas: [], idsEnEjecucion: [], ids: []};
     }
     const valores = hoja.getDataRange().getValues();
     const mapa = mapaEncabezados_(valores[0]);
     const colId = mapa['ID ACTIVIDAD'];
+    const colFechaInicio = mapa['FECHA INICIO'];
     const colFechaTermino = mapa['FECHA TERMINO'];
     const colEstado = mapa['ESTADO ACTIVIDAD'];
-    if (colFechaTermino === undefined || colEstado === undefined) {
-      throw new Error('ACTIVIDADES debe contener FECHA_TERMINO y ESTADO_ACTIVIDAD.');
+    if (colEstado === undefined) {
+      throw new Error('ACTIVIDADES debe contener la columna ESTADO_ACTIVIDAD.');
     }
     const hoyTexto = Utilities.formatDate(
       new Date(),
@@ -1549,43 +1770,70 @@ function actualizarEstadosActividadesVencidas() {
       'yyyy-MM-dd'
     );
     const hoyNumero = webFechaNumero_(hoyTexto);
-    const ids = [];
+    const idsEjecutadas = [];
+    const idsEnEjecucion = [];
     for (let i = 1; i < valores.length; i++) {
       const actividad = {
-        FECHA_TERMINO: valores[i][colFechaTermino],
+        FECHA_INICIO: colFechaInicio !== undefined ? valores[i][colFechaInicio] : '',
+        FECHA_TERMINO: colFechaTermino !== undefined ? valores[i][colFechaTermino] : '',
         ESTADO_ACTIVIDAD: valores[i][colEstado]
       };
-      if (!actividadDebeMarcarseEjecutada_(actividad, hoyNumero)) continue;
-      hoja.getRange(i + 1, colEstado + 1).setValue('Ejecutada');
-      ids.push(String(colId === undefined ? '' : valores[i][colId] || ''));
+      const idAct = String(colId === undefined ? '' : valores[i][colId] || '').trim();
+      if (actividadDebeMarcarseEjecutada_(actividad, hoyNumero)) {
+        hoja.getRange(i + 1, colEstado + 1).setValue('Ejecutada');
+        idsEjecutadas.push(idAct);
+      } else if (actividadDebeMarcarseEnEjecucion_(actividad, hoyNumero)) {
+        hoja.getRange(i + 1, colEstado + 1).setValue('En ejecución');
+        idsEnEjecucion.push(idAct);
+      }
     }
-    if (ids.length) {
+    const total = idsEjecutadas.length + idsEnEjecucion.length;
+    if (total > 0) {
       SpreadsheetApp.flush();
-      ids.forEach(function(idAct) {
+      idsEjecutadas.forEach(function(idAct) {
         if (idAct) {
           try { cerrarFormulariosYActivadoresActividad_(idAct, 'Ejecutada'); } catch (e) {}
         }
       });
       if (typeof sigcInvalidarCacheTabla_ === 'function') sigcInvalidarCacheTabla_(SISTEMA.HOJAS.ACTIVIDADES);
       if (typeof webInvalidarDashboard_ === 'function') webInvalidarDashboard_();
+      const descripciones = [];
+      if (idsEnEjecucion.length) descripciones.push(idsEnEjecucion.length + ' actividad(es) pasaron a "En ejecución" por fecha de inicio (' + idsEnEjecucion.filter(Boolean).join(', ') + ')');
+      if (idsEjecutadas.length) descripciones.push(idsEjecutadas.length + ' actividad(es) pasaron a "Ejecutada" por fecha de término (' + idsEjecutadas.filter(Boolean).join(', ') + ')');
       sigcRegistrarLog(
         'ACTUALIZACION AUTOMATICA',
         'ACTIVIDAD',
-        ids.filter(Boolean).join(', '),
-        ids.length + ' actividad(es) pasaron a Ejecutada por fecha de término. Formularios y activadores cerrados automáticamente.'
+        [].concat(idsEnEjecucion, idsEjecutadas).filter(Boolean).join(', '),
+        'Transición de estados automática: ' + descripciones.join(' | ') + '.'
       );
     }
-    return {ok:true, actualizadas:ids.length, ids:ids};
+    return {
+      ok: true,
+      actualizadas: total,
+      idsEjecutadas: idsEjecutadas,
+      idsEnEjecucion: idsEnEjecucion,
+      ids: [].concat(idsEnEjecucion, idsEjecutadas)
+    };
   } finally {
     lock.releaseLock();
   }
 }
 
 function actividadDebeMarcarseEjecutada_(actividad, hoyNumero) {
-  const fechaTermino = webFechaNumero_(actividad && actividad.FECHA_TERMINO);
+  const fechaTermino = webFechaNumero_(actividad && (actividad.FECHA_TERMINO || actividad.FECHA_INICIO));
   if (!fechaTermino || !hoyNumero || fechaTermino >= hoyNumero) return false;
   const estado = normalizarEncabezado_(actividad && actividad.ESTADO_ACTIVIDAD);
   return ['EJECUTADA', 'CERRADA', 'SUSPENDIDA', 'ARCHIVADA'].indexOf(estado) < 0;
+}
+
+function actividadDebeMarcarseEnEjecucion_(actividad, hoyNumero) {
+  const fechaInicio = webFechaNumero_(actividad && actividad.FECHA_INICIO);
+  if (!fechaInicio || !hoyNumero || fechaInicio > hoyNumero) return false;
+  const fechaTermino = webFechaNumero_(actividad && (actividad.FECHA_TERMINO || actividad.FECHA_INICIO));
+  if (fechaTermino && fechaTermino < hoyNumero) return false;
+  const estado = normalizarEncabezado_(actividad && actividad.ESTADO_ACTIVIDAD);
+  const estadosPrevios = ['PLANIFICADA', 'DIFUSION', 'INSCRIPCION ABIERTA', ''];
+  return estadosPrevios.indexOf(estado) >= 0;
 }
 
 /**
@@ -1675,7 +1923,7 @@ function aplicarValidaciones_() {
   ];
   const estadosSeleccion = ['Pendiente', 'Seleccionado', 'Lista de espera', 'No seleccionado', 'No informado'];
   const cumple = ['Sí', 'No', 'Pendiente', 'No informado'];
-  const medios = ['Correo', 'Teléfono', 'WhatsApp', 'Presencial', 'Otro', 'No informado'];
+  const medios = ['Correo', 'Teléfono', 'Presencial', 'Otro', 'No informado'];
   const certificados = ['Sí', 'No', 'No aplica', 'No informado'];
   const estadosActividad = ['Planificada', 'Difusión', 'Inscripción abierta', 'En ejecución', 'Ejecutada', 'Suspendida', 'Cerrada', 'Archivada'];
   function aplicarLista(hoja, campo, valores, filaMaxima) {
@@ -1738,16 +1986,20 @@ function alEnviarFormulario(e) {
     console.error('El evento no contiene una fila de formulario.');
     return;
   }
-  // procesarFilaRespuesta_ administra el bloqueo. Evitamos solicitar dos veces
-  // el mismo ScriptLock, que no es reentrante y puede agotar el tiempo de espera.
-  procesarFilaFormularioSeguro_(e.range.getSheet(), e.range.getRow(), null);
+  const hoja = e.range.getSheet();
+  let cfg = null;
+  try {
+    const ss = hoja.getParent();
+    cfg = obtenerConfigFormulario_(ss.getId(), hoja.getName());
+  } catch (eCfg) {}
+  procesarFilaFormularioSeguro_(hoja, e.range.getRow(), cfg);
 }
 function procesarRespuestasPendientes() {
   const ss = SpreadsheetApp.getActive();
   const hojas = ss.getSheets().filter(function(hoja) {
     const n = normalizarEncabezado_(hoja.getName());
     if (hoja.getName() === 'FORMULARIO_MODELO') return false;
-    return n.indexOf('RESPUESTAS FORMULARIO') >= 0 || n.indexOf('FORM RESPONSES') >= 0;
+    return n.indexOf('RESPUESTAS DE FORMULARIO') >= 0 || n.indexOf('RESPUESTAS FORMULARIO') >= 0 || n.indexOf('FORM RESPONSES') >= 0;
   });
   let procesadas = 0;
   let errores = 0;
@@ -1755,9 +2007,11 @@ function procesarRespuestasPendientes() {
     asegurarColumnasProceso_(hoja);
     if (hoja.getLastRow() < 2) return;
     const datos = hoja.getDataRange().getValues();
-    const mapa = mapaEncabezados_(datos[0]);
+    const encabezados = datos[0];
+    const mapa = mapaEncabezados_(encabezados);
     const colEstado = mapa['ESTADO PROCESO'];
     for (let fila = 2; fila <= datos.length; fila++) {
+      if (filaFormularioEstaVacia_(encabezados, datos[fila - 1])) continue;
       const estado = colEstado !== undefined ? datos[fila - 1][colEstado] : '';
       if (estado) continue;
       try {
@@ -1776,59 +2030,88 @@ function procesarRespuestasPendientes() {
   );
 }
 function procesarFilaRespuesta_(hoja, fila, configFormulario) {
+  // Leer y validar datos de la hoja de respuestas ANTES de adquirir el candado global
+  asegurarColumnasProceso_(hoja);
+  const ultimaColumna = hoja.getLastColumn();
+  const encabezados = hoja.getRange(1, 1, 1, ultimaColumna).getValues()[0];
+  const valores = hoja.getRange(fila, 1, 1, ultimaColumna).getValues()[0];
+  if (filaFormularioEstaVacia_(encabezados, valores)) {
+    return {omitida: true, estado: 'VACIA'};
+  }
+  const mapaProceso = mapaEncabezados_(encabezados);
+  const estadoAnterior = normalizarEncabezado_(
+    mapaProceso['ESTADO PROCESO'] === undefined ? '' : valores[mapaProceso['ESTADO PROCESO']]
+  );
+  if (['PROCESADO', 'PROCESADO CON ADVERTENCIA', 'DUPLICADO'].indexOf(estadoAnterior) >= 0) {
+    return {omitida: true, estado: estadoAnterior};
+  }
+  // 1. Obtener o resolver configuración del formulario si no fue proporcionada
+  if (!configFormulario) {
+    try {
+      configFormulario = obtenerConfigFormulario_(hoja.getParent().getId(), hoja.getName());
+    } catch (eCfg) {}
+  }
+
+  // 2. Auto-detección por encabezados: solo si NO es INTERES GENERAL (Base Madre) y cumple criterios completos de satisfacción
+  const tipoConfig = normalizarEncabezado_(configFormulario && configFormulario.tipo || 'INSCRIPCION');
+  let esEncuestaSatisfaccion = false;
+  if (tipoConfig !== 'INTERES GENERAL') {
+    const encsNorm = encabezados.map(normalizarEncabezado_);
+    const tieneRelator = encsNorm.some(function(h) { return h.indexOf('RELATOR') >= 0 || h.indexOf('DOCENTE') >= 0 || h.indexOf('PROFESOR') >= 0; });
+    const tieneContenido = encsNorm.some(function(h) { return h.indexOf('CONTENIDO') >= 0 || h.indexOf('UTILIDAD') >= 0; });
+    const tieneGlobal = encsNorm.some(function(h) { return h.indexOf('SATISFACCION GLOBAL') >= 0 || h.indexOf('SATISFACCION GENERAL') >= 0; });
+    esEncuestaSatisfaccion = tipoConfig === 'SATISFACCION' || (tieneRelator && tieneContenido && tieneGlobal);
+  }
+
+  const tipoFormulario = esEncuestaSatisfaccion ? 'SATISFACCION' : tipoConfig;
+
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
+  let persona = null;
+  let participacion = null;
+  let advertencias = [];
   try {
-    asegurarColumnasProceso_(hoja);
-    const ultimaColumna = hoja.getLastColumn();
-    const encabezados = hoja.getRange(1, 1, 1, ultimaColumna).getValues()[0];
-    const valores = hoja.getRange(fila, 1, 1, ultimaColumna).getValues()[0];
-    const mapaProceso = mapaEncabezados_(encabezados);
-    const estadoAnterior = normalizarEncabezado_(
-      mapaProceso['ESTADO PROCESO'] === undefined ? '' : valores[mapaProceso['ESTADO PROCESO']]
-    );
-    if (['PROCESADO', 'PROCESADO CON ADVERTENCIA', 'DUPLICADO'].indexOf(estadoAnterior) >= 0) {
-      return {omitida: true, estado: estadoAnterior};
-    }
-    const tipoFormulario = normalizarEncabezado_(
-      configFormulario && configFormulario.tipo || 'INSCRIPCION'
-    );
     if (tipoFormulario === 'INTERES GENERAL') {
       return procesarFilaInteresGeneral_(hoja, fila, encabezados, valores);
     }
+    if (tipoFormulario === 'SATISFACCION' || tipoFormulario === 'ENCUESTA SATISFACCION') {
+      return procesarFilaSatisfaccion_(hoja, fila, encabezados, valores, configFormulario && configFormulario.idActividad);
+    }
     const registro = registroDesdeFila_(encabezados, valores);
-    const advertencias = prepararRegistroFormulario_(registro);
+    advertencias = prepararRegistroFormulario_(registro);
     if (configFormulario && configFormulario.idActividad) registro.idActividad = configFormulario.idActividad;
     const actividad = resolverActividad_(registro.idActividad || registro.actividad);
     if (!actividad) {
       throw new Error('No se encontró la actividad asociada a este formulario.');
     }
-    const persona = obtenerOCrearPersona_(registro);
-    const participacion = obtenerOCrearParticipacion_(persona.id, actividad.id, registro);
-    registrarResultadoEnRespuesta_(
-      hoja,
-      fila,
-      persona.id,
-      participacion.id,
-      participacion.nueva
-        ? (advertencias.length ? 'PROCESADO_CON_ADVERTENCIA' : 'PROCESADO')
-        : 'DUPLICADO',
-      (participacion.nueva
-        ? 'Registro creado correctamente. La participación quedó pendiente de selección.'
-        : 'La persona ya tenía una participación activa en esta actividad.') +
-        (advertencias.length ? ' Advertencias: ' + advertencias.join(' ') : '')
-    );
-    return {
-      omitida: false,
-      estado: participacion.nueva
-        ? (advertencias.length ? 'PROCESADO_CON_ADVERTENCIA' : 'PROCESADO')
-        : 'DUPLICADO',
-      idPersona: persona.id,
-      idParticipacion: participacion.id
-    };
+    persona = obtenerOCrearPersona_(registro);
+    participacion = obtenerOCrearParticipacion_(persona.id, actividad.id, registro);
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch (eLock) {}
   }
+
+  // Registrar estado en la hoja externa del formulario FUERA del candado global
+  registrarResultadoEnRespuesta_(
+    hoja,
+    fila,
+    persona.id,
+    participacion.id,
+    participacion.nueva
+      ? (advertencias.length ? 'PROCESADO_CON_ADVERTENCIA' : 'PROCESADO')
+      : 'DUPLICADO',
+    (participacion.nueva
+      ? 'Registro creado correctamente. La participación quedó pendiente de selección.'
+      : 'La persona ya tenía una participación activa en esta actividad.') +
+      (advertencias.length ? ' Advertencias: ' + advertencias.join(' ') : '')
+  );
+  return {
+    omitida: false,
+    estado: participacion.nueva
+      ? (advertencias.length ? 'PROCESADO_CON_ADVERTENCIA' : 'PROCESADO')
+      : 'DUPLICADO',
+    idPersona: persona.id,
+    idParticipacion: participacion.id
+  };
 }
 
 /**
@@ -1866,7 +2149,20 @@ function prepararRegistroFormulario_(registro) {
 function registroDesdeFila_(encabezados, valores) {
   const mapa = {};
   encabezados.forEach(function(h, i) {
-    mapa[normalizarEncabezado_(h)] = valores[i];
+    const kOriginal = normalizarEncabezado_(h);
+    const kSinNum = sigcEncabezadoSinNumeroPregunta(h);
+    const val = valores[i];
+    const tieneValor = val !== undefined && val !== null && String(val).trim() !== '';
+    if (kOriginal) {
+      if (mapa[kOriginal] === undefined || String(mapa[kOriginal]).trim() === '' || tieneValor) {
+        if (tieneValor || mapa[kOriginal] === undefined) mapa[kOriginal] = val;
+      }
+    }
+    if (kSinNum && kSinNum !== kOriginal) {
+      if (mapa[kSinNum] === undefined || String(mapa[kSinNum]).trim() === '' || tieneValor) {
+        if (tieneValor || mapa[kSinNum] === undefined) mapa[kSinNum] = val;
+      }
+    }
   });
 
   // 1. Detectar si existe columna específica de Dígito Verificador y de Cuerpo
@@ -1881,14 +2177,14 @@ function registroDesdeFila_(encabezados, valores) {
 
     // Buscar columna DV
     if ((k.indexOf('DIGITO VERIFICADOR') >= 0 || k.indexOf('NUMERO DESPUES DEL GUION') >= 0 ||
-         k.indexOf('DIGITO DESPUES') >= 0 || k === 'DV' || k.indexOf('DIGITO') >= 0) &&
+         k.indexOf('DIGITO DESPUES') >= 0 || k === 'DV') &&
         k.indexOf('SIN') < 0 && k.indexOf('HASTA') < 0 && !dvCol) {
       dvCol = val;
     }
 
     // Buscar columna Cuerpo RUT
     if ((k.indexOf('RUT SIN') >= 0 || k.indexOf('HASTA ANTES DEL GUION') >= 0 ||
-         k.indexOf('CUERPO DEL RUT') >= 0 || k.indexOf('CUERPO') >= 0 ||
+         k.indexOf('CUERPO DEL RUT') >= 0 || k.indexOf('CUERPO RUT') >= 0 ||
          k.indexOf('RUT SIN PUNTOS') >= 0) && !cuerpoCol) {
       cuerpoCol = val;
     }
@@ -1916,7 +2212,7 @@ function registroDesdeFila_(encabezados, valores) {
         'DOCUMENTO', 'PASAPORTE', 'DNI', 'IDENTIFICACION', 'RUT O DNI', 'RUT O PASAPORTE',
         'RUT COMPLETO', 'INGRESE SU RUT', 'ESCRIBA SU RUT'
       ],
-      ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'DIGITO VERIFICADOR', 'SIN DIGITO VERIFICADOR', 'SIN EL DIGITO VERIFICADOR', 'RUT SIN']
+      ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'DIGITO VERIFICADOR', 'SIN DIGITO VERIFICADOR', 'SIN EL DIGITO VERIFICADOR', 'RUT SIN', 'RUT EMPRESA', 'RUT DEL EMPRENDIMIENTO']
     );
     if (rutDirecto) {
       // Si tenemos un DV suelto de otra columna, combinarlo
@@ -1936,25 +2232,29 @@ function registroDesdeFila_(encabezados, valores) {
   let numeroDocumento = valorAlternativo_(
     mapa,
     ['NUMERO DOCUMENTO', 'NÚMERO DOCUMENTO', 'NUMERO DE DOCUMENTO', 'NÚMERO DE DOCUMENTO', 'PASAPORTE', 'DNI', 'CEDULA', 'RUT', 'RUN'],
-    ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO']
+    ['TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'RUT EMPRESA', 'RUT DEL EMPRENDIMIENTO']
   ) || rut;
 
-  const rechazosNombre = ['EMPRESA', 'EMPRENDIMIENTO', 'FANTASIA', 'RESPONSABLE', 'ACTIVIDAD', 'TALLER', 'CURSO', 'DOCUMENTO', 'CALLE', 'BARRIO', 'CONTACTO', 'USUARIO', 'PROGRAMA', 'INSTITUCION', 'ORGANIZACION'];
+  // Rechazos para "NOMBRE COMPLETO": solo excluir nombres de negocios/entidades, no palabras como "PARTICIPANTE DEL TALLER" o "SEGUN DOCUMENTO"
+  const rechazosNombreCompleto = ['EMPRESA', 'EMPRENDIMIENTO', 'FANTASIA', 'MARCA', 'NEGOCIO', 'PROYECTO', 'AGRUPACION', 'ORGANIZACION', 'INSTITUCION', 'RED SOCIAL', 'INSTAGRAM', 'FACEBOOK'];
+  const rechazosNombre = rechazosNombreCompleto.concat(['ACTIVIDAD', 'TALLER', 'CURSO', 'CALLE', 'BARRIO', 'PROGRAMA']);
 
   const nombreCompleto = valorAlternativo_(
     mapa,
     [
       'NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO', 'NOMBRE Y APELLIDOS',
       'NOMBRES Y APELLIDO', 'NOMBRE DEL POSTULANTE', 'NOMBRE DEL PARTICIPANTE', 'NOMBRE DEL ALUMNO',
-      'NOMBRE DEL EMPRENDEDOR', 'NOMBRE DEL TITULAR', 'NOMBRE POSTULANTE', 'NOMBRE PARTICIPANTE',
-      'ESCRIBA SU NOMBRE', 'INDIQUE SU NOMBRE', 'INGRESE SU NOMBRE'
+      'NOMBRE DEL EMPRENDEDOR', 'NOMBRE DE LA EMPRENDEDORA', 'NOMBRE DEL TITULAR', 'NOMBRE POSTULANTE',
+      'NOMBRE PARTICIPANTE', 'NOMBRE Y DOS APELLIDOS', 'NOMBRE COMPLETO DEL POSTULANTE',
+      'NOMBRE COMPLETO DEL PARTICIPANTE', 'ESCRIBA SU NOMBRE', 'INDIQUE SU NOMBRE', 'INGRESE SU NOMBRE',
+      'SU NOMBRE COMPLETO', 'TU NOMBRE COMPLETO'
     ],
-    rechazosNombre
+    rechazosNombreCompleto
   );
 
   const nombres = valorAlternativo_(
     mapa,
-    ['NOMBRES', 'NOMBRE', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE'],
+    ['NOMBRES', 'NOMBRE', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'TU NOMBRE', 'SU NOMBRE'],
     ['APELLIDO', 'APELLIDOS'].concat(rechazosNombre)
   );
 
@@ -1973,7 +2273,7 @@ function registroDesdeFila_(encabezados, valores) {
   const apellidos = valorAlternativo_(
     mapa,
     ['APELLIDOS', 'APELLIDO'],
-    ['EMPRESA', 'EMPRENDIMIENTO', 'ACTIVIDAD', 'CURSO']
+    rechazosNombreCompleto
   ) || [apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
 
   let nombreFinal = nombreCompleto || [nombres, apellidos].filter(Boolean).join(' ');
@@ -2036,12 +2336,12 @@ function registroDesdeFila_(encabezados, valores) {
       }
     }
 
-    // Si falta nombre, buscar columna que contenga "NOMBRE" o texto alfabético no técnico
+    // Si falta nombre, buscar columna que contenga "NOMBRE" (excluyendo emprendimiento/empresa) o la primera columna de texto personal antes del RUT
     if (!nombreFinal) {
       for (let i = 0; i < valores.length; i++) {
-        const hNorm = normalizarEncabezado_(encabezados[i]);
-        if (tecnicos[hNorm]) continue;
-        if (hNorm.indexOf('NOMBRE') >= 0 && !rechazosNombre.some(function(r) { return hNorm.indexOf(r) >= 0; })) {
+        const hNorm = sigcEncabezadoSinNumeroPregunta(encabezados[i]);
+        if (tecnicos[normalizarEncabezado_(encabezados[i])]) continue;
+        if (hNorm.indexOf('NOMBRE') >= 0 && !rechazosNombreCompleto.some(function(r) { return hNorm.indexOf(r) >= 0; })) {
           const valStr = String(valores[i] || '').trim();
           if (valStr && valStr.length > 2 && !/^\d+$/.test(valStr)) {
             nombreFinal = valStr;
@@ -2082,25 +2382,32 @@ function obtenerOCrearPersona_(registro) {
   const hoja = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.PERSONAS);
   const datos = hoja.getDataRange().getValues();
   const mapa = mapaEncabezados_(datos[0]);
+  const nombre = sigcNormalizarNombre(registro.nombre);
+  if (!nombre) throw new Error('El nombre completo es obligatorio.');
   const tipoDocumento = sigcNormalizarTipoDocumento(registro.tipoDocumento, registro.rut);
   const documento = sigcNormalizarDocumento(
     tipoDocumento,
     registro.numeroDocumento,
     registro.rut
   );
-  const documentoValidado = sigcValidarDocumento(
-    tipoDocumento,
-    documento,
-    registro.nacionalidad
-  );
+  let documentoValidado;
+  try {
+    documentoValidado = sigcValidarDocumento(
+      tipoDocumento,
+      documento,
+      registro.nacionalidad
+    );
+  } catch (eDoc) {
+    documentoValidado = typeof importacionesResolverDocumentoTolerante_ === 'function'
+      ? importacionesResolverDocumentoTolerante_(registro, nombre)
+      : {tipo: 'Documento histórico', numero: documento || ('HIST-' + new Date().getTime())};
+  }
   const rut = documentoValidado.tipo === 'RUT' ? documentoValidado.numero : '';
-  const correo = sigcNormalizarCorreo(registro.correo);
-  const telefono = sigcNormalizarTelefono(registro.telefono);
-  const nombre = sigcNormalizarNombre(registro.nombre);
+  const correoRaw = sigcNormalizarCorreo(registro.correo);
+  const telefonoRaw = sigcNormalizarTelefono(registro.telefono);
+  const correo = sigcValidarCorreo(correoRaw) ? correoRaw : '';
+  const telefono = sigcValidarTelefono(telefonoRaw) ? telefonoRaw : '';
   const nacionalidad = sigcNormalizarTexto(registro.nacionalidad);
-  if (!nombre) throw new Error('El nombre completo es obligatorio.');
-  if (!sigcValidarCorreo(correo)) throw new Error('El correo electrónico no es válido.');
-  if (!sigcValidarTelefono(telefono)) throw new Error('El teléfono no tiene un formato chileno válido.');
   let filaEncontrada = -1;
   const perNueva = {
     rut: rut,
@@ -2209,23 +2516,20 @@ function actualizarPersona_(hoja, fila, mapa, registro) {
         ['Sí', 'No'].indexOf(sigcNormalizarSiNo(valorActual, 'No informado')) >= 0) {
       return;
     }
-    hoja.getRange(fila, mapa[campo] + 1).setValue(nuevo);
+    actual[mapa[campo]] = nuevo;
   });
   if (mapa['ESTADO CONTACTO'] !== undefined) {
-    const correo = mapa['CORREO'] !== undefined
-      ? sigcNormalizarCorreo(hoja.getRange(fila, mapa['CORREO'] + 1).getValue())
-      : '';
-    const telefono = mapa['TELEFONO'] !== undefined
-      ? sigcNormalizarTelefono(hoja.getRange(fila, mapa['TELEFONO'] + 1).getValue())
-      : '';
-    hoja.getRange(fila, mapa['ESTADO CONTACTO'] + 1)
-      .setValue(correo || telefono ? 'Activo' : 'Sin contacto');
+    const correo = mapa['CORREO'] !== undefined ? sigcNormalizarCorreo(actual[mapa['CORREO']]) : '';
+    const telefono = mapa['TELEFONO'] !== undefined ? sigcNormalizarTelefono(actual[mapa['TELEFONO']]) : '';
+    actual[mapa['ESTADO CONTACTO']] = correo || telefono ? 'Activo' : 'Sin contacto';
   }
   if (mapa['ULTIMA ACTUALIZACION'] !== undefined) {
-    hoja.getRange(fila, mapa['ULTIMA ACTUALIZACION'] + 1).setValue(new Date());
+    actual[mapa['ULTIMA ACTUALIZACION']] = new Date();
   }
+  // Escribir toda la fila en una sola operación (1 llamada RPC en vez de 18)
+  hoja.getRange(fila, 1, 1, actual.length).setValues([actual]);
   const id = mapa['ID PERSONA'] !== undefined ? actual[mapa['ID PERSONA']] : '';
-  sigcRegistrarLog('ACTUALIZAR', 'PERSONA', id, 'Datos completados desde formulario.');
+  try { sigcRegistrarLog('ACTUALIZAR', 'PERSONA', id, 'Datos completados desde formulario.'); } catch (eLog) {}
 }
 function obtenerOCrearParticipacion_(idPersona, idActividad, registro) {
   const ss = sigcSpreadsheetCentral_();
@@ -2271,33 +2575,96 @@ function obtenerOCrearParticipacion_(idPersona, idActividad, registro) {
 }
 function resolverActividad_(valor) {
   if (!valor) return null;
+  const buscado = normalizarEncabezado_(valor);
+  if (!buscado) return null;
+
+  // Vía rápida: usar caché en memoria / CacheService si está disponible
+  if (typeof webLeerTablaConCache_ === 'function') {
+    try {
+      const ss = sigcSpreadsheetCentral_();
+      const lista = webLeerTablaConCache_(ss, SISTEMA.HOJAS.ACTIVIDADES) || [];
+      if (lista.length > 0) {
+        function mapActObj_(a) {
+          return {
+            id: a.ID_ACTIVIDAD,
+            ID_ACTIVIDAD: a.ID_ACTIVIDAD,
+            nombre: a.NOMBRE_ACTIVIDAD,
+            NOMBRE_ACTIVIDAD: a.NOMBRE_ACTIVIDAD,
+            programa: a.PROGRAMA,
+            sesionesTotales: Number(a.SESIONES_TOTALES || 0),
+            SESIONES_TOTALES: Number(a.SESIONES_TOTALES || 0),
+            porcentajeAprobacion: sigcConvertirPorcentaje(a.PORCENTAJE_APROBACION),
+            PORCENTAJE_APROBACION: a.PORCENTAJE_APROBACION,
+            reglaResultado: a.REGLA_RESULTADO || 'Asistencia',
+            REGLA_RESULTADO: a.REGLA_RESULTADO || 'Asistencia',
+            ESTADO_ACTIVIDAD: a.ESTADO_ACTIVIDAD || ''
+          };
+        }
+        for (let i = 0; i < lista.length; i++) {
+          const a = lista[i];
+          if (normalizarEncabezado_(a.ID_ACTIVIDAD) === buscado || normalizarEncabezado_(a.NOMBRE_ACTIVIDAD) === buscado) {
+            return mapActObj_(a);
+          }
+        }
+        for (let i = 0; i < lista.length; i++) {
+          const idNorm = normalizarEncabezado_(lista[i].ID_ACTIVIDAD);
+          if (idNorm && buscado.indexOf(idNorm) >= 0) return mapActObj_(lista[i]);
+        }
+        for (let i = 0; i < lista.length; i++) {
+          const nomNorm = normalizarEncabezado_(lista[i].NOMBRE_ACTIVIDAD);
+          if (nomNorm && (buscado.indexOf(nomNorm) >= 0 || nomNorm.indexOf(buscado) >= 0)) return mapActObj_(lista[i]);
+        }
+        return null;
+      }
+    } catch (eFast) {}
+  }
+
   const hoja = sigcSpreadsheetCentral_().getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+  if (!hoja || hoja.getLastRow() < 2) return null;
   const datos = hoja.getDataRange().getValues();
   const mapa = mapaEncabezados_(datos[0]);
-  const buscado = normalizarEncabezado_(valor);
+
+  function crearObj(fila) {
+    return {
+      id: fila[mapa['ID ACTIVIDAD']],
+      ID_ACTIVIDAD: fila[mapa['ID ACTIVIDAD']],
+      nombre: fila[mapa['NOMBRE ACTIVIDAD']],
+      NOMBRE_ACTIVIDAD: fila[mapa['NOMBRE ACTIVIDAD']],
+      programa: fila[mapa['PROGRAMA']],
+      sesionesTotales: Number(fila[mapa['SESIONES TOTALES']] || 0),
+      SESIONES_TOTALES: Number(fila[mapa['SESIONES TOTALES']] || 0),
+      porcentajeAprobacion: sigcConvertirPorcentaje(fila[mapa['PORCENTAJE APROBACION']]),
+      PORCENTAJE_APROBACION: fila[mapa['PORCENTAJE APROBACION']],
+      reglaResultado: fila[mapa['REGLA RESULTADO']] || 'Asistencia',
+      REGLA_RESULTADO: fila[mapa['REGLA RESULTADO']] || 'Asistencia',
+      ESTADO_ACTIVIDAD: mapa['ESTADO ACTIVIDAD'] !== undefined ? fila[mapa['ESTADO ACTIVIDAD']] : ''
+    };
+  }
+
+  // 1. Coincidencia exacta por ID o Nombre
   for (let i = 1; i < datos.length; i++) {
     const id = datos[i][mapa['ID ACTIVIDAD']];
     const nombre = datos[i][mapa['NOMBRE ACTIVIDAD']];
-    if (normalizarEncabezado_(id) === buscado ||
-        normalizarEncabezado_(nombre) === buscado) {
-      return {
-        id: id,
-        ID_ACTIVIDAD: id,
-        nombre: nombre,
-        NOMBRE_ACTIVIDAD: nombre,
-        programa: datos[i][mapa['PROGRAMA']],
-        sesionesTotales: Number(datos[i][mapa['SESIONES TOTALES']] || 0),
-        SESIONES_TOTALES: Number(datos[i][mapa['SESIONES TOTALES']] || 0),
-        porcentajeAprobacion: sigcConvertirPorcentaje(
-          datos[i][mapa['PORCENTAJE APROBACION']]
-        ),
-        PORCENTAJE_APROBACION: datos[i][mapa['PORCENTAJE APROBACION']],
-        reglaResultado: datos[i][mapa['REGLA RESULTADO']] || 'Asistencia',
-        REGLA_RESULTADO: datos[i][mapa['REGLA RESULTADO']] || 'Asistencia',
-        ESTADO_ACTIVIDAD: mapa['ESTADO ACTIVIDAD'] !== undefined
-          ? datos[i][mapa['ESTADO ACTIVIDAD']]
-          : ''
-      };
+    if (normalizarEncabezado_(id) === buscado || normalizarEncabezado_(nombre) === buscado) {
+      return crearObj(datos[i]);
+    }
+  }
+
+  // 2. Coincidencia si el texto buscado contiene el código exacto de la actividad (ej: CAP-2026-033)
+  for (let i = 1; i < datos.length; i++) {
+    const id = String(datos[i][mapa['ID ACTIVIDAD']] || '').trim();
+    const idNorm = normalizarEncabezado_(id);
+    if (idNorm && buscado.indexOf(idNorm) >= 0) {
+      return crearObj(datos[i]);
+    }
+  }
+
+  // 3. Coincidencia si el nombre contiene o está contenido en el texto buscado
+  for (let i = 1; i < datos.length; i++) {
+    const nombre = String(datos[i][mapa['NOMBRE ACTIVIDAD']] || '').trim();
+    const nomNorm = normalizarEncabezado_(nombre);
+    if (nomNorm && (buscado.indexOf(nomNorm) >= 0 || nomNorm.indexOf(buscado) >= 0)) {
+      return crearObj(datos[i]);
     }
   }
   return null;
@@ -2752,17 +3119,24 @@ function nuevaFilaSegunEncabezados_(encabezados, valoresPorCampo) {
 function mapaEncabezados_(encabezados) {
   const mapa = {};
   encabezados.forEach(function(h, i) {
-    mapa[normalizarEncabezado_(h)] = i;
+    const kOriginal = normalizarEncabezado_(h);
+    const kSinNum = sigcEncabezadoSinNumeroPregunta(h);
+    if (kOriginal && mapa[kOriginal] === undefined) mapa[kOriginal] = i;
+    if (kSinNum && mapa[kSinNum] === undefined) mapa[kSinNum] = i;
   });
   return mapa;
 }
 function valorAlternativo_(mapa, alternativas, patronesRechazados) {
   if (!mapa || !alternativas || !alternativas.length) return '';
-  // 1. Coincidencia exacta
+  // 1. Coincidencia exacta (directa o sin número de pregunta inicial)
   for (let i = 0; i < alternativas.length; i++) {
     const clave = normalizarEncabezado_(alternativas[i]);
-    if (mapa[clave] !== undefined && mapa[clave] !== null && String(mapa[clave]).trim() !== '') {
+    const claveSinNum = sigcEncabezadoSinNumeroPregunta(alternativas[i]);
+    if (clave && mapa[clave] !== undefined && mapa[clave] !== null && String(mapa[clave]).trim() !== '') {
       return String(mapa[clave]).trim();
+    }
+    if (claveSinNum && mapa[claveSinNum] !== undefined && mapa[claveSinNum] !== null && String(mapa[claveSinNum]).trim() !== '') {
+      return String(mapa[claveSinNum]).trim();
     }
   }
   // 2. Coincidencia por inclusión / tokens
@@ -2771,25 +3145,31 @@ function valorAlternativo_(mapa, alternativas, patronesRechazados) {
   const rechazados = (patronesRechazados || []).map(normalizarEncabezado_).filter(Boolean);
 
   for (let i = 0; i < alternativas.length; i++) {
-    const alt = normalizarEncabezado_(alternativas[i]);
+    const alt = sigcEncabezadoSinNumeroPregunta(alternativas[i]) || normalizarEncabezado_(alternativas[i]);
     if (!alt) continue;
     const tokensAlt = alt.split(' ').filter(Boolean);
 
     for (let j = 0; j < clavesMapa.length; j++) {
       const k = clavesMapa[j];
-      if (tecnicos[k]) continue;
+      if (!k || tecnicos[k]) continue;
+      const kSinNum = sigcEncabezadoSinNumeroPregunta(k) || k;
 
       let tieneRechazado = false;
       for (let r = 0; r < rechazados.length; r++) {
-        if (k.indexOf(rechazados[r]) >= 0) {
+        if (k.indexOf(rechazados[r]) >= 0 || kSinNum.indexOf(rechazados[r]) >= 0) {
           tieneRechazado = true;
           break;
         }
       }
       if (tieneRechazado) continue;
 
-      const coincideSubcadena = k.indexOf(alt) >= 0 || (alt.length >= 4 && alt.indexOf(k) >= 0);
-      const coincideTokens = tokensAlt.length > 1 && tokensAlt.every(function(t) { return k.indexOf(t) >= 0; });
+      const tokensK = kSinNum.split(' ').filter(Boolean);
+      const coincideSubcadena = alt.length <= 4
+        ? (kSinNum === alt || tokensK.indexOf(alt) >= 0)
+        : (kSinNum.indexOf(alt) >= 0);
+      const coincideTokens = tokensAlt.length > 1 && tokensAlt.every(function(t) {
+        return t.length <= 3 ? tokensK.indexOf(t) >= 0 : kSinNum.indexOf(t) >= 0;
+      });
 
       if (coincideSubcadena || coincideTokens) {
         if (mapa[k] !== undefined && mapa[k] !== null && String(mapa[k]).trim() !== '') {
@@ -3245,19 +3625,50 @@ function depurarDuplicadosActividad(idActividad) {
   }
 }
 
+function sigcClasificarEstadoSeleccionTraspaso_(rawEstado) {
+  const normEstado = normalizarEncabezado_(rawEstado || '');
+  if (normEstado === 'LISTA DE ESPERA' || normEstado === 'ESPERA' || normEstado === 'LISTA ESPERA') {
+    return 'Lista de espera';
+  }
+  if (normEstado === 'NO SELECCIONADO' || normEstado === 'NO SELECCIONADA') {
+    return 'No seleccionado';
+  }
+  if (normEstado === 'PENDIENTE' || normEstado === '') {
+    return 'Pendiente';
+  }
+  if (normEstado === 'SELECCIONADO' || normEstado === 'SELECCIONADA') {
+    return 'Seleccionado';
+  }
+  return 'Otros';
+}
+
+function sigcPersonaParticipoEnFila_(fila, mPart) {
+  const sesiones = mPart['SESIONES ASISTIDAS'] !== undefined ? Number(fila[mPart['SESIONES ASISTIDAS']] || 0) : 0;
+  if (sesiones > 0) return true;
+  const resFinal = mPart['RESULTADO FINAL'] !== undefined ? normalizarEncabezado_(fila[mPart['RESULTADO FINAL']]) : '';
+  const resAsis = mPart['RESULTADO ASISTENCIA'] !== undefined ? normalizarEncabezado_(fila[mPart['RESULTADO ASISTENCIA']]) : '';
+  return resFinal === 'APROBADO' || resFinal === 'PARTICIPO' || resAsis === 'PARTICIPO' || resAsis === 'ASISTIO';
+}
+
 /**
- * Analiza los postulantes de una actividad origen para traspaso hacia una actividad destino.
- * Clasifica los candidatos según estado de selección y verifica quiénes ya están inscritos en el destino.
+ * Analiza los postulantes de una o más actividades origen para traspaso hacia una actividad destino,
+ * acumulando su trayectoria (asistencia/participación previa) entre todas las seleccionadas.
  */
-function obtenerResumenTraspasoActividad(idOrigen, idDestino) {
-  const idOrigStr = String(idOrigen || '').trim();
+function obtenerResumenTraspasoActividad(idsOrigen, idDestino, soloSinParticipacion) {
+  const listaOrigenes = (Array.isArray(idsOrigen) ? idsOrigen : [idsOrigen])
+    .map(function(x) { return String(x || '').trim(); })
+    .filter(Boolean);
   const idDestStr = String(idDestino || '').trim();
-  if (!idOrigStr || !idDestStr) {
-    throw new Error('Debe especificar la actividad de origen y la actividad de destino.');
+  const soloResiduos = soloSinParticipacion !== false;
+
+  if (!listaOrigenes.length || !idDestStr) {
+    throw new Error('Debe especificar al menos una actividad de origen y la actividad de destino.');
   }
-  if (idOrigStr === idDestStr) {
-    throw new Error('La actividad de origen y la actividad de destino deben ser distintas.');
+  const origenesUnicos = Array.from(new Set(listaOrigenes)).filter(function(id) { return id !== idDestStr; });
+  if (!origenesUnicos.length) {
+    throw new Error('Las actividades de origen deben ser distintas a la actividad de destino.');
   }
+  const setOrigenes = new Set(origenesUnicos);
 
   const ss = sigcSpreadsheetCentral_();
   const hojaAct = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
@@ -3266,47 +3677,88 @@ function obtenerResumenTraspasoActividad(idOrigen, idDestino) {
   if (!hojaAct || !hojaPart || hojaPart.getLastRow() < 2) {
     return {
       ok: true,
-      origen: { id: idOrigStr, nombre: idOrigStr },
+      origen: { id: origenesUnicos.join(', '), nombre: origenesUnicos.join(', '), ids: origenesUnicos },
       destino: { id: idDestStr, nombre: idDestStr },
       estados: {},
       totalDisponibles: 0,
       totalYaInscritos: 0,
-      mensaje: 'No se encontraron postulantes en la actividad seleccionada.'
+      excluidosYaParticiparon: 0,
+      mensaje: 'No se encontraron postulantes en las actividades seleccionadas.'
     };
   }
 
   // 1. Obtener nombres de actividades
   const datosAct = hojaAct.getDataRange().getValues();
   const mAct = mapaEncabezados_(datosAct[0]);
-  let nombreOrigen = idOrigStr;
+  const nombresPorId = {};
   let nombreDestino = idDestStr;
   let cuposDestino = 0;
   for (let a = 1; a < datosAct.length; a++) {
     const idA = String(datosAct[a][mAct['ID ACTIVIDAD']] || '').trim();
-    if (idA === idOrigStr) nombreOrigen = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idOrigStr);
+    if (setOrigenes.has(idA)) {
+      nombresPorId[idA] = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idA);
+    }
     if (idA === idDestStr) {
       nombreDestino = String(datosAct[a][mAct['NOMBRE ACTIVIDAD']] || idDestStr);
       cuposDestino = Number(datosAct[a][mAct['CUPOS']] || 0);
     }
   }
+  const nombresOrigenes = origenesUnicos.map(function(id) { return nombresPorId[id] || id; });
 
-  // 2. Obtener personas ya inscritas en destino (activas)
+  // 2. Construir trayectoria acumulada por persona
   const datosPart = hojaPart.getDataRange().getValues();
   const mPart = mapaEncabezados_(datosPart[0]);
   const personasEnDestino = new Set();
+  const personasEnDestinoActivasNoDesc = new Set();
+  const trayectoria = {};
+
+  const hojaPer = ss.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+  const personasInfoPorId = {};
+  if (hojaPer && hojaPer.getLastRow() >= 2) {
+    const datosPer = hojaPer.getDataRange().getValues();
+    const mPer = mapaEncabezados_(datosPer[0]);
+    for (let p = 1; p < datosPer.length; p++) {
+      const idP = String(datosPer[p][mPer['ID PERSONA']] || '').trim();
+      if (!idP) continue;
+      personasInfoPorId[idP] = {
+        nombre: String(datosPer[p][mPer['NOMBRE COMPLETO']] || '').trim() || idP,
+        doc: String(datosPer[p][mPer['NUMERO DOCUMENTO']] || datosPer[p][mPer['RUT']] || '').trim()
+      };
+    }
+  }
 
   for (let pt = 1; pt < datosPart.length; pt++) {
     const fila = datosPart[pt];
     const idAct = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
     const activo = mPart['REGISTRO ACTIVO'] === undefined ||
       normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
-    if (idAct === idDestStr && activo) {
-      const idP = String(fila[mPart['ID PERSONA']] || '').trim();
-      if (idP) personasEnDestino.add(idP);
+    if (!activo) continue;
+    const idP = String(fila[mPart['ID PERSONA']] || '').trim();
+    if (!idP) continue;
+
+    if (idAct === idDestStr) {
+      personasEnDestino.add(idP);
+      const estDest = normalizarEncabezado_(fila[mPart['ESTADO SELECCION']]);
+      if (estDest !== 'NO SELECCIONADO' && estDest !== 'NO SELECCIONADA') {
+        personasEnDestinoActivasNoDesc.add(idP);
+      }
+    }
+    if (setOrigenes.has(idAct)) {
+      if (!trayectoria[idP]) {
+        trayectoria[idP] = { asistio: false, asistioEn: [], categoria: 'Otros', categorias: new Set() };
+      }
+      if (sigcPersonaParticipoEnFila_(fila, mPart)) {
+        trayectoria[idP].asistio = true;
+        const nomAct = nombresPorId[idAct] || idAct;
+        if (trayectoria[idP].asistioEn.indexOf(nomAct) < 0) trayectoria[idP].asistioEn.push(nomAct);
+      }
+      const cat = sigcClasificarEstadoSeleccionTraspaso_(fila[mPart['ESTADO SELECCION']]);
+      trayectoria[idP].categorias.add(cat);
+      trayectoria[idP].categoria = cat;
     }
   }
 
-  // 3. Agrupar postulantes de la actividad origen
+  // 3. Agrupar postulantes únicos según su trayectoria
   const resumenEstados = {
     'Lista de espera': { total: 0, disponibles: 0, yaInscritos: 0 },
     'No seleccionado': { total: 0, disponibles: 0, yaInscritos: 0 },
@@ -3315,54 +3767,49 @@ function obtenerResumenTraspasoActividad(idOrigen, idDestino) {
     'Otros': { total: 0, disponibles: 0, yaInscritos: 0 }
   };
 
-  const personasVistasEnOrigen = new Set();
   let totalDisponibles = 0;
   let totalYaInscritos = 0;
+  let excluidosYaParticiparon = 0;
+  let excluidosEnDestino = 0;
+  const excluidosLista = [];
 
-  for (let pt = 1; pt < datosPart.length; pt++) {
-    const fila = datosPart[pt];
-    const idAct = String(fila[mPart['ID ACTIVIDAD']] || '').trim();
-    const activo = mPart['REGISTRO ACTIVO'] === undefined ||
-      normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
-
-    if (idAct === idOrigStr && activo) {
-      const idP = String(fila[mPart['ID PERSONA']] || '').trim();
-      if (!idP || personasVistasEnOrigen.has(idP)) continue;
-      personasVistasEnOrigen.add(idP);
-
-      const rawEstado = String(fila[mPart['ESTADO SELECCION']] || '').trim();
-      const normEstado = normalizarEncabezado_(rawEstado);
-
-      let categoria = 'Otros';
-      if (normEstado === 'LISTA DE ESPERA' || normEstado === 'ESPERA') {
-        categoria = 'Lista de espera';
-      } else if (normEstado === 'NO SELECCIONADO' || normEstado === 'NO SELECCIONADA') {
-        categoria = 'No seleccionado';
-      } else if (normEstado === 'PENDIENTE') {
-        categoria = 'Pendiente';
-      } else if (normEstado === 'SELECCIONADO' || normEstado === 'SELECCIONADA') {
-        categoria = 'Seleccionado';
+  Object.keys(trayectoria).forEach(function(idP) {
+    const t = trayectoria[idP];
+    if (soloResiduos && t.asistio) {
+      excluidosYaParticiparon++;
+      if (personasEnDestinoActivasNoDesc.has(idP)) excluidosEnDestino++;
+      if (excluidosLista.length < 150) {
+        const infoP = personasInfoPorId[idP] || { nombre: idP, doc: '' };
+        excluidosLista.push({
+          nombre: infoP.nombre,
+          doc: infoP.doc,
+          en: t.asistioEn.join(', ')
+        });
       }
-
-      const yaInscrito = personasEnDestino.has(idP);
-      resumenEstados[categoria].total++;
-      if (yaInscrito) {
-        resumenEstados[categoria].yaInscritos++;
-        totalYaInscritos++;
-      } else {
-        resumenEstados[categoria].disponibles++;
-        totalDisponibles++;
-      }
+      return;
     }
-  }
+    const categoria = t.categoria || 'Otros';
+    const yaInscrito = personasEnDestino.has(idP);
+    resumenEstados[categoria].total++;
+    if (yaInscrito) {
+      resumenEstados[categoria].yaInscritos++;
+      totalYaInscritos++;
+    } else {
+      resumenEstados[categoria].disponibles++;
+      totalDisponibles++;
+    }
+  });
 
   return {
     ok: true,
-    origen: { id: idOrigStr, nombre: nombreOrigen },
+    origen: { id: origenesUnicos.join(', '), nombre: nombresOrigenes.join(' + '), ids: origenesUnicos },
     destino: { id: idDestStr, nombre: nombreDestino, cupos: cuposDestino },
     estados: resumenEstados,
     totalDisponibles: totalDisponibles,
-    totalYaInscritos: totalYaInscritos
+    totalYaInscritos: totalYaInscritos,
+    excluidosYaParticiparon: excluidosYaParticiparon,
+    excluidosEnDestino: excluidosEnDestino,
+    excluidosLista: excluidosLista
   };
 }
 
@@ -3371,14 +3818,18 @@ function obtenerResumenTraspasoActividad(idOrigen, idDestino) {
  * Garantiza cero duplicados (omite a quienes ya estén en el destino) y genera las participaciones con su nuevo estado.
  */
 function traspasarPostulantesActividad(payload) {
-  if (!payload || !payload.idOrigen || !payload.idDestino) {
-    throw new Error('Debe especificar la actividad de origen y la actividad de destino.');
+  const listaOrigenes = payload && Array.isArray(payload.idsOrigen) && payload.idsOrigen.length
+    ? payload.idsOrigen
+    : (payload && payload.idOrigen ? [payload.idOrigen] : []);
+  const idDestStr = String(payload && payload.idDestino || '').trim();
+  const origenesUnicos = Array.from(new Set(listaOrigenes.map(function(x) { return String(x || '').trim(); }).filter(Boolean)))
+    .filter(function(id) { return id !== idDestStr; });
+  if (!origenesUnicos.length || !idDestStr) {
+    throw new Error('Debe especificar al menos una actividad de origen y la actividad de destino.');
   }
-  const idOrigStr = String(payload.idOrigen).trim();
-  const idDestStr = String(payload.idDestino).trim();
-  if (idOrigStr === idDestStr) {
-    throw new Error('La actividad de origen y destino no pueden ser iguales.');
-  }
+  const setOrigenes = new Set(origenesUnicos);
+  const idOrigStr = origenesUnicos.join(', ');
+  const soloResiduos = payload.soloSinParticipacion !== false;
 
   const estadosPermitidos = (payload.estadosOrigen || []).map(function(e) {
     return normalizarEncabezado_(e);
@@ -3423,6 +3874,7 @@ function traspasarPostulantesActividad(payload) {
     const prefijoPartAnio = 'PAR-' + anioActual + '-';
     let maxIdPart = 0;
     const personasEnDestino = new Set();
+    const destFilasPorPersona = {};
 
     for (let pt = 1; pt < datosPart.length; pt++) {
       const fila = datosPart[pt];
@@ -3437,13 +3889,20 @@ function traspasarPostulantesActividad(payload) {
         normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
       if (idA === idDestStr && activo) {
         const idP = String(fila[mPart['ID PERSONA']] || '').trim();
-        if (idP) personasEnDestino.add(idP);
+        if (idP) {
+          personasEnDestino.add(idP);
+          destFilasPorPersona[idP] = {
+            filaSheet: pt + 1,
+            estadoSel: String(fila[mPart['ESTADO SELECCION']] || '').trim(),
+            obs: String(fila[mPart['OBSERVACIONES']] || '').trim()
+          };
+        }
       }
     }
 
-    // 3. Filtrar candidatos de origen que cumplan los estados y no estén ya en destino
+    // 3. Construir trayectoria acumulada por persona en todas las actividades de origen
     const nuevasFilas = [];
-    const personasProcesadasOrigen = new Set();
+    const trayectoria = {};
     let omitidosYaInscritos = 0;
     const ahora = new Date();
 
@@ -3453,67 +3912,105 @@ function traspasarPostulantesActividad(payload) {
       const activo = mPart['REGISTRO ACTIVO'] === undefined ||
         normalizarEncabezado_(fila[mPart['REGISTRO ACTIVO']]) !== 'NO';
 
-      if (idA === idOrigStr && activo) {
+      if (setOrigenes.has(idA) && activo) {
         const idP = String(fila[mPart['ID PERSONA']] || '').trim();
-        if (!idP || personasProcesadasOrigen.has(idP)) continue;
-        personasProcesadasOrigen.add(idP);
-
-        const rawEstado = String(fila[mPart['ESTADO SELECCION']] || '').trim();
-        const normEstado = normalizarEncabezado_(rawEstado);
-
-        // Verificar si califica según los filtros seleccionados
-        let califica = false;
-        estadosPermitidos.forEach(function(estPermitido) {
-          if (normEstado === estPermitido) califica = true;
-          if (estPermitido === 'LISTA DE ESPERA' && (normEstado === 'ESPERA' || normEstado === 'LISTA ESPERA')) califica = true;
-          if (estPermitido === 'NO SELECCIONADO' && normEstado === 'NO SELECCIONADA') califica = true;
-          if (estPermitido === 'PENDIENTE' && normEstado === 'PENDIENTE') califica = true;
-        });
-
-        if (!califica) continue;
-
-        if (personasEnDestino.has(idP)) {
-          omitidosYaInscritos++;
-          continue;
+        if (!idP) continue;
+        if (!trayectoria[idP]) {
+          trayectoria[idP] = { asistio: false, fila: fila, origenes: [] };
         }
-
-        // Crear nueva participación
-        personasEnDestino.add(idP);
-        maxIdPart++;
-        const nuevoIdPart = prefijoPartAnio + String(maxIdPart).padStart(6, '0');
-
-        const obsAnterior = String(fila[mPart['OBSERVACIONES']] || '').trim();
-        const obsFinal = 'Traspasado desde ' + idOrigStr + (obsAnterior ? ' | Obs anterior: ' + obsAnterior : '');
-        const cumpleAnt = String(fila[mPart['CUMPLE REQUISITOS']] || 'Pendiente').trim();
-
-        const nuevaFila = nuevaFilaSegunEncabezados_(encabezadosPart, {
-          'ID PARTICIPACION': nuevoIdPart,
-          'ID PERSONA': idP,
-          'ID ACTIVIDAD': idDestStr,
-          'FECHA INSCRIPCION': ahora,
-          'CANAL INSCRIPCION': canalRegistro,
-          'CUMPLE REQUISITOS': cumpleAnt,
-          'ESTADO SELECCION': estadoDestino,
-          'FECHA NOTIFICACION': '',
-          'MEDIO NOTIFICACION': 'No informado',
-          'CONFIRMA PARTICIPACION': 'No informado',
-          'SESIONES ASISTIDAS': 0,
-          'SESIONES TOTALES': sesionesDestino,
-          'PORCENTAJE ASISTENCIA': 0,
-          'RESULTADO ASISTENCIA': 'Pendiente',
-          'RESULTADO FINAL': 'Pendiente',
-          'CERTIFICADO': 'No informado',
-          'FECHA CERTIFICACION': '',
-          'OBSERVACIONES': obsFinal,
-          'ARCHIVO ORIGEN': 'Traspaso entre actividades',
-          'FILA ORIGEN': '',
-          'REGISTRO ACTIVO': 'Sí',
-          'ULTIMA ACTUALIZACION': ahora
-        });
-
-        nuevasFilas.push(nuevaFila);
+        if (sigcPersonaParticipoEnFila_(fila, mPart)) {
+          trayectoria[idP].asistio = true;
+        }
+        trayectoria[idP].fila = fila;
+        if (trayectoria[idP].origenes.indexOf(idA) < 0) trayectoria[idP].origenes.push(idA);
       }
     }
+
+    let marcadosNoSeleccionado = 0;
+    const colEstSel = mPart['ESTADO SELECCION'];
+    const colObsPart = mPart['OBSERVACIONES'];
+    const colUltActPart = mPart['ULTIMA ACTUALIZACION'];
+
+    Object.keys(trayectoria).forEach(function(idP) {
+      const info = trayectoria[idP];
+      if (soloResiduos && info.asistio) {
+        const destInfo = destFilasPorPersona[idP];
+        if (destInfo && colEstSel !== undefined) {
+          const estNormDest = normalizarEncabezado_(destInfo.estadoSel);
+          if (estNormDest !== 'NO SELECCIONADO' && estNormDest !== 'NO SELECCIONADA') {
+            hojaPart.getRange(destInfo.filaSheet, colEstSel + 1).setValue('No seleccionado');
+            if (colObsPart !== undefined) {
+              const nota = 'No seleccionado automáticamente: ya participó en versión previa (' + info.origenes.join(', ') + ')';
+              const nuevaObs = destInfo.obs ? destInfo.obs + ' | ' + nota : nota;
+              hojaPart.getRange(destInfo.filaSheet, colObsPart + 1).setValue(nuevaObs);
+            }
+            if (colUltActPart !== undefined) {
+              hojaPart.getRange(destInfo.filaSheet, colUltActPart + 1).setValue(ahora);
+            }
+            marcadosNoSeleccionado++;
+          }
+        }
+        return;
+      }
+      const fila = info.fila;
+      const rawEstado = String(fila[mPart['ESTADO SELECCION']] || '').trim();
+      const normEstado = normalizarEncabezado_(rawEstado);
+
+      // Verificar si califica según los filtros seleccionados
+      let califica = false;
+      estadosPermitidos.forEach(function(estPermitido) {
+        if (normEstado === estPermitido) califica = true;
+        if (estPermitido === 'TODOS') califica = true;
+        if (estPermitido === 'LISTA DE ESPERA' && (normEstado === 'ESPERA' || normEstado === 'LISTA ESPERA')) califica = true;
+        if (estPermitido === 'NO SELECCIONADO' && (normEstado === 'NO SELECCIONADO' || normEstado === 'NO SELECCIONADA')) califica = true;
+        if (estPermitido === 'PENDIENTE' && (normEstado === 'PENDIENTE' || normEstado === '')) califica = true;
+        if (estPermitido === 'SELECCIONADO' && (normEstado === 'SELECCIONADO' || normEstado === 'SELECCIONADA')) califica = true;
+        if (estPermitido === 'OTROS' && ['LISTA DE ESPERA', 'ESPERA', 'LISTA ESPERA', 'NO SELECCIONADO', 'NO SELECCIONADA', 'PENDIENTE', 'SELECCIONADO', 'SELECCIONADA'].indexOf(normEstado) < 0) califica = true;
+      });
+
+      if (!califica) return;
+
+      if (personasEnDestino.has(idP)) {
+        omitidosYaInscritos++;
+        return;
+      }
+
+      // Crear nueva participación
+      personasEnDestino.add(idP);
+      maxIdPart++;
+      const nuevoIdPart = prefijoPartAnio + String(maxIdPart).padStart(6, '0');
+
+      const obsAnterior = String(fila[mPart['OBSERVACIONES']] || '').trim();
+      const obsFinal = 'Traspasado desde ' + info.origenes.join(', ') + (obsAnterior ? ' | Obs anterior: ' + obsAnterior : '');
+      const cumpleAnt = String(fila[mPart['CUMPLE REQUISITOS']] || 'Pendiente').trim();
+
+      const nuevaFila = nuevaFilaSegunEncabezados_(encabezadosPart, {
+        'ID PARTICIPACION': nuevoIdPart,
+        'ID PERSONA': idP,
+        'ID ACTIVIDAD': idDestStr,
+        'FECHA INSCRIPCION': ahora,
+        'CANAL INSCRIPCION': canalRegistro,
+        'CUMPLE REQUISITOS': cumpleAnt,
+        'ESTADO SELECCION': estadoDestino,
+        'FECHA NOTIFICACION': '',
+        'MEDIO NOTIFICACION': 'No informado',
+        'CONFIRMA PARTICIPACION': 'No informado',
+        'SESIONES ASISTIDAS': 0,
+        'SESIONES TOTALES': sesionesDestino,
+        'PORCENTAJE ASISTENCIA': 0,
+        'RESULTADO ASISTENCIA': 'Pendiente',
+        'RESULTADO FINAL': 'Pendiente',
+        'CERTIFICADO': 'No informado',
+        'FECHA CERTIFICACION': '',
+        'OBSERVACIONES': obsFinal,
+        'ARCHIVO ORIGEN': 'Traspaso entre actividades',
+        'FILA ORIGEN': '',
+        'REGISTRO ACTIVO': 'Sí',
+        'ULTIMA ACTUALIZACION': ahora
+      });
+
+      nuevasFilas.push(nuevaFila);
+    });
 
     if (nuevasFilas.length > 0) {
       hojaPart.getRange(hojaPart.getLastRow() + 1, 1, nuevasFilas.length, encabezadosPart.length)
@@ -3536,12 +4033,13 @@ function traspasarPostulantesActividad(payload) {
     return {
       ok: true,
       traspasados: nuevasFilas.length,
+      marcadosNoSeleccionado: marcadosNoSeleccionado,
       omitidosYaInscritos: omitidosYaInscritos,
       idDestino: idDestStr,
       nombreDestino: nombreDestino,
-      mensaje: nuevasFilas.length > 0
-        ? '¡Éxito! Se traspasaron ' + nuevasFilas.length + ' postulante(s) a ' + idDestStr + (omitidosYaInscritos > 0 ? ' (' + omitidosYaInscritos + ' omitidos por ya estar inscritos).' : '.')
-        : 'No se encontraron postulantes nuevos para traspasar con los filtros seleccionados' + (omitidosYaInscritos > 0 ? ' (' + omitidosYaInscritos + ' ya se encontraban inscritos en esta actividad).' : '.')
+      mensaje: (nuevasFilas.length > 0 || marcadosNoSeleccionado > 0)
+        ? '¡Listo! Se traspasaron ' + nuevasFilas.length + ' postulante(s) y se marcaron ' + marcadosNoSeleccionado + ' como "No seleccionado" por haber participado antes.'
+        : 'No hubo cambios nuevos para aplicar' + (omitidosYaInscritos > 0 ? ' (' + omitidosYaInscritos + ' ya estaban inscritos).' : '.')
     };
   } finally {
     lock.releaseLock();

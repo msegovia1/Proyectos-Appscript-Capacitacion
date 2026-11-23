@@ -1,4 +1,6 @@
 <section id="dashboard" class="view active">
+        
+        <div id="bannerErrorDashboard" style="display:none; margin: 10px 0 16px 0; padding: 14px 18px; border-radius: 8px; background: #fee2e2; border: 1.5px solid #ef4444; color: #991b1b; font-size: 13.5px; font-weight: 600;"></div>
         <div class="section-head">
           <div><h2>Resumen general</h2><p>Indicadores consolidados del sistema.</p></div>
         </div>
@@ -80,9 +82,19 @@
         </details>
         <div class="charts">
           <div class="card chart-card"><h3>Actividades por estado</h3><div class="chart-wrap"><canvas id="chartEstados"></canvas></div></div>
+          <div class="card chart-card"><h3>Actividades por escuela / línea</h3><div class="chart-wrap"><canvas id="chartEscuelas"></canvas></div></div>
           <div class="card chart-card"><h3>Resultados de participación</h3><div class="chart-wrap"><canvas id="chartResultados"></canvas></div></div>
-          <div class="card chart-card"><h3>Áreas temáticas</h3><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>
+          <div class="card chart-card"><h3>Áreas temáticas (Top 10)</h3><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>
           <div class="card chart-card"><h3>Inscripciones por actividad</h3><div class="chart-wrap"><canvas id="chartParticipaciones"></canvas></div></div>
-          <div class="card chart-card wide"><h3>Participación efectiva por actividad</h3><div class="chart-wrap"><canvas id="chartEfectiva"></canvas></div></div>
+          <div class="card chart-card"><h3>Participación efectiva por actividad</h3><div class="chart-wrap"><canvas id="chartEfectiva"></canvas></div></div>
+        </div>
+        <div class="section-head" style="margin-top:22px">
+          <div><h3>Perfil de personas registradas y participantes</h3><p>Distribución demográfica de la base central y de quienes participan en actividades.</p></div>
+        </div>
+        <div class="charts">
+          <div class="card chart-card"><h3>Personas registradas por género</h3><div class="chart-wrap"><canvas id="chartPerGenero"></canvas></div></div>
+          <div class="card chart-card"><h3>Participantes únicos por género</h3><div class="chart-wrap"><canvas id="chartPartGenero"></canvas></div></div>
+          <div class="card chart-card"><h3>Personas por tramo de edad</h3><div class="chart-wrap"><canvas id="chartPerEdad"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 comunas (personas registradas)</h3><div class="chart-wrap"><canvas id="chartPerComuna"></canvas></div></div>
         </div>
       </section>

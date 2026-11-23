@@ -2,5 +2,5 @@
 !appsscript.json
 !*.gs
 !*.html
-!*.js
 documentacion_informatica/**
+ENTREGA_INFORMATICA_SIGC/**

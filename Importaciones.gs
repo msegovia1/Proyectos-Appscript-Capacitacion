@@ -79,11 +79,9 @@ function analizarImportacionUniversal(datos) {
   filas.forEach(function(fila, indice) {
     try {
       const registro = importacionesRegistroUniversal_(fila, mapeo, datos.valoresGenerales || {});
-      const documento = sigcValidarDocumento(
-        registro.tipoDocumento,
-        registro.numeroDocumento || registro.rut,
-        registro.nacionalidad
-      );
+      const nombre = sigcNormalizarNombre(registro.nombre);
+      if (!nombre) throw new Error('Falta el nombre completo.');
+      const documento = importacionesResolverDocumentoTolerante_(registro, nombre);
       const clave = importadorClaveDocumento_(documento.tipo, documento.numero, registro.nacionalidad);
       const persona = personasPorDocumento[clave];
       let estado = persona ? 'PERSONA_EXISTENTE' : 'PERSONA_NUEVA';
@@ -99,22 +97,22 @@ function analizarImportacionUniversal(datos) {
         resumen.nuevas++;
       }
       documentosLote[clave] = true;
-      if (vistaPrevia.length < 30) {
+      if (vistaPrevia.length < 250) {
         vistaPrevia.push({
           fila: indice + 2,
-          nombre: sigcNormalizarNombre(registro.nombre),
+          nombre: nombre,
           documento: documento.numero,
           estado: estado,
-          detalle: estado === 'PERSONA_NUEVA'
+          detalle: (documento.advertencia ? documento.advertencia + ' · ' : '') + (estado === 'PERSONA_NUEVA'
             ? 'Se creará la persona y su participación.'
             : estado === 'PERSONA_EXISTENTE'
               ? 'Se reutilizará la persona y se creará la participación.'
-              : 'No se creará una participación duplicada.'
+              : 'No se creará una participación duplicada.')
         });
       }
     } catch (error) {
       resumen.revision++;
-      if (vistaPrevia.length < 30) {
+      if (vistaPrevia.length < 250) {
         vistaPrevia.push({
           fila: indice + 2,
           nombre: importacionesValorMapeado_(fila, mapeo, 'NOMBRE_COMPLETO') ||
@@ -179,6 +177,7 @@ function importarCapacitacionHistoricaUniversal(datos) {
       participacionesCreadas: 0, duplicadosOmitidos: 0, revision: 0
     };
     const auditoria = [];
+    let maxSesionesLote = Number(actividad.sesionesTotales || 1);
     filas.forEach(function(fila, indice) {
       let estado = 'ERROR';
       let detalle = '';
@@ -186,11 +185,9 @@ function importarCapacitacionHistoricaUniversal(datos) {
       let idParticipacion = '';
       try {
         const registro = importacionesRegistroUniversal_(fila, mapeo, generales);
-        const documento = sigcValidarDocumento(
-          registro.tipoDocumento,
-          registro.numeroDocumento || registro.rut,
-          registro.nacionalidad
-        );
+        const nombre = sigcNormalizarNombre(registro.nombre);
+        if (!nombre) throw new Error('Falta el nombre completo.');
+        const documento = importacionesResolverDocumentoTolerante_(registro, nombre);
         const claveDocumento = importadorClaveDocumento_(documento.tipo, documento.numero, registro.nacionalidad);
         if (documentosLote[claveDocumento]) {
           estado = 'DUPLICADO';
@@ -199,12 +196,14 @@ function importarCapacitacionHistoricaUniversal(datos) {
           return;
         }
         documentosLote[claveDocumento] = true;
-        const correo = sigcNormalizarCorreo(registro.correo);
-        const telefono = sigcNormalizarTelefono(registro.telefono);
-        const nombre = sigcNormalizarNombre(registro.nombre);
-        if (!nombre) throw new Error('Falta el nombre completo.');
-        if (!sigcValidarCorreo(correo)) throw new Error('El correo no tiene un formato válido.');
-        if (!sigcValidarTelefono(telefono)) throw new Error('El teléfono no tiene un formato válido.');
+        const correoRaw = sigcNormalizarCorreo(registro.correo);
+        const telefonoRaw = sigcNormalizarTelefono(registro.telefono);
+        const correo = sigcValidarCorreo(correoRaw) ? correoRaw : '';
+        const telefono = sigcValidarTelefono(telefonoRaw) ? telefonoRaw : '';
+        const notasExtra = [];
+        if (documento.advertencia) notasExtra.push(documento.advertencia);
+        if (correoRaw && !correo) notasExtra.push('Correo no estándar: ' + correoRaw);
+        if (telefonoRaw && !telefono) notasExtra.push('Teléfono no estándar: ' + telefonoRaw);
         const datosPersona = {
           RUT: documento.tipo === 'RUT' ? documento.numero : '',
           TIPO_DOCUMENTO: documento.tipo,
@@ -213,6 +212,8 @@ function importarCapacitacionHistoricaUniversal(datos) {
           CORREO: correo,
           TELEFONO: telefono,
           COMUNA: sigcNormalizarTexto(registro.comuna),
+          GENERO: baseMadreNormalizarGenero_(registro.genero),
+          FECHA_NACIMIENTO: importacionesNormalizarFechaNacimiento_(registro.fechaNacimiento),
           NACIONALIDAD: sigcNormalizarTexto(registro.nacionalidad),
           PARTICIPA_PMJH: sigcNormalizarSiNo(registro.participaPmjh, 'No informado')
         };
@@ -250,12 +251,9 @@ function importarCapacitacionHistoricaUniversal(datos) {
           resumen.duplicadosOmitidos++;
           return;
         }
-        const sesionesTotales = numeroSeguroImportador_(registro.sesionesTotales, actividad.sesionesTotales || 1);
-        const sesionesAsistidas = numeroSeguroImportador_(registro.sesionesAsistidas, 0);
-        if (sesionesTotales < 1) throw new Error('Las sesiones totales deben ser al menos 1.');
-        if (sesionesAsistidas > sesionesTotales) {
-          throw new Error('Las sesiones asistidas no pueden superar las sesiones totales.');
-        }
+        const sesionesAsistidas = Math.max(0, numeroSeguroImportador_(registro.sesionesAsistidas, 0));
+        const sesionesTotales = Math.max(1, sesionesAsistidas, numeroSeguroImportador_(registro.sesionesTotales, actividad.sesionesTotales || 1));
+        if (sesionesTotales > maxSesionesLote) maxSesionesLote = sesionesTotales;
         const confirma = importacionesNormalizarConfirmacion_(registro.confirmaParticipacion);
         const finalizar = generales.finalizarResultado === true || generales.finalizarResultado === 'true';
         const resultado = sigcCalcularResultado(actividad, sesionesAsistidas, sesionesTotales, finalizar);
@@ -276,7 +274,7 @@ function importarCapacitacionHistoricaUniversal(datos) {
           RESULTADO_ASISTENCIA: resultado.resultadoAsistencia,
           RESULTADO_FINAL: resultado.resultadoFinal,
           CERTIFICADO: sigcNormalizarSiNo(registro.certificado, 'No informado'),
-          OBSERVACIONES: sigcNormalizarTexto(registro.observaciones),
+          OBSERVACIONES: [sigcNormalizarTexto(registro.observaciones), notasExtra.join('; ')].filter(Boolean).join(' | '),
           ARCHIVO_ORIGEN: 'Importación universal ' + importacionId,
           FILA_ORIGEN: indice + 2,
           REGISTRO_ACTIVO: 'Sí',
@@ -311,6 +309,14 @@ function importarCapacitacionHistoricaUniversal(datos) {
       resumen.participacionesCreadas, resumen.duplicadosOmitidos,
       resumen.revision, 'Finalizada'
     ]);
+    if (maxSesionesLote > Number(actividad.sesionesTotales || 1) && actividad.fila) {
+      try {
+        const actHoja = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+        const actHeaders = actHoja.getRange(1, 1, 1, actHoja.getLastColumn()).getValues()[0];
+        const colSes = actHeaders.findIndex(function(h) { return normalizarEncabezado_(h) === 'SESIONES TOTALES'; });
+        if (colSes >= 0) actHoja.getRange(actividad.fila, colSes + 1).setValue(maxSesionesLote);
+      } catch (eAct) {}
+    }
     SpreadsheetApp.flush();
     sigcInvalidarCache_();
     return {
@@ -512,7 +518,7 @@ function procesarLoteBaseMadreDesdeWeb(datos) {
           'BARRIO': registro.barrio,
           'DIRECCION': registro.direccion,
           'FECHA NACIMIENTO': registro.fechaNacimiento || '',
-          'GENERO': registro.genero,
+          'GENERO': baseMadreNormalizarGenero_(registro.genero),
           'NACIONALIDAD': registro.nacionalidad,
           'AUTORIZA CONTACTO': registro.autorizaContacto,
           'PARTICIPA PMJH': sigcNormalizarSiNo(registro.participaPmjh, 'No informado')
@@ -544,7 +550,9 @@ function procesarLoteBaseMadreDesdeWeb(datos) {
             const nuevo = cambios[campo];
             if (columna === undefined || nuevo === '' || nuevo === null || nuevo === undefined) return;
             const actual = persona.fila[columna];
-            if (actual !== '' && actual !== null && actual !== undefined) return;
+            const actualNorm = normalizarEncabezado_(actual);
+            if (actual !== '' && actual !== null && actual !== undefined &&
+                ['NO INFORMADO', 'SIN INFORMACION', 'N A'].indexOf(actualNorm) < 0) return;
             persona.fila[columna] = nuevo;
             cambioReal = true;
           });
@@ -1114,11 +1122,11 @@ function registroBaseMadreDesdeFila_(encabezados, valores) {
     correo: buscar(['CORREO ELECTRONICO', 'EMAIL', 'CORREO']),
     telefono: buscar(['TELEFONO', 'CELULAR']),
     comuna: buscar(['COMUNA']),
-    barrio: buscar(['BARRIO']),
+    barrio: buscar(['BARRIO', 'SECTOR', 'POBLACION', 'VILLA', 'UNIDAD VECINAL']),
     direccion: sigcNormalizarTexto([domicilio, aclaratoria].filter(Boolean).join(', ')),
     fechaNacimiento: buscar(['FECHA DE NACIMIENTO', 'FECHA NACIMIENTO', 'CUAL ES TU FECHA DE NACIMIENTO']),
-    genero: buscar(['GENERO TE IDENTIFICAS', 'GENERO']),
-    nacionalidad: buscar(['NACIONALIDAD']),
+    genero: buscar(['GENERO TE IDENTIFICAS', 'IDENTIDAD DE GENERO', 'GENERO', 'SEXO']),
+    nacionalidad: buscar(['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS DE NACIMIENTO', 'PAIS']),
     participaPmjh: buscar(['PARTICIPA PMJH', 'MUJERES JEFAS DE HOGAR']),
     autorizaContacto: buscar(['AUTORIZA RECIBIR INFORMACION', 'AUTORIZA CONTACTO', 'USO DE DATOS']),
     origen: 'Formulario base madre',
@@ -1260,6 +1268,8 @@ function importacionesRegistroUniversal_(fila, mapeo, generales) {
     correo: valor('CORREO'),
     telefono: valor('TELEFONO'),
     comuna: valor('COMUNA'),
+    genero: valor('GENERO'),
+    fechaNacimiento: valor('FECHA_NACIMIENTO'),
     nacionalidad: valor('NACIONALIDAD'),
     participaPmjh: valor('PARTICIPA_PMJH'),
     fechaInscripcion: valor('FECHA_INSCRIPCION'),
@@ -1364,4 +1374,41 @@ function importacionesObtenerVinculacionBaseMadre_() {
 
 function importacionesInvalidarPanelFormularios_() {
   try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (error) {}
+}
+
+function importacionesNormalizarFechaNacimiento_(valor) {
+  if (!valor) return '';
+  if (valor instanceof Date && !isNaN(valor.getTime())) {
+    return sigcFormatearFechaChile(valor, 'yyyy-MM-dd');
+  }
+  const txt = String(valor).trim();
+  if (!txt) return '';
+  const mIso = txt.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (mIso) return mIso[1] + '-' + mIso[2].padStart(2, '0') + '-' + mIso[3].padStart(2, '0');
+  const mCl = txt.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (mCl) return mCl[3] + '-' + mCl[2].padStart(2, '0') + '-' + mCl[1].padStart(2, '0');
+  return txt;
+}
+
+function importacionesResolverDocumentoTolerante_(registro, nombre) {
+  const rawDoc = String(registro.numeroDocumento || registro.rut || '').trim();
+  try {
+    return sigcValidarDocumento(registro.tipoDocumento, rawDoc, registro.nacionalidad);
+  } catch (e) {
+    const limpio = rawDoc.toUpperCase().replace(/[^A-Z0-9.-]/g, '').trim();
+    if (limpio.length >= 3) {
+      return {
+        tipo: 'Documento histórico',
+        numero: limpio,
+        advertencia: 'Documento conservado sin validación estricta'
+      };
+    }
+    const base = [normalizarEncabezado_(nombre), sigcNormalizarCorreo(registro.correo), sigcNormalizarTelefono(registro.telefono)].filter(Boolean).join('|');
+    const hash = baseMadreHash_(base || nombre || String(new Date().getTime()));
+    return {
+      tipo: 'Identificador histórico',
+      numero: 'HIST-' + hash,
+      advertencia: 'Sin documento informado (identificador temporal)'
+    };
+  }
 }
