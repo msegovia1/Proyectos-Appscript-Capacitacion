@@ -3,6 +3,7 @@
           <div><h2>Formularios</h2><p>Administre el formulario público de intereses (Base Madre) y las inscripciones por capacitación.</p></div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn" type="button" onclick="recuperarTodosFormulariosWeb()">⚡ Sincronizar pendientes</button>
+            <button class="btn secondary" type="button" onclick="activarMotorUnicoFormulariosWeb()" title="Usa 1 solo activador cada 15 min para todos los formularios activos">⏱️ Auto-sync (1 trigger)</button>
             <button class="btn secondary" type="button" onclick="cargarFormularios(true)">Actualizar conteos</button>
           </div>
         </div>

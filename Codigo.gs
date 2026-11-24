@@ -1007,6 +1007,73 @@ function recuperarTodosFormulariosActivosDesdeWeb() {
   };
 }
 
+/**
+ * Trigger único programado (cada 15 min): procesa respuestas pendientes de todos
+ * los formularios activos sin consumir 1 activador por planilla.
+ */
+function sincronizarFormulariosProgramado_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return;
+  try {
+    const central = sigcSpreadsheetCentral_();
+    const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+    if (!hojaConfig || hojaConfig.getLastRow() < 2) return;
+    const datos = hojaConfig.getDataRange().getValues();
+    const mapa = mapaEncabezados_(datos[0]);
+    let totalResueltas = 0;
+
+    for (let i = 1; i < datos.length; i++) {
+      const fila = datos[i];
+      const estado = normalizarEncabezado_(fila[mapa['ESTADO']]);
+      if (estado !== 'ACTIVO') continue;
+      const tipo = String(fila[mapa['TIPO']] || 'INSCRIPCION');
+      if (normalizarEncabezado_(tipo).indexOf('SATISFACCION') >= 0) continue;
+      const ssId = String(fila[mapa['SPREADSHEET RESPUESTAS ID']] || '').trim();
+      const hojaNom = String(fila[mapa['HOJA RESPUESTAS']] || '').trim();
+      const idAct = String(fila[mapa['ID ACTIVIDAD']] || '').trim();
+      if (!ssId || !hojaNom) continue;
+      try {
+        const limSync = normalizarEncabezado_(tipo) === 'INTERES GENERAL' ? 25 : 200;
+        const res = procesarPendientesFormularioVinculado_(ssId, hojaNom, idAct, limSync, false, tipo);
+        if (res && res.resueltas) totalResueltas += Number(res.resueltas || 0);
+      } catch (eForm) {
+        console.warn('Sync programado falló en ' + hojaNom + ': ' + eForm.message);
+      }
+    }
+    if (totalResueltas > 0) {
+      sigcInvalidarCache_();
+      try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (eC) {}
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Activa el trigger único programado cada 15 minutos para todos los formularios activos. */
+function activarSincronizacionProgramadaFormulariosDesdeWeb() {
+  const triggers = ScriptApp.getProjectTriggers();
+  const existentes = triggers.filter(function(t) {
+    return t.getHandlerFunction() === 'sincronizarFormulariosProgramado_';
+  });
+  if (existentes.length > 0) {
+    return {
+      ok: true,
+      yaActivo: true,
+      mensaje: 'El motor único programado (cada 15 min) ya se encuentra activo.'
+    };
+  }
+  ScriptApp.newTrigger('sincronizarFormulariosProgramado_')
+    .timeBased()
+    .everyMinutes(15)
+    .create();
+  try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (eC) {}
+  return {
+    ok: true,
+    yaActivo: false,
+    mensaje: 'Motor único activado: todos los formularios activos se sincronizarán automáticamente cada 15 min usando 1 solo activador.'
+  };
+}
+
 /** Recuperación única automática de Formaliza y Crece 3 (V2: verifica faltantes en PARTICIPACIONES). */
 function sigcRecuperarFormalizaCrece3_() {
   const props = PropertiesService.getScriptProperties();
@@ -2361,11 +2428,19 @@ function registroDesdeFila_(encabezados, valores) {
     correo: correo,
     telefono: telefono,
     comuna: valorAlternativo_(mapa, ['COMUNA', 'COMUNA DE RESIDENCIA', 'CIUDAD', 'MUNICIPIO']),
-    barrio: valorAlternativo_(mapa, ['BARRIO', 'SECTOR', 'POBLACION', 'VILLA', 'UNIDAD VECINAL']),
+    barrio: valorAlternativo_(
+      mapa,
+      ['BARRIO', 'UNIDAD VECINAL', 'POBLACION', 'VILLA', 'SECTOR'],
+      ['ECONOMICO', 'PRODUCTIVO', 'LABORAL', 'EXPERIENCIA', 'RUBRO', 'COMERCIAL']
+    ),
     direccion: valorAlternativo_(mapa, ['DIRECCION', 'DOMICILIO', 'CALLE', 'DIRECCION PARTICULAR'], ['CORREO', 'ELECTRONICO', 'EMAIL', 'COMUNA']),
     fechaNacimiento: valorAlternativo_(mapa, ['FECHA NACIMIENTO', 'FECHA DE NACIMIENTO', 'NACIMIENTO', 'CUMPLEANOS', 'EDAD']),
-    genero: valorAlternativo_(mapa, ['GENERO', 'SEXO', 'IDENTIDAD DE GENERO']),
-    nacionalidad: valorAlternativo_(mapa, ['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS']),
+    genero: valorAlternativo_(
+      mapa,
+      ['GENERO TE IDENTIFICAS', 'IDENTIDAD DE GENERO', 'CUAL ES SU GENERO', 'CUAL ES TU GENERO', 'GENERO', 'SEXO'],
+      ['ENFOQUE', 'EQUIDAD', 'VIOLENCIA', 'TEMATICA', 'PREFERENCIA', 'AREA']
+    ),
+    nacionalidad: valorAlternativo_(mapa, ['NACIONALIDAD', 'PAIS DE ORIGEN']),
     participaPmjh: valorAlternativo_(mapa, [
       'PARTICIPA PMJH', 'PARTICIPA EN PMJH', 'ES PMJH', 'FUE PMJH', 'PROGRAMA MUJERES JEFAS DE HOGAR', 'MUJERES JEFAS DE HOGAR', 'PMJH', 'JEFAS DE HOGAR'
     ]),

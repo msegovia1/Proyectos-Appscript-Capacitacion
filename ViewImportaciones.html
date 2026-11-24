@@ -176,9 +176,10 @@
               </div>
             </div>
             <div id="estadoBaseMadre" class="notice" style="margin-top:14px">Todavía no se ha consultado una base madre.</div>
-            <div class="form-actions" style="margin-top:10px">
+            <div class="form-actions" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
               <button id="btnProbarBaseMadre" class="btn secondary" type="button" onclick="probarBaseMadreWeb()" disabled>Probar con 100 registros</button>
               <button id="btnMigrarBaseMadre" class="btn" type="button" onclick="procesarBaseMadreCompletaWeb()" disabled>Procesar base completa</button>
+              <button class="btn secondary" type="button" onclick="enriquecerPersonasBaseMadreWeb()" title="Completa Género, Barrio, Nacionalidad y Fecha de Nacimiento en fichas antiguas de PERSONAS">🔄 Enriquecer PERSONAS (Género/Barrio/Nac.)</button>
             </div>
           </div>
 

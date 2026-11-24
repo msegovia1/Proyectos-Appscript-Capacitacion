@@ -5921,6 +5921,21 @@ filasActividadesHtml + '\n\n' +
       })
       .reprocesarRevisionesFormulario(idConfig);
   }
+  function activarMotorUnicoFormulariosWeb() {
+    mostrarCarga(true, 'Activando motor único de sincronización…');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Motor único activado.');
+        cargarFormularios(true);
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .activarSincronizacionProgramadaFormulariosDesdeWeb();
+  }
+
   function recuperarTodosFormulariosWeb() {
     mostrarCarga(true, 'Sincronizando respuestas pendientes de formularios activos…');
     google.script.run
@@ -6762,6 +6777,21 @@ filasActividadesHtml + '\n\n' +
 
   function cerrarMapeoImportacion() {
     document.getElementById('panelMapeoImportacion').hidden = true;
+  }
+
+  function enriquecerPersonasBaseMadreWeb() {
+    mostrarCarga(true, 'Enriqueciendo Género, Barrio y Nacionalidad desde Base Madre…');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Enriquecimiento completado.');
+        MODULOS_CARGADOS.delete('personas');
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .enriquecerPersonasDesdeBaseMadreDesdeWeb();
   }
 
   function analizarBaseMadreWeb() {

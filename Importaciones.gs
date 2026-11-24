@@ -1069,7 +1069,13 @@ function guardarPerfilBaseMadreIndividual_(idPersona, encabezados, valores, regi
 function registroBaseMadreDesdeFila_(encabezados, valores) {
   const mapa = {};
   encabezados.forEach(function(encabezado, indice) {
-    mapa[sigcNormalizarEncabezado(encabezado)] = valores[indice];
+    const k = sigcNormalizarEncabezado(encabezado);
+    if (!k) return;
+    const val = valores[indice];
+    const tieneValor = val !== '' && val !== null && val !== undefined && String(val).trim() !== '';
+    if (tieneValor || mapa[k] === undefined) {
+      mapa[k] = val;
+    }
   });
   function buscar(fragmentos) {
     const claves = Object.keys(mapa);
@@ -1094,7 +1100,10 @@ function registroBaseMadreDesdeFila_(encabezados, valores) {
     return '';
   }
   const rutExacto = mapa.RUT || mapa.RUN || '';
-  const rutDirecto = rutExacto || buscar(['RUT EJ', 'RUT COMPLETO']);
+  const rutDirecto = rutExacto || buscarFiltrado(
+    ['RUT EJ', 'RUT COMPLETO', 'INGRESE SU RUT', 'ESCRIBA SU RUT', 'RUT', 'RUN'],
+    ['SIN PUNTOS', 'SIN PUNTO', 'HASTA ANTES', 'DIGITO VERIFICADOR', 'USTED CUENTA', 'CUENTA CON', 'TIPO', 'EMPRESA', 'EMPRENDIMIENTO']
+  );
   const cuerpo = buscar(['RUT SIN PUNTOS', 'RUT SIN PUNTO', 'HASTA ANTES DEL GUION']);
   const dv = buscarFiltrado(
     ['ESCRIBA EL DIGITO VERIFICADOR', 'NUMERO DESPUES DEL GUION', 'DIGITO VERIFICADOR DE SU RUT', 'DIGITO VERIFICADOR'],
@@ -1102,12 +1111,26 @@ function registroBaseMadreDesdeFila_(encabezados, valores) {
   );
   const pasaporte = buscar(['DNI PASAPORTE', 'PASAPORTE U OTRO', 'NUMERO DOCUMENTO']);
   const tipoDeclarado = buscar(['USTED CUENTA CON', 'TIPO DE DOCUMENTO', 'TIPO DOCUMENTO']);
-  const rut = rutDirecto || (cuerpo && dv ? String(cuerpo) + '-' + String(dv) : '');
+  const tieneCuerpo = cuerpo !== '' && cuerpo !== null && cuerpo !== undefined && String(cuerpo).trim() !== '';
+  const tieneDv = dv !== '' && dv !== null && dv !== undefined && String(dv).trim() !== '';
+  const tieneRutDir = rutDirecto && /\d{6,}/.test(String(rutDirecto));
+  const rut = (tieneRutDir ? String(rutDirecto).trim() : '') ||
+    (tieneCuerpo && tieneDv ? String(cuerpo).trim() + '-' + String(dv).trim() : (tieneCuerpo ? String(cuerpo).trim() : ''));
   const tipo = sigcNormalizarClave(tipoDeclarado).indexOf('pasaporte') >= 0 || (!rut && pasaporte)
     ? 'Pasaporte' : 'RUT';
-  const nombres = buscar(['NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO']);
-  const apellidos = buscar(['APELLIDOS']);
-  const domicilio = buscar(['DOMLICIO', 'DOMICILIO', 'DIRECCION']);
+  const nombreComp = buscarFiltrado(
+    ['NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO', 'NOMBRE Y DOS APELLIDOS'],
+    ['EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+  );
+  const soloNombres = nombreComp ? '' : buscarFiltrado(
+    ['NOMBRES', 'NOMBRE'],
+    ['APELLIDO', 'COMPLETO', 'EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+  );
+  const soloApellidos = nombreComp ? '' : buscarFiltrado(
+    ['APELLIDOS', 'APELLIDO'],
+    ['NOMBRE', 'COMPLETO', 'EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+  );
+  const domicilio = buscarFiltrado(['DOMLICIO', 'DOMICILIO', 'DIRECCION'], ['CORREO', 'EMAIL']);
   const aclaratoria = buscar(['ACLARATORIA']);
   return {
     timestamp: buscar(['MARCA TEMPORAL', 'TIMESTAMP', 'FECHA REGISTRO']),
@@ -1118,15 +1141,21 @@ function registroBaseMadreDesdeFila_(encabezados, valores) {
     rutDv: dv,
     tipoDeclarado: tipoDeclarado,
     documentoAlternativo: pasaporte,
-    nombre: sigcNormalizarTexto([nombres, apellidos].filter(Boolean).join(' ')),
+    nombre: sigcNormalizarTexto(nombreComp || [soloNombres, soloApellidos].filter(Boolean).join(' ')),
     correo: buscar(['CORREO ELECTRONICO', 'EMAIL', 'CORREO']),
     telefono: buscar(['TELEFONO', 'CELULAR']),
     comuna: buscar(['COMUNA']),
-    barrio: buscar(['BARRIO', 'SECTOR', 'POBLACION', 'VILLA', 'UNIDAD VECINAL']),
+    barrio: buscarFiltrado(
+      ['BARRIO', 'UNIDAD VECINAL', 'POBLACION', 'VILLA', 'SECTOR'],
+      ['ECONOMICO', 'PRODUCTIVO', 'LABORAL', 'EXPERIENCIA', 'RUBRO', 'COMERCIAL']
+    ),
     direccion: sigcNormalizarTexto([domicilio, aclaratoria].filter(Boolean).join(', ')),
     fechaNacimiento: buscar(['FECHA DE NACIMIENTO', 'FECHA NACIMIENTO', 'CUAL ES TU FECHA DE NACIMIENTO']),
-    genero: buscar(['GENERO TE IDENTIFICAS', 'IDENTIDAD DE GENERO', 'GENERO', 'SEXO']),
-    nacionalidad: buscar(['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS DE NACIMIENTO', 'PAIS']),
+    genero: buscarFiltrado(
+      ['GENERO TE IDENTIFICAS', 'IDENTIDAD DE GENERO', 'CUAL ES SU GENERO', 'CUAL ES TU GENERO', 'GENERO', 'SEXO'],
+      ['ENFOQUE', 'EQUIDAD', 'VIOLENCIA', 'TEMATICA', 'PREFERENCIA', 'AREA']
+    ),
+    nacionalidad: buscar(['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS DE NACIMIENTO']),
     participaPmjh: buscar(['PARTICIPA PMJH', 'MUJERES JEFAS DE HOGAR']),
     autorizaContacto: buscar(['AUTORIZA RECIBIR INFORMACION', 'AUTORIZA CONTACTO', 'USO DE DATOS']),
     origen: 'Formulario base madre',
@@ -1410,5 +1439,309 @@ function importacionesResolverDocumentoTolerante_(registro, nombre) {
       numero: 'HIST-' + hash,
       advertencia: 'Sin documento informado (identificador temporal)'
     };
+  }
+}
+
+/**
+ * Enriquecimiento retroactivo en lote: lee PERFILES_BASE_MADRE y la hoja vinculada de Base Madre
+ * (INTERES GENERAL) para completar GENERO, BARRIO, NACIONALIDAD, FECHA_NACIMIENTO, COMUNA y DIRECCION
+ * en PERSONAS cuando estén vacíos, "No informado" o con edad en texto (ej: "60 años").
+ */
+function enriquecerPersonasDesdeBaseMadreDesdeWeb() {
+  const ss = sigcSpreadsheetCentral_();
+  const hojaPerCheck = ss.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+  if (!hojaPerCheck || hojaPerCheck.getLastRow() < 2) throw new Error('No hay personas registradas.');
+
+  const extraPorId = {};
+  const extraPorRut = {};
+  const extraPorCorreo = {};
+  const extraPorNombre = {};
+
+  function combinarCampo_(prev, nuevo) {
+    return (nuevo !== '' && nuevo !== null && nuevo !== undefined && String(nuevo).trim() !== '') ? nuevo : (prev || '');
+  }
+
+  function normalizarRutCuerpoODv_(rutDir, cuerpo, dv) {
+    if (rutDir !== '' && rutDir !== null && rutDir !== undefined && String(rutDir).trim() !== '') {
+      const r1 = sigcNormalizarRut(rutDir);
+      if (r1 && sigcValidarRut(r1)) return r1;
+    }
+    const tieneC = cuerpo !== '' && cuerpo !== null && cuerpo !== undefined && String(cuerpo).trim() !== '';
+    const tieneD = dv !== '' && dv !== null && dv !== undefined && String(dv).trim() !== '';
+    if (tieneC && tieneD) {
+      return sigcNormalizarRut(String(cuerpo).trim() + '-' + String(dv).trim());
+    }
+    const soloDig = String(tieneC ? cuerpo : (rutDir || '')).replace(/\D/g, '');
+    if (soloDig.length >= 7 && soloDig.length <= 8) {
+      let suma = 0, mult = 2;
+      for (let i = soloDig.length - 1; i >= 0; i--) {
+        suma += Number(soloDig.charAt(i)) * mult;
+        mult = mult === 7 ? 2 : mult + 1;
+      }
+      const resto = 11 - (suma % 11);
+      const dvCalc = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+      return soloDig + '-' + dvCalc;
+    }
+    return sigcNormalizarRut(rutDir);
+  }
+
+  function guardarExtraIndexado_(idP, rutNorm, correoRaw, nombreRaw, datosNuevos) {
+    const limpio = {
+      GENERO: baseMadreNormalizarGenero_(datosNuevos.GENERO),
+      BARRIO: sigcNormalizarTexto(datosNuevos.BARRIO),
+      NACIONALIDAD: sigcNormalizarTexto(datosNuevos.NACIONALIDAD),
+      FECHA_NACIMIENTO: datosNuevos.FECHA_NACIMIENTO || '',
+      COMUNA: sigcNormalizarTexto(datosNuevos.COMUNA),
+      DIRECCION: sigcNormalizarTexto(datosNuevos.DIRECCION)
+    };
+    function mergeInto_(map, key) {
+      if (!key) return;
+      const ant = map[key] || {};
+      map[key] = {
+        GENERO: combinarCampo_(ant.GENERO, limpio.GENERO),
+        BARRIO: combinarCampo_(ant.BARRIO, limpio.BARRIO),
+        NACIONALIDAD: combinarCampo_(ant.NACIONALIDAD, limpio.NACIONALIDAD),
+        FECHA_NACIMIENTO: combinarCampo_(ant.FECHA_NACIMIENTO, limpio.FECHA_NACIMIENTO),
+        COMUNA: combinarCampo_(ant.COMUNA, limpio.COMUNA),
+        DIRECCION: combinarCampo_(ant.DIRECCION, limpio.DIRECCION)
+      };
+    }
+    mergeInto_(extraPorId, idP);
+    mergeInto_(extraPorRut, rutNorm);
+    mergeInto_(extraPorCorreo, sigcNormalizarCorreo(correoRaw));
+    const nomClave = sigcNormalizarClave(nombreRaw);
+    if (nomClave && nomClave.length >= 6) mergeInto_(extraPorNombre, nomClave);
+  }
+
+  function indicesColumnasPorFragmentos_(encNorm, fragmentos, exclusiones) {
+    const idxs = [];
+    for (let i = 0; i < encNorm.length; i++) {
+      const h = encNorm[i];
+      if (!h) continue;
+      if (exclusiones && exclusiones.some(function(ex) { return h.indexOf(ex) >= 0; })) continue;
+      if (fragmentos.some(function(fr) { return h.indexOf(fr) >= 0; })) idxs.push(i);
+    }
+    return idxs;
+  }
+
+  function primerValorNoVacio_(fila, idxs) {
+    for (let i = 0; i < idxs.length; i++) {
+      const v = fila[idxs[i]];
+      if (v !== '' && v !== null && v !== undefined && String(v).trim() !== '') return v;
+    }
+    return '';
+  }
+
+  function primerValorConPatron_(fila, idxs, regex) {
+    for (let i = 0; i < idxs.length; i++) {
+      const v = fila[idxs[i]];
+      if (v !== '' && v !== null && v !== undefined && regex.test(String(v).trim())) return v;
+    }
+    return '';
+  }
+
+  // 1. Lectura ultrarrápida (FUERA del candado) de todas las hojas vinculadas de Base Madre (INTERES GENERAL)
+  let leidasHojaDirecta = 0;
+  let pestanasLeidas = 0;
+  const ssVisitados = {};
+  const hojaCfg = ss.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+  if (hojaCfg && hojaCfg.getLastRow() >= 2) {
+    const cfgDatos = hojaCfg.getDataRange().getValues();
+    const mCfg = mapaEncabezados_(cfgDatos[0]);
+    for (let c = 1; c < cfgDatos.length; c++) {
+      const tipoCfg = normalizarEncabezado_(cfgDatos[c][mCfg['TIPO']]);
+      if (tipoCfg !== 'INTERES GENERAL') continue;
+      const ssIdBm = String(cfgDatos[c][mCfg['SPREADSHEET RESPUESTAS ID']] || '').trim();
+      if (!ssIdBm || ssVisitados[ssIdBm]) continue;
+      ssVisitados[ssIdBm] = true;
+      try {
+        const ssBm = ssIdBm === ss.getId() ? ss : SpreadsheetApp.openById(ssIdBm);
+        const hojasCandidatas = ssIdBm === ss.getId()
+          ? [ssBm.getSheetByName(String(cfgDatos[c][mCfg['HOJA RESPUESTAS']] || '').trim())].filter(Boolean)
+          : ssBm.getSheets();
+        for (let s = 0; s < hojasCandidatas.length; s++) {
+          const hojaBm = hojasCandidatas[s];
+          if (!hojaBm || hojaBm.getLastRow() < 2) continue;
+          const valsBm = hojaBm.getDataRange().getValues();
+          const encNorm = valsBm[0].map(sigcNormalizarEncabezado);
+          const colsGenero = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['GENERO TE IDENTIFICAS', 'IDENTIDAD DE GENERO', 'CUAL ES SU GENERO', 'CUAL ES TU GENERO', 'GENERO', 'SEXO'],
+            ['ENFOQUE', 'EQUIDAD', 'VIOLENCIA', 'TEMATICA', 'PREFERENCIA', 'AREA']
+          );
+          const colsBarrio = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['BARRIO', 'UNIDAD VECINAL', 'POBLACION', 'VILLA', 'SECTOR'],
+            ['ECONOMICO', 'PRODUCTIVO', 'LABORAL', 'EXPERIENCIA', 'RUBRO', 'COMERCIAL']
+          );
+          if (!colsGenero.length && !colsBarrio.length) continue;
+
+          const colsIdPer = indicesColumnasPorFragmentos_(encNorm, ['ID PERSONA']);
+          const colsCuerpo = indicesColumnasPorFragmentos_(encNorm, ['RUT SIN PUNTOS', 'RUT SIN PUNTO', 'HASTA ANTES DEL GUION']);
+          const colsDv = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['ESCRIBA EL DIGITO VERIFICADOR', 'NUMERO DESPUES DEL GUION', 'DIGITO VERIFICADOR DE SU RUT', 'DIGITO VERIFICADOR'],
+            ['SIN EL DIGITO VERIFICADOR', 'SIN DIGITO VERIFICADOR']
+          );
+          const colsRutDir = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['RUT', 'RUN', 'CEDULA', 'DOCUMENTO'],
+            ['SIN PUNTOS', 'SIN PUNTO', 'HASTA ANTES', 'DIGITO VERIFICADOR', 'USTED CUENTA', 'CUENTA CON', 'TIPO', 'EMPRESA', 'EMPRENDIMIENTO']
+          );
+          const colsCorreo = indicesColumnasPorFragmentos_(encNorm, ['CORREO', 'EMAIL', 'E MAIL', 'MAIL']);
+          const colsNomComp = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'NOMBRE Y APELLIDO', 'NOMBRE Y DOS APELLIDOS'],
+            ['EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+          );
+          const colsSoloNom = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['NOMBRES', 'NOMBRE'],
+            ['APELLIDO', 'COMPLETO', 'EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+          );
+          const colsSoloApe = indicesColumnasPorFragmentos_(
+            encNorm,
+            ['APELLIDOS', 'APELLIDO'],
+            ['NOMBRE', 'COMPLETO', 'EMPRENDIMIENTO', 'EMPRESA', 'SOCIAL']
+          );
+          const colsNac = indicesColumnasPorFragmentos_(encNorm, ['NACIONALIDAD', 'PAIS DE ORIGEN', 'PAIS DE NACIMIENTO']);
+          const colsFechaNac = indicesColumnasPorFragmentos_(encNorm, ['FECHA DE NACIMIENTO', 'FECHA NACIMIENTO', 'CUAL ES TU FECHA DE NACIMIENTO']);
+          const colsComuna = indicesColumnasPorFragmentos_(encNorm, ['COMUNA']);
+          const colsDom = indicesColumnasPorFragmentos_(encNorm, ['DOMLICIO', 'DOMICILIO', 'DIRECCION'], ['CORREO', 'EMAIL']);
+          const colsAcl = indicesColumnasPorFragmentos_(encNorm, ['ACLARATORIA']);
+
+          pestanasLeidas++;
+          for (let b = 1; b < valsBm.length; b++) {
+            const f = valsBm[b];
+            const idP = String(primerValorNoVacio_(f, colsIdPer) || '').trim();
+            const rutDir = primerValorConPatron_(f, colsRutDir, /\d{6,}/);
+            const cuerpo = primerValorNoVacio_(f, colsCuerpo);
+            const dv = primerValorNoVacio_(f, colsDv);
+            const rutNorm = normalizarRutCuerpoODv_(rutDir, cuerpo, dv);
+            const correo = primerValorConPatron_(f, colsCorreo, /@/);
+            const nomComp = primerValorNoVacio_(f, colsNomComp);
+            const nom = nomComp || [primerValorNoVacio_(f, colsSoloNom), primerValorNoVacio_(f, colsSoloApe)].filter(Boolean).join(' ');
+            if (!idP && !rutNorm && !correo && !nom) continue;
+            const dom = primerValorNoVacio_(f, colsDom);
+            const acl = primerValorNoVacio_(f, colsAcl);
+            guardarExtraIndexado_(idP, rutNorm, correo, nom, {
+              GENERO: primerValorNoVacio_(f, colsGenero),
+              BARRIO: primerValorNoVacio_(f, colsBarrio),
+              NACIONALIDAD: primerValorNoVacio_(f, colsNac),
+              FECHA_NACIMIENTO: primerValorNoVacio_(f, colsFechaNac),
+              COMUNA: primerValorNoVacio_(f, colsComuna),
+              DIRECCION: [dom, acl].filter(Boolean).join(', ')
+            });
+            leidasHojaDirecta++;
+          }
+        }
+      } catch (eBm) {
+        console.warn('No se pudo leer hoja directa de Base Madre: ' + eBm.message);
+      }
+    }
+  }
+
+  // 2. Complementar también desde PERFILES_BASE_MADRE
+  const hojaPerf = ss.getSheetByName(SISTEMA.HOJAS.PERFILES_BASE_MADRE || SIGC_IMPORTACIONES.HOJA_PERFILES_BASE_MADRE);
+  if (hojaPerf && hojaPerf.getLastRow() >= 2) {
+    const datosPerf = hojaPerf.getDataRange().getValues();
+    const mPerf = mapaEncabezados_(datosPerf[0]);
+    const colIdPerf = mPerf['ID PERSONA'];
+    const colJsonPerf = mPerf['DATOS ULTIMA RESPUESTA JSON'];
+    if (colIdPerf !== undefined && colJsonPerf !== undefined) {
+      for (let i = 1; i < datosPerf.length; i++) {
+        const idP = String(datosPerf[i][colIdPerf] || '').trim();
+        if (!idP || (extraPorId[idP] && extraPorId[idP].GENERO)) continue;
+        const rawJson = String(datosPerf[i][colJsonPerf] || '').trim();
+        if (!rawJson) continue;
+        try {
+          const obj = JSON.parse(rawJson);
+          const encs = Object.keys(obj);
+          const vals = encs.map(function(k) { return obj[k]; });
+          const reg = registroBaseMadreDesdeFila_(encs, vals);
+          guardarExtraIndexado_(idP, sigcNormalizarRut(reg.rut || reg.numeroDocumento), reg.correo, reg.nombre, {
+            GENERO: reg.genero,
+            BARRIO: reg.barrio,
+            NACIONALIDAD: reg.nacionalidad,
+            FECHA_NACIMIENTO: reg.fechaNacimiento,
+            COMUNA: reg.comuna,
+            DIRECCION: reg.direccion
+          });
+        } catch (eJson) {}
+      }
+    }
+  }
+
+  // 3. Adquirir candado SOLO para actualizar PERSONAS en memoria y escribir de una vez (< 2s)
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const hojaPer = ss.getSheetByName(SISTEMA.HOJAS.PERSONAS);
+    const rangoPer = hojaPer.getDataRange();
+    const datosPer = rangoPer.getValues();
+    const mPer = mapaEncabezados_(datosPer[0]);
+    const colIdP = mPer['ID PERSONA'];
+    const colRutP = mPer['RUT'];
+    const colNumDocP = mPer['NUMERO DOCUMENTO'];
+    const colCorreoP = mPer['CORREO'];
+    const colNomP = mPer['NOMBRE COMPLETO'];
+    const colUlt = mPer['ULTIMA ACTUALIZACION'];
+    const campos = ['GENERO', 'BARRIO', 'NACIONALIDAD', 'FECHA NACIMIENTO', 'COMUNA', 'DIRECCION'];
+    const ahora = new Date();
+    let personasActualizadas = 0;
+    let camposRellenados = 0;
+
+    for (let r = 1; r < datosPer.length; r++) {
+      const idP = String(datosPer[r][colIdP] || '').trim();
+      const rutP = sigcNormalizarRut(
+        (colRutP !== undefined ? datosPer[r][colRutP] : '') ||
+        (colNumDocP !== undefined ? datosPer[r][colNumDocP] : '')
+      );
+      const correoP = colCorreoP !== undefined ? sigcNormalizarCorreo(datosPer[r][colCorreoP]) : '';
+      const nomP = colNomP !== undefined ? sigcNormalizarClave(datosPer[r][colNomP]) : '';
+      const extra = extraPorId[idP] || (rutP && extraPorRut[rutP]) || (correoP && extraPorCorreo[correoP]) || (nomP && extraPorNombre[nomP]);
+      if (!extra) continue;
+      let cambio = false;
+      campos.forEach(function(campo) {
+        const colIdx = mPer[campo];
+        if (colIdx === undefined) return;
+        const claveExtra = campo === 'FECHA NACIMIENTO' ? 'FECHA_NACIMIENTO' : campo;
+        const nuevo = extra[claveExtra];
+        if (nuevo === '' || nuevo === null || nuevo === undefined) return;
+        const actual = datosPer[r][colIdx];
+        const normAct = normalizarEncabezado_(actual);
+        const esTextoEdad = campo === 'FECHA NACIMIENTO' && /ANOS|AÑOS|^\d{1,3}$/.test(normAct);
+        if (!esTextoEdad && actual !== '' && actual !== null && actual !== undefined &&
+            ['NO INFORMADO', 'SIN INFORMACION', 'N A'].indexOf(normAct) < 0) {
+          return;
+        }
+        datosPer[r][colIdx] = nuevo;
+        camposRellenados++;
+        cambio = true;
+      });
+      if (cambio) {
+        if (colUlt !== undefined) datosPer[r][colUlt] = ahora;
+        personasActualizadas++;
+      }
+    }
+
+    if (personasActualizadas > 0) {
+      rangoPer.setValues(datosPer);
+      SpreadsheetApp.flush();
+      sigcInvalidarCache_();
+      if (typeof sigcInvalidarCacheTabla_ === 'function') sigcInvalidarCacheTabla_(SISTEMA.HOJAS.PERSONAS);
+    }
+
+    return {
+      ok: true,
+      personasActualizadas: personasActualizadas,
+      camposRellenados: camposRellenados,
+      mensaje: (personasActualizadas > 0
+        ? 'Enriquecimiento completado: ' + personasActualizadas + ' persona(s) actualizadas (' + camposRellenados + ' campos completados'
+        : 'Sin cambios pendientes (' + leidasHojaDirecta + ' respuestas leídas en ' + pestanasLeidas + ' pestaña(s) de Base Madre') +
+        (personasActualizadas > 0 ? ', ' + leidasHojaDirecta + ' respuestas revisadas en ' + pestanasLeidas + ' pestaña(s)).' : ').')
+    };
+  } finally {
+    lock.releaseLock();
   }
 }
