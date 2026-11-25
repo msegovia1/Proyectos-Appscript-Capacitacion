@@ -1,5 +1,5 @@
 <section id="reportes" class="view">
-        <div class="section-head"><div><h2>Reportes y estadísticas</h2><p>Indicadores consolidados con filtros institucionales. Personas únicas y participaciones se presentan por separado.</p></div></div>
+        <div class="section-head"><div><h2>Reportes e informes ejecutivos</h2><p>Análisis institucional de participación efectiva, comparación demográfica (Inscritos vs. Asistentes), fidelización y cobertura de demanda.</p></div></div>
         <div class="card panel" style="margin-bottom:18px">
           <div class="form-grid">
             <div class="field"><label>Año</label><input id="repAno" type="number" min="2000" max="2100" placeholder="Todos"></div>
@@ -8,33 +8,94 @@
             <div class="field"><label>Institución</label><input id="repInstitucion" placeholder="Todas"></div>
             <div class="field"><label>Modalidad</label><select id="repModalidad"><option value="">Todas</option><option>Presencial</option><option>Virtual</option><option>Híbrida</option></select></div>
             <div class="field"><label>Estado</label><select id="repEstado"><option value="">Todos</option><option>Planificada</option><option>Difusión</option><option>Inscripción abierta</option><option>En ejecución</option><option>Ejecutada</option><option>Cerrada</option><option>Suspendida</option></select></div>
-            <div class="form-actions"><button class="btn" type="button" onclick="cargarReporte()">Generar reporte</button><button class="btn secondary" type="button" onclick="exportarReporteExcel()">Descargar Excel</button></div>
+            <div class="form-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <button class="btn" type="button" onclick="cargarReporte()">📊 Generar reporte</button>
+              <button class="btn secondary" type="button" onclick="exportarReporteExcel()">📥 Descargar Excel Completo</button>
+              <button class="btn secondary" type="button" onclick="imprimirInformeEjecutivoSIGC()">🖨️ Informe Ejecutivo (PDF)</button>
+            </div>
           </div>
         </div>
-        <div id="estadoReporte" class="notice" style="margin-bottom:14px">Configure los filtros y presione <strong>Generar reporte</strong>. El cálculo se ejecutará solo cuando lo solicite.</div>
+        <div id="estadoReporte" class="notice" style="margin-bottom:14px">Configure los filtros y presione <strong>Generar reporte</strong>. Obtendrá indicadores separados de <strong>quienes se inscriben</strong> y <strong>quienes participan efectivamente</strong>, cruce de demanda, Excel de 7 pestañas e informe PDF.</div>
         <div class="module-kpis">
           <div class="card module-kpi accent-blue"><span>Actividades</span><strong id="repActividades">0</strong></div>
-          <div class="card module-kpi accent-emerald"><span>Personas únicas</span><strong id="repPersonas">0</strong></div>
-          <div class="card module-kpi accent-teal"><span>Participaciones</span><strong id="repInscripciones">0</strong></div>
-          <div class="card module-kpi accent-indigo"><span>Seleccionadas</span><strong id="repSeleccionadas">0</strong></div>
-          <div class="card module-kpi accent-cyan"><span>Asistentes</span><strong id="repAsistentes">0</strong></div>
-          <div class="card module-kpi accent-emerald"><span>Tasa asistencia</span><strong id="repTasaAsistencia">0%</strong></div>
+          <div class="card module-kpi accent-slate"><span>Cupos ofrecidos</span><strong id="repCupos">0</strong></div>
+          <div class="card module-kpi accent-teal"><span>Inscripciones totales</span><strong id="repInscripciones">0</strong></div>
+          <div class="card module-kpi accent-indigo"><span>Inscritos únicos</span><strong id="repPersonas">0</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Personas únicas capacitadas</span><strong id="repAsistentesUnicos">0</strong></div>
+          <div class="card module-kpi accent-cyan"><span>Participaciones totales</span><strong id="repAsistentes">0</strong></div>
+          <div class="card module-kpi accent-blue"><span>Seleccionadas</span><strong id="repSeleccionadas">0</strong></div>
           <div class="card module-kpi accent-blue"><span>Tasa selección</span><strong id="repTasaSeleccion">0%</strong></div>
+          <div class="card module-kpi accent-emerald"><span>Tasa asistencia</span><strong id="repTasaAsistencia">0%</strong></div>
           <div class="card module-kpi accent-rose"><span>Tasa inasistencia</span><strong id="repTasaInasistencia">0%</strong></div>
           <div class="card module-kpi accent-amber"><span>Tasa aprobación</span><strong id="repTasaAprobacion">0%</strong></div>
           <div class="card module-kpi accent-purple"><span>Tasa certificación</span><strong id="repTasaCertificacion">0%</strong></div>
-          <div class="card module-kpi accent-orange"><span>Brecha demanda</span><strong id="repBrechaDemanda">0</strong></div>
-          <div class="card module-kpi accent-slate"><span>Edad promedio</span><strong id="repEdadPromedio">—</strong></div>
+          <div class="card module-kpi accent-indigo"><span>Recurrencia (2+ cursos)</span><strong id="repTasaRecurrencia">0%</strong></div>
+          <div class="card module-kpi accent-slate"><span>Edad prom. (Ins. / Asis.)</span><strong id="repEdadPromedio">—</strong></div>
+          <div class="card module-kpi accent-orange"><span>Demanda pendiente</span><strong id="repBrechaDemanda">0</strong></div>
+          <div class="card module-kpi accent-teal"><span>Cobertura demanda</span><strong id="repCoberturaDemanda">0%</strong></div>
           <div class="card module-kpi accent-amber"><span>Satisfacción prom.</span><strong id="repSatisfaccionPromedio">—</strong></div>
           <div class="card module-kpi accent-teal"><span>Encuestas aplic.</span><strong id="repTotalEncuestas">0</strong></div>
         </div>
+
+        <div class="section-head" style="margin-top:20px">
+          <div><h3>1. Embudo de participación, fidelización y oferta ejecutada</h3><p>Seguimiento desde la inscripción hasta la certificación y recurrencia de personas en múltiples capacitaciones.</p></div>
+        </div>
         <div class="charts" style="margin-bottom:18px">
-          <div class="card chart-card"><h3>Actividades por temática</h3><div class="chart-wrap"><canvas id="chartRepTematica"></canvas></div></div>
+          <div class="card chart-card"><h3>Embudo de conversión (Inscripción → Certificación)</h3><div class="chart-wrap"><canvas id="chartRepEmbudo"></canvas></div></div>
+          <div class="card chart-card"><h3>Recurrencia de asistentes (cursos por persona)</h3><div class="chart-wrap"><canvas id="chartRepRecurrencia"></canvas></div></div>
+          <div class="card chart-card"><h3>Origen de asistentes (Base Madre vs. Directo)</h3><div class="chart-wrap"><canvas id="chartRepOrigen"></canvas></div></div>
+          <div class="card chart-card"><h3>Actividades por área temática</h3><div class="chart-wrap"><canvas id="chartRepTematica"></canvas></div></div>
           <div class="card chart-card"><h3>Actividades por institución</h3><div class="chart-wrap"><canvas id="chartRepInstitucion"></canvas></div></div>
           <div class="card chart-card"><h3>Actividades por modalidad</h3><div class="chart-wrap"><canvas id="chartRepModalidad"></canvas></div></div>
-          <div class="card chart-card"><h3>Participantes por género</h3><div class="chart-wrap"><canvas id="chartRepGenero"></canvas></div></div>
-          <div class="card chart-card"><h3>Participantes por tramo de edad</h3><div class="chart-wrap"><canvas id="chartRepEdad"></canvas></div></div>
-          <div class="card chart-card"><h3>Participantes por comuna</h3><div class="chart-wrap"><canvas id="chartRepComuna"></canvas></div></div>
         </div>
-        <div class="table-container"><table><thead><tr><th>Actividad</th><th>Año</th><th>Escuela / línea</th><th>Área temática</th><th>Institución</th><th>Modalidad</th><th>Estado</th><th>Cupos</th><th>Inscripciones</th><th>Seleccionadas</th><th>Asistentes</th><th>Satisfacción</th></tr></thead><tbody id="tablaReportes"><tr><td colspan="12" class="empty-state">Seleccione filtros y genere el reporte.</td></tr></tbody></table></div>
+
+        <div class="section-head" style="margin-top:20px">
+          <div><h3>2. Perfil demográfico comparativo: ¿Quiénes se inscriben vs. quiénes participan?</h3><p>Contraste directo de personas únicas inscritas frente a quienes asisten efectivamente a las capacitaciones filtradas.</p></div>
+        </div>
+        <div class="charts" style="margin-bottom:18px">
+          <div class="card chart-card"><h3>Asistentes efectivos por género</h3><div class="chart-wrap"><canvas id="chartRepGenero"></canvas></div></div>
+          <div class="card chart-card"><h3>Inscritos vs. Asistentes por género</h3><div class="chart-wrap"><canvas id="chartRepGeneroComp"></canvas></div></div>
+          <div class="card chart-card"><h3>Inscritos vs. Asistentes por tramo de edad</h3><div class="chart-wrap"><canvas id="chartRepEdad"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 comunas (Inscritos vs. Asistentes)</h3><div class="chart-wrap"><canvas id="chartRepComuna"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 barrios (Inscritos vs. Asistentes)</h3><div class="chart-wrap"><canvas id="chartRepBarrio"></canvas></div></div>
+          <div class="card chart-card"><h3>Nacionalidad (Inscritos vs. Asistentes)</h3><div class="chart-wrap"><canvas id="chartRepNacionalidad"></canvas></div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:20px; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:10px;">
+          <div><h3>2b. Caracterización socioeconómica y productiva (Base Madre)</h3><p id="repSocioNota">Variables de vulnerabilidad, ocupación y emprendimiento de quienes participan, obtenidas desde PERFILES_BASE_MADRE.</p></div>
+          <div class="field" style="min-width:240px; margin:0;">
+            <label style="font-size:11.5px;">Universo a visualizar</label>
+            <select id="repSocioUniverso" onchange="renderSeccionSocioeconomicaReporte()">
+              <option value="asistentes">Asistentes efectivos del reporte</option>
+              <option value="base_madre">Toda la Base Madre (universo completo)</option>
+            </select>
+          </div>
+        </div>
+        <div class="charts" style="margin-bottom:18px">
+          <div class="card chart-card"><h3>Grupos de focalización</h3><div class="chart-wrap"><canvas id="chartRepSocioFocal"></canvas></div></div>
+          <div class="card chart-card"><h3>Situación ocupacional</h3><div class="chart-wrap"><canvas id="chartRepSocioOcup"></canvas></div></div>
+          <div class="card chart-card"><h3>Nivel educacional</h3><div class="chart-wrap"><canvas id="chartRepSocioEdu"></canvas></div></div>
+          <div class="card chart-card"><h3>Tramo Registro Social de Hogares</h3><div class="chart-wrap"><canvas id="chartRepSocioRsh"></canvas></div></div>
+          <div class="card chart-card"><h3>Formalización de emprendimientos (SII)</h3><div class="chart-wrap"><canvas id="chartRepSocioSii"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 rubros de emprendimiento</h3><div class="chart-wrap"><canvas id="chartRepSocioRubro"></canvas></div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:20px">
+          <div><h3>3. Demanda declarada vs. oferta y brechas de cobertura</h3><p>Comparación entre el interés ciudadano registrado (Base Madre e intereses activos) y la respuesta programática ejecutada.</p></div>
+        </div>
+        <div class="charts" style="margin-bottom:18px">
+          <div class="card chart-card"><h3>Demanda total vs. Demanda cubierta (Top 10 áreas)</h3><div class="chart-wrap"><canvas id="chartRepDemandaAreas"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 barrios con demanda aún pendiente</h3><div class="chart-wrap"><canvas id="chartRepDemandaBarrios"></canvas></div></div>
+        </div>
+        <div class="table-container" style="margin-bottom:22px">
+          <table>
+            <thead><tr><th>Escuela / línea</th><th>Área temática</th><th>Personas demandantes</th><th>Cursos ofertados</th><th>Cupos ofertados</th><th>Presión / cupo</th><th>Inscritos totales</th><th>Asistentes totales</th><th>Demandantes cubiertos</th><th>Brecha pendiente</th><th>Cobertura</th></tr></thead>
+            <tbody id="tablaReportesDemanda"><tr><td colspan="11" class="empty-state">Genere el reporte para visualizar la matriz de demanda vs. oferta.</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="section-head" style="margin-top:20px">
+          <div><h3>4. Detalle consolidado por actividad</h3><p>Rendimiento operativo, ocupación, asistencia efectiva y evaluación de satisfacción por cada capacitación filtrada.</p></div>
+        </div>
+        <div class="table-container"><table><thead><tr><th>Actividad</th><th>Año</th><th>Escuela / línea</th><th>Área temática</th><th>Institución</th><th>Modalidad</th><th>Estado</th><th>Cupos</th><th>Inscritos</th><th>Seleccionadas</th><th>Asistentes</th><th>% Asistencia</th><th>Aprobadas</th><th>Satisfacción</th></tr></thead><tbody id="tablaReportes"><tr><td colspan="14" class="empty-state">Seleccione filtros y genere el reporte.</td></tr></tbody></table></div>
       </section>

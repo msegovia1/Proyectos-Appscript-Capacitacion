@@ -8,8 +8,11 @@
           <div class="card kpi"><span>Personas registradas</span><strong id="kpiPersonas">0</strong></div>
           <div class="card kpi"><span>Actividades</span><strong id="kpiActividades">0</strong></div>
           <div class="card kpi"><span>Actividades activas</span><strong id="kpiActivas">0</strong></div>
-          <div class="card kpi"><span>Participaciones</span><strong id="kpiParticipaciones">0</strong></div>
-          <div class="card kpi"><span>Participación efectiva</span><strong id="kpiEfectiva">0</strong></div>
+          <div class="card kpi"><span>Inscripciones totales</span><strong id="kpiParticipaciones">0</strong></div>
+          <div class="card kpi"><span>Inscritos únicos</span><strong id="kpiInscritosUnicos">0</strong></div>
+          <div class="card kpi"><span>Participaciones totales</span><strong id="kpiParticipacionesReales">0</strong></div>
+          <div class="card kpi"><span>Personas únicas capacitadas</span><strong id="kpiAsistentesUnicos">0</strong></div>
+          <div class="card kpi"><span>Participaciones aprobadas</span><strong id="kpiEfectiva">0</strong></div>
           <div class="card kpi"><span>Tasa aprobación</span><strong id="kpiAprobacion">0%</strong></div>
           <div class="card kpi"><span>Tasa participación</span><strong id="kpiTasaParticipacion">0%</strong></div>
           <div class="card kpi"><span>Cupos ofrecidos</span><strong id="kpiCupos">0</strong></div>
@@ -34,13 +37,23 @@
               <p>Actividades en estado Planificada, Difusión, Inscripción abierta o En ejecución.</p>
             </div>
             <div class="kpi-guide-item">
-              <strong>Participaciones</strong>
-              <p>Total de inscripciones o vínculos persona–actividad cuyo registro permanece activo.</p>
-              <span class="kpi-formula">REGISTRO_ACTIVO distinto de “No”</span>
+              <strong>Inscripciones totales / Inscritos únicos</strong>
+              <p>Total de postulaciones activas en actividades vigentes (no únicas) vs. personas distintas que se inscribieron al menos una vez.</p>
+              <span class="kpi-formula">REGISTRO_ACTIVO ≠ “No”</span>
             </div>
             <div class="kpi-guide-item">
-              <strong>Participación efectiva</strong>
-              <p>Personas seleccionadas que finalizaron con un resultado positivo.</p>
+              <strong>Participaciones totales</strong>
+              <p>Total de participaciones reales con asistencia en cursos (una persona suma 1 por cada curso al que asistió). Comparable con mediciones históricas anteriores.</p>
+              <span class="kpi-formula">Σ registros con asistencia ≥ 1 sesión o resultado</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Personas únicas capacitadas</strong>
+              <p>Personas distintas (deduplicadas por RUT/ID) que asistieron efectivamente al menos a una capacitación.</p>
+              <span class="kpi-formula">ID_PERSONA únicos entre Participaciones totales</span>
+            </div>
+            <div class="kpi-guide-item">
+              <strong>Participaciones aprobadas</strong>
+              <p>Participaciones con cierre definitivo positivo en acta.</p>
               <span class="kpi-formula">Participó + Aprobado</span>
             </div>
             <div class="kpi-guide-item">
@@ -83,18 +96,27 @@
         <div class="charts">
           <div class="card chart-card"><h3>Actividades por estado</h3><div class="chart-wrap"><canvas id="chartEstados"></canvas></div></div>
           <div class="card chart-card"><h3>Actividades por escuela / línea</h3><div class="chart-wrap"><canvas id="chartEscuelas"></canvas></div></div>
-          <div class="card chart-card"><h3>Resultados de participación</h3><div class="chart-wrap"><canvas id="chartResultados"></canvas></div></div>
-          <div class="card chart-card"><h3>Áreas temáticas (Top 10)</h3><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>
-          <div class="card chart-card"><h3>Inscripciones por actividad</h3><div class="chart-wrap"><canvas id="chartParticipaciones"></canvas></div></div>
-          <div class="card chart-card"><h3>Participación efectiva por actividad</h3><div class="chart-wrap"><canvas id="chartEfectiva"></canvas></div></div>
+          <div class="card chart-card"><h3>Embudo de conversión (Inscripción → Certificación)</h3><div class="chart-wrap"><canvas id="chartEmbudo"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 actividades: Inscritos vs. Asistentes</h3><div class="chart-wrap"><canvas id="chartActComparativa"></canvas></div></div>
+          <div class="card chart-card"><h3>Áreas temáticas más ofertadas (Top 10)</h3><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>
+          <div class="card chart-card"><h3>Recurrencia de asistentes (fidelización)</h3><div class="chart-wrap"><canvas id="chartRecurrencia"></canvas></div></div>
         </div>
         <div class="section-head" style="margin-top:22px">
-          <div><h3>Perfil de personas registradas y participantes</h3><p>Distribución demográfica de la base central y de quienes participan en actividades.</p></div>
+          <div><h3>1. Perfil demográfico de personas registradas (Base General)</h3><p>Caracterización del universo total de personas inscritas en el ecosistema y Base Madre.</p></div>
         </div>
         <div class="charts">
           <div class="card chart-card"><h3>Personas registradas por género</h3><div class="chart-wrap"><canvas id="chartPerGenero"></canvas></div></div>
-          <div class="card chart-card"><h3>Participantes únicos por género</h3><div class="chart-wrap"><canvas id="chartPartGenero"></canvas></div></div>
-          <div class="card chart-card"><h3>Personas por tramo de edad</h3><div class="chart-wrap"><canvas id="chartPerEdad"></canvas></div></div>
+          <div class="card chart-card"><h3>Personas registradas por tramo de edad</h3><div class="chart-wrap"><canvas id="chartPerEdad"></canvas></div></div>
           <div class="card chart-card"><h3>Top 10 comunas (personas registradas)</h3><div class="chart-wrap"><canvas id="chartPerComuna"></canvas></div></div>
+          <div class="card chart-card"><h3>Nacionalidad (personas registradas)</h3><div class="chart-wrap"><canvas id="chartPerNacionalidad"></canvas></div></div>
+        </div>
+        <div class="section-head" style="margin-top:22px">
+          <div><h3>2. Perfil demográfico de asistentes efectivos</h3><p>Caracterización exclusiva de quienes asisten efectivamente a las capacitaciones (≥1 sesión o participación acreditada).</p></div>
+        </div>
+        <div class="charts">
+          <div class="card chart-card"><h3>Asistentes únicos por género</h3><div class="chart-wrap"><canvas id="chartPartGenero"></canvas></div></div>
+          <div class="card chart-card"><h3>Asistentes únicos por tramo de edad</h3><div class="chart-wrap"><canvas id="chartAsisEdad"></canvas></div></div>
+          <div class="card chart-card"><h3>Top 10 comunas (asistentes únicos)</h3><div class="chart-wrap"><canvas id="chartAsisComuna"></canvas></div></div>
+          <div class="card chart-card"><h3>Nacionalidad (asistentes únicos)</h3><div class="chart-wrap"><canvas id="chartAsisNacionalidad"></canvas></div></div>
         </div>
       </section>

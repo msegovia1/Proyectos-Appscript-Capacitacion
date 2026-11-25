@@ -339,6 +339,10 @@ function obtenerDatosDashboard() {
       PARTICIPA_PMJH: persona.PARTICIPA_PMJH || 'No informado',
       FECHA_NACIMIENTO: persona.FECHA_NACIMIENTO || '',
       EDAD: persona.EDAD === '' ? '' : persona.EDAD,
+      GENERO: persona.GENERO || 'No informado',
+      COMUNA: persona.COMUNA || '',
+      BARRIO: persona.BARRIO || '',
+      NACIONALIDAD: persona.NACIONALIDAD || '',
       CORREO: persona.CORREO || '',
       TELEFONO: persona.TELEFONO || '',
       NOMBRE_ACTIVIDAD: actividad.NOMBRE_ACTIVIDAD || '',
@@ -395,9 +399,8 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   const propiedades = PropertiesService.getScriptProperties();
   // Las claves estables permiten reutilizar el último resumen entre versiones
   // compatibles, evitando un recálculo completo después de cada despliegue.
-  const clave = 'SIGC_DASHBOARD_RESUMEN_V3';
-  const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V3';
-  const clavePersistenteAnterior = 'SIGC_DASHBOARD_ULTIMO_VALIDO_3_6_3';
+  const clave = 'SIGC_DASHBOARD_RESUMEN_V7';
+  const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V7';
   const esDirty = cache.get('SIGC_DASHBOARD_DIRTY') === '1';
   if (!forzarActualizacion && !esDirty) {
     let salidaGuardada = null;
@@ -409,14 +412,10 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
     }
     if (!salidaGuardada) {
       try {
-        const ultimoValido = propiedades.getProperty(clavePersistente) ||
-          propiedades.getProperty(clavePersistenteAnterior);
+        const ultimoValido = propiedades.getProperty(clavePersistente);
         if (ultimoValido) {
           salidaGuardada = JSON.parse(ultimoValido);
           salidaGuardada.desdeResumenPersistente = true;
-          if (!propiedades.getProperty(clavePersistente)) {
-            propiedades.setProperty(clavePersistente, ultimoValido);
-          }
         }
       } catch (error) {
         // Una instantánea dañada o no disponible se reemplaza al recalcular.
@@ -446,7 +445,10 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
       AREA_TEMATICA: a.AREA_TEMATICA || '',
       REGLA_RESULTADO: a.REGLA_RESULTADO || '',
       GENERO: persona.GENERO || 'No informado',
-      EDAD: persona.EDAD === '' ? '' : persona.EDAD
+      EDAD: persona.EDAD === '' ? '' : persona.EDAD,
+      COMUNA: persona.COMUNA || '',
+      BARRIO: persona.BARRIO || '',
+      NACIONALIDAD: persona.NACIONALIDAD || ''
     });
   });
   const salida = {
@@ -581,6 +583,7 @@ function webEnriquecerParticipaciones_(participaciones, personas, actividades) {
       NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '', RUT: persona.RUT || '',
       DOCUMENTO: persona.DOCUMENTO || persona.RUT || '', CORREO: persona.CORREO || '',
       TELEFONO: persona.TELEFONO || '', COMUNA: persona.COMUNA || '',
+      BARRIO: persona.BARRIO || '', NACIONALIDAD: persona.NACIONALIDAD || '',
       GENERO: persona.GENERO || 'No informado', FECHA_NACIMIENTO: persona.FECHA_NACIMIENTO || '',
       EDAD: persona.EDAD === '' ? '' : persona.EDAD,
       PARTICIPA_PMJH: persona.PARTICIPA_PMJH || 'No informado',
@@ -593,99 +596,427 @@ function webEnriquecerParticipaciones_(participaciones, personas, actividades) {
   });
 }
 
-/** Reporte filtrado calculado en servidor. */
-function obtenerReporteEstadistico(filtros) {
-  filtros = filtros || {};
-  const ss = sigcSpreadsheetCentral_();
-  const personas = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS).map(webNormalizarPersonaSalida_);
-  let actividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
-  const coincide = function(valor, filtro) {
-    return !filtro || sigcNormalizarClave(valor) === sigcNormalizarClave(filtro);
-  };
-  actividades = actividades.filter(function(a) {
-    if (!filtros.estado && webEsActividadArchivada_(a)) return false;
-    return coincide(a.ANO, filtros.ano) &&
-      coincide(a.ESCUELA_LINEA || a.PROGRAMA, filtros.escuelaLinea) &&
-      coincide(a.AREA_TEMATICA, filtros.areaTematica) &&
-      coincide(a.INSTITUCION_ASOCIADA, filtros.institucion) &&
-      coincide(a.MODALIDAD, filtros.modalidad) &&
-      coincide(a.ESTADO_ACTIVIDAD, filtros.estado);
+/** Lee de forma liviana y con caché las variables socioeconómicas de PERFILES_BASE_MADRE (sin JSON pesado). */
+function webLeerPerfilesSocioeconomicosLigero_(ss) {
+  const clave = 'SIGC_PERFILES_SOCIOEC_V1';
+  if (_memoriaTablasRequest_.has(clave)) return _memoriaTablasRequest_.get(clave);
+  const cached = sigcObtenerDeCache_(clave);
+  if (cached && typeof cached === 'object') {
+    _memoriaTablasRequest_.set(clave, cached);
+    return cached;
+  }
+  const mapaPerfiles = {};
+  try {
+    const nombreHoja = WEBAPP_CONFIG.HOJAS.PERFILES_BASE_MADRE || 'PERFILES_BASE_MADRE';
+    const hoja = ss.getSheetByName(nombreHoja);
+    if (!hoja || hoja.getLastRow() < 2) return mapaPerfiles;
+    const lastRow = hoja.getLastRow();
+    // Omitimos las últimas columnas de JSON masivo (col 38) para máxima velocidad
+    const anchoLectura = Math.min(hoja.getLastColumn(), 37);
+    const valores = hoja.getRange(1, 1, lastRow, anchoLectura).getValues();
+    const m = mapaEncabezados_(valores[0]);
+    const colId = m['ID PERSONA'];
+    if (colId === undefined) return mapaPerfiles;
+    const cEdu = m['NIVEL EDUCACIONAL'];
+    const cOcup = m['SITUACION OCUPACIONAL'];
+    const cRsh = m['TRAMO RSH'];
+    const cJefe = m['JEFE HOGAR'];
+    const cCuid = m['ES CUIDADOR'];
+    const cDisc = m['DISCAPACIDAD'];
+    const cCred = m['CREDENCIAL DISCAPACIDAD'];
+    const cEmp = m['TIENE EMPRENDIMIENTO'];
+    const cSii = m['FORMALIZADO SII'];
+    const cRubro = m['RUBRO'];
+    const cAreaEmp = m['AREA EMPRENDIMIENTO'];
+
+    for (let r = 1; r < valores.length; r++) {
+      const f = valores[r];
+      const idP = String(f[colId] || '').trim();
+      if (!idP) continue;
+      mapaPerfiles[idP] = {
+        edu: cEdu !== undefined ? String(f[cEdu] || '').trim() : '',
+        ocup: cOcup !== undefined ? String(f[cOcup] || '').trim() : '',
+        rsh: cRsh !== undefined ? String(f[cRsh] || '').trim() : '',
+        jefe: cJefe !== undefined ? String(f[cJefe] || '').trim() : '',
+        cuid: cCuid !== undefined ? String(f[cCuid] || '').trim() : '',
+        disc: (cDisc !== undefined ? String(f[cDisc] || '').trim() : '') || (cCred !== undefined ? String(f[cCred] || '').trim() : ''),
+        emp: cEmp !== undefined ? String(f[cEmp] || '').trim() : '',
+        sii: cSii !== undefined ? String(f[cSii] || '').trim() : '',
+        rubro: (cRubro !== undefined ? String(f[cRubro] || '').trim() : '') || (cAreaEmp !== undefined ? String(f[cAreaEmp] || '').trim() : '')
+      };
+    }
+    _memoriaTablasRequest_.set(clave, mapaPerfiles);
+    sigcGuardarEnCache_(clave, mapaPerfiles, 21600);
+  } catch (ePerf) {
+    console.warn('Advertencia al leer perfiles socioeconómicos: ' + ePerf.message);
+  }
+  return mapaPerfiles;
+}
+
+function webNormalizarEducacion_(v) {
+  const c = sigcNormalizarClave(v);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a'].indexOf(c) >= 0) return 'No informado';
+  if (c.indexOf('postgrado') >= 0 || c.indexOf('magister') >= 0 || c.indexOf('doctor') >= 0) return 'Postgrado';
+  if (c.indexOf('universit') >= 0 || c.indexOf('profesional') >= 0) return 'Universitaria / Profesional';
+  if (c.indexOf('tecnic') >= 0 || c.indexOf('cft') >= 0 || c.indexOf('ip') >= 0) return 'Técnica Nivel Superior';
+  if (c.indexOf('media') >= 0 || c.indexOf('secundar') >= 0 || c.indexOf('liceo') >= 0) return 'Educación Media';
+  if (c.indexOf('basic') >= 0 || c.indexOf('primar') >= 0) return 'Educación Básica';
+  if (c.indexOf('sin estudio') >= 0 || c.indexOf('ningun') >= 0) return 'Sin educación formal';
+  return 'Educación Media';
+}
+
+function webNormalizarOcupacion_(v) {
+  const c = sigcNormalizarClave(v);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a'].indexOf(c) >= 0) return 'No informado';
+  if (c.indexOf('independiente') >= 0 || c.indexOf('cuenta propia') >= 0 || c.indexOf('emprend') >= 0) return 'Independiente / Emprendedor(a)';
+  if (c.indexOf('cesante') >= 0 || c.indexOf('desemple') >= 0 || c.indexOf('buscando') >= 0 || c.indexOf('sin trabajo') >= 0) return 'Cesante / Buscando trabajo';
+  if (c.indexOf('dependiente') >= 0 || c.indexOf('emplead') >= 0 || c.indexOf('asalariad') >= 0 || c.indexOf('contrato') >= 0) return 'Trabajador(a) dependiente';
+  if (c.indexOf('cuidado') >= 0 || c.indexOf('hogar') >= 0 || c.indexOf('casa') >= 0) return 'Labores de cuidado / Hogar';
+  if (c.indexOf('estudian') >= 0) return 'Estudiante';
+  if (c.indexOf('jubilad') >= 0 || c.indexOf('pensionad') >= 0) return 'Jubilado(a) / Pensionado(a)';
+  return webCapitalizarPalabras_(v);
+}
+
+function webNormalizarTramoRSH_(v) {
+  const c = sigcNormalizarClave(v);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a'].indexOf(c) >= 0) return 'No informado';
+  if (c.indexOf('no tiene') >= 0 || c.indexOf('sin rsh') >= 0 || c.indexOf('no cuento') >= 0 || c.indexOf('no sabe') >= 0 || c.indexOf('no se') >= 0) return 'Sin RSH / No sabe';
+  if (c.indexOf('40') >= 0) return '0% – 40% (Mayor vulnerabilidad)';
+  if (c.indexOf('50') >= 0) return '41% – 50%';
+  if (c.indexOf('60') >= 0) return '51% – 60%';
+  if (c.indexOf('70') >= 0) return '61% – 70%';
+  if (c.indexOf('80') >= 0) return '71% – 80%';
+  if (c.indexOf('90') >= 0) return '81% – 90%';
+  if (c.indexOf('100') >= 0) return '91% – 100%';
+  return webCapitalizarPalabras_(v);
+}
+
+function webOrdenarTramosRSH_(lista) {
+  const orden = [
+    '0% – 40% (Mayor vulnerabilidad)', '41% – 50%', '51% – 60%',
+    '61% – 70%', '71% – 80%', '81% – 90%', '91% – 100%', 'Sin RSH / No sabe'
+  ];
+  const mapa = {};
+  (lista || []).forEach(function(x) { mapa[x.nombre] = (mapa[x.nombre] || 0) + Number(x.valor || 0); });
+  const salida = [];
+  orden.forEach(function(k) {
+    if (mapa[k]) { salida.push({ nombre: k, valor: mapa[k] }); delete mapa[k]; }
   });
-  const idsActividad = new Set(actividades.map(function(a) { return String(a.ID_ACTIVIDAD || ''); }));
-  const participaciones = webEnriquecerParticipaciones_(
-    webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES), personas, actividades
-  ).filter(function(p) { return idsActividad.has(String(p.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(p); });
-  const seleccionadas = participaciones.filter(function(p) {
-    return sigcEsSeleccionado(p) || Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó','Aprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
+  Object.keys(mapa).forEach(function(k) {
+    if (mapa[k]) salida.push({ nombre: k, valor: mapa[k] });
   });
-  const asistentes = participaciones.filter(function(p) {
-    return Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó','Aprobado','Desaprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
+  return salida;
+}
+
+function webNormalizarRubroCategoria_(v) {
+  const c = sigcNormalizarClave(v);
+  if (!c || c === 'no aplica' || c === 'ninguno' || c.indexOf('no soy emprend') >= 0 || c.indexOf('no tengo emprend') >= 0) return '';
+  if (/gastronom|restaur|cafeter|comida|alimento|pastel|panad|cocina|repost/.test(c)) return 'Gastronomía y Alimentos';
+  if (/comercio|reventa|bazar|almacen|minimarket|tienda|venta/.test(c)) return 'Comercio y Reventa';
+  if (/manufactur|elaborac/.test(c)) return 'Manufactura y Elaboración';
+  if (/artesan|manualid|bisuter|joyer|ceram/.test(c)) return 'Artesanía y Manualidades';
+  if (/cosmet|estetic|peluquer|belleza|manicur|barber/.test(c)) return 'Cosmética y Estética';
+  if (/textil|costura|confecc|vestuar|ropa|calzado|moda/.test(c)) return 'Textil y Confección';
+  if (/creativ|disen|fotograf|audiovisual|musica|arte/.test(c)) return 'Industria Creativa y Diseño';
+  if (/salud|terapia|masaje|bienestar/.test(c)) return 'Salud y Bienestar';
+  if (/tecnolog|informatic|software|digital|web/.test(c)) return 'Tecnología y Digital';
+  if (/educac|asesor|consultor|contab|clases/.test(c)) return 'Educación y Asesorías';
+  if (/turism|cultura|evento/.test(c)) return 'Turismo y Cultura';
+  if (/servicio|albanil|gasfit|electr|mecan|limpiez|transport|oficio/.test(c)) return 'Servicios y Oficios';
+  return 'Otros Rubros';
+}
+
+function webEsAfirmativoSocio_(v) {
+  const c = sigcNormalizarClave(v);
+  if (!c || c === 'no' || c.indexOf('no ') === 0 || c.indexOf('ningun') >= 0 || c.indexOf('no inform') >= 0) return false;
+  return c === 'si' || c.indexOf('si ') === 0 || c.indexOf('si,') === 0 || sigcNormalizarSiNo(v, 'No') === 'Sí';
+}
+
+function webConstruirPerfilSocioeconomico_(ss, idsPersonasSet, pmjhPorId, etiquetaPoblacion) {
+  const mapaPerfiles = webLeerPerfilesSocioeconomicosLigero_(ss);
+  const ids = Array.from(idsPersonasSet || []);
+  let conPerfil = 0;
+  const listaEdu = [], listaOcup = [], listaRSH = [], listaRubro = [], listaSII = [];
+  let nJefeHogar = 0, nCuidador = 0, nDiscapacidad = 0, nEmprendimiento = 0, nFormalizadoSII = 0, nPMJH = 0;
+
+  ids.forEach(function(idP) {
+    if (pmjhPorId && pmjhPorId[idP] === 'Sí') nPMJH++;
+    const pf = mapaPerfiles[idP];
+    if (!pf) return;
+    conPerfil++;
+    const edu = webNormalizarEducacion_(pf.edu);
+    if (edu !== 'No informado') listaEdu.push({ valor: edu });
+    const ocup = webNormalizarOcupacion_(pf.ocup);
+    if (ocup !== 'No informado') listaOcup.push({ valor: ocup });
+    const rsh = webNormalizarTramoRSH_(pf.rsh);
+    if (rsh !== 'No informado') listaRSH.push({ valor: rsh });
+
+    if (webEsAfirmativoSocio_(pf.jefe)) nJefeHogar++;
+    if (webEsAfirmativoSocio_(pf.cuid)) nCuidador++;
+    if (webEsAfirmativoSocio_(pf.disc)) nDiscapacidad++;
+    const rubroNorm = webNormalizarRubroCategoria_(pf.rubro);
+    const tieneEmp = webEsAfirmativoSocio_(pf.emp) || !!rubroNorm;
+    if (tieneEmp) {
+      nEmprendimiento++;
+      if (rubroNorm) {
+        listaRubro.push({ valor: rubroNorm });
+      }
+      const cSii = sigcNormalizarClave(pf.sii);
+      if (cSii) {
+        const esForm = webEsAfirmativoSocio_(pf.sii) || (cSii.indexOf('formalizad') >= 0 && cSii.indexOf('no ') < 0 && cSii.indexOf('informal') < 0);
+        if (esForm) {
+          nFormalizadoSII++;
+          listaSII.push({ valor: 'Formalizado ante SII' });
+        } else if (cSii.indexOf('no') >= 0 || cSii.indexOf('informal') >= 0) {
+          listaSII.push({ valor: 'No formalizado (Informal)' });
+        } else {
+          listaSII.push({ valor: 'En trámite / Otro' });
+        }
+      }
+    }
   });
-  const aprobadas = participaciones.filter(function(p) { return sigcNormalizarResultado(p.RESULTADO_FINAL) === 'Aprobado' || sigcNormalizarResultado(p.RESULTADO_FINAL) === 'Participó'; });
-  const certificados = participaciones.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
-  const cupos = actividades.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
-  const unicas = new Set(participaciones.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
-  const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
-  const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
-  const interesesFiltrados = intereses.filter(function(i) {
-    return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo' &&
-      coincide(i.ESCUELA_LINEA, filtros.escuelaLinea) &&
-      coincide(i.AREA_TEMATICA, filtros.areaTematica);
-  });
-  const demanda = new Set(interesesFiltrados.map(function(i) { return String(i.ID_PERSONA || ''); }).filter(Boolean));
-  const personasCapacitadas = new Set(asistentes.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
-  const tasaAsistencia = seleccionadas.length ? asistentes.length / seleccionadas.length : 0;
-  const demografia = webConstruirDemografia_(participaciones);
-  const hojaEval = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.EVALUACIONES || 'EVALUACIONES_SATISFACCION');
-  const evaluacionesTodas = hojaEval ? webLeerTablaConCache_(ss, hojaEval.getName()) : [];
-  const evaluacionesFiltradas = evaluacionesTodas.filter(function(ev) {
-    return idsActividad.has(String(ev.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(ev);
-  });
-  const resumenSatGlobal = webCalcularResumenSatisfaccion_(evaluacionesFiltradas);
+
+  const gruposFocalizacion = [
+    { nombre: 'Tiene emprendimiento', valor: nEmprendimiento },
+    { nombre: 'Jefatura de hogar', valor: nJefeHogar },
+    { nombre: 'Emprendimiento formalizado SII', valor: nFormalizadoSII },
+    { nombre: 'Persona cuidadora', valor: nCuidador },
+    { nombre: 'Programa Mujeres Jefas de Hogar (PMJH)', valor: nPMJH },
+    { nombre: 'Situación de discapacidad', valor: nDiscapacidad }
+  ].filter(function(g) { return g.valor > 0; }).sort(function(a, b) { return b.valor - a.valor; });
+
   return {
-    fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
-    indicadores: {
-      actividades: actividades.length, personasUnicas: unicas.size, inscripciones: participaciones.length,
-      seleccionadas: seleccionadas.length, asistentes: asistentes.length, aprobadas: aprobadas.length,
-      certificadas: certificados.length, cupos: cupos,
-      ocupacion: cupos ? seleccionadas.length / cupos : 0,
-      seleccion: participaciones.length ? seleccionadas.length / participaciones.length : 0,
-      asistencia: tasaAsistencia,
-      inasistencia: seleccionadas.length ? 1 - tasaAsistencia : 0,
-      aprobacion: asistentes.length ? aprobadas.length / asistentes.length : 0,
-      certificacion: asistentes.length ? certificados.length / asistentes.length : 0,
-      demandaRegistrada: demanda.size,
-      personasCapacitadas: personasCapacitadas.size,
-      brechaDemanda: Math.max(0, demanda.size - personasCapacitadas.size),
-      coberturaDemanda: demanda.size ? personasCapacitadas.size / demanda.size : 0,
-      satisfaccionPromedio: resumenSatGlobal.promedioGeneral,
-      satisfaccionPorcentaje: resumenSatGlobal.porcentajeSatisfaccion,
-      totalEncuestas: resumenSatGlobal.totalEncuestas
-    },
-    satisfaccionGlobal: resumenSatGlobal,
-    porTematica: webAgruparConteo_(actividades, 'AREA_TEMATICA'),
-    porInstitucion: webAgruparConteo_(actividades, 'INSTITUCION_ASOCIADA'),
-    porModalidad: webAgruparConteo_(actividades, 'MODALIDAD'),
-    porGenero: demografia.porGenero,
-    porTramoEdad: demografia.porTramoEdad,
-    porComuna: demografia.porComuna,
-    porPMJH: demografia.porPMJH,
-    demografia: demografia,
-    actividades: actividades.map(function(a) {
-      const grupo = participaciones.filter(function(p) { return String(p.ID_ACTIVIDAD) === String(a.ID_ACTIVIDAD); });
-      const evalsAct = evaluacionesFiltradas.filter(function(ev) { return String(ev.ID_ACTIVIDAD) === String(a.ID_ACTIVIDAD); });
-      const satAct = webCalcularResumenSatisfaccion_(evalsAct);
-      return {ID_ACTIVIDAD:a.ID_ACTIVIDAD, NOMBRE_ACTIVIDAD:a.NOMBRE_ACTIVIDAD, ANO:a.ANO,
-        ESCUELA_LINEA:a.ESCUELA_LINEA || a.PROGRAMA, AREA_TEMATICA:a.AREA_TEMATICA,
-        INSTITUCION_ASOCIADA:a.INSTITUCION_ASOCIADA, MODALIDAD:a.MODALIDAD,
-        ESTADO_ACTIVIDAD:a.ESTADO_ACTIVIDAD, CUPOS:Number(a.CUPOS)||0, INSCRIPCIONES:grupo.length,
-        SELECCIONADAS:grupo.filter(sigcEsSeleccionado).length,
-        ASISTENTES:grupo.filter(function(p){return Number(p.SESIONES_ASISTIDAS||0)>0;}).length,
-        ENCUESTAS: satAct.totalEncuestas,
-        NOTA_SATISFACCION: satAct.promedioGeneral,
-        PORCENTAJE_SATISFACCION: satAct.porcentajeSatisfaccion};
-    })
+    poblacionEvaluada: etiquetaPoblacion || 'Asistentes efectivos',
+    totalEvaluados: ids.length,
+    personasConPerfilBaseMadre: conPerfil,
+    coberturaPerfil: ids.length ? conPerfil / ids.length : 0,
+    porNivelEducacional: webAgruparConteo_(listaEdu, 'valor'),
+    porSituacionOcupacional: webAgruparConteo_(listaOcup, 'valor'),
+    porTramoRSH: webOrdenarTramosRSH_(webAgruparConteo_(listaRSH, 'valor')),
+    gruposFocalizacion: gruposFocalizacion,
+    porFormalizacionSII: webAgruparConteo_(listaSII, 'valor'),
+    porRubroEmprendimiento: webAgruparConteo_(listaRubro, 'valor').slice(0, 10)
   };
+}
+
+/** Reporte filtrado calculado en servidor: separa Inscritos vs. Asistentes, Embudo, Recurrencia, Demanda y Perfil Socioeconómico. */
+function obtenerReporteEstadistico(filtros) {
+  try {
+    filtros = filtros || {};
+    const ss = sigcSpreadsheetCentral_();
+    const personasRaw = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PERSONAS);
+    const pmjhPorId = {};
+    const personas = personasRaw.map(function(p) {
+      const idP = String(p.ID_PERSONA || '').trim();
+      const pmjh = sigcNormalizarSiNo(p.PARTICIPA_PMJH, 'No informado');
+      if (idP) pmjhPorId[idP] = pmjh;
+      return {
+        ID_PERSONA: idP,
+        GENERO: p.GENERO || 'No informado',
+        FECHA_NACIMIENTO: p.FECHA_NACIMIENTO || '',
+        EDAD: webCalcularEdad_(p.FECHA_NACIMIENTO),
+        COMUNA: p.COMUNA || '',
+        BARRIO: p.BARRIO || '',
+        NACIONALIDAD: p.NACIONALIDAD || '',
+        PARTICIPA_PMJH: pmjh
+      };
+    });
+    const todasActividades = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.ACTIVIDADES);
+    const todasParticipacionesRaw = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
+    const coincide = function(valor, filtro) {
+      return !filtro || sigcNormalizarClave(valor) === sigcNormalizarClave(filtro);
+    };
+    const actividades = todasActividades.filter(function(a) {
+      if (!filtros.estado && webEsActividadArchivada_(a)) return false;
+      return coincide(a.ANO, filtros.ano) &&
+        coincide(a.ESCUELA_LINEA || a.PROGRAMA, filtros.escuelaLinea) &&
+        coincide(a.AREA_TEMATICA, filtros.areaTematica) &&
+        coincide(a.INSTITUCION_ASOCIADA, filtros.institucion) &&
+        coincide(a.MODALIDAD, filtros.modalidad) &&
+        coincide(a.ESTADO_ACTIVIDAD, filtros.estado);
+    });
+    const idsActividad = new Set(actividades.map(function(a) { return String(a.ID_ACTIVIDAD || ''); }));
+    const participacionesTodasEnriq = webEnriquecerParticipaciones_(todasParticipacionesRaw, personas, todasActividades);
+    const participaciones = participacionesTodasEnriq.filter(function(p) {
+      return idsActividad.has(String(p.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(p);
+    });
+
+    const seleccionadas = participaciones.filter(function(p) {
+      return sigcEsSeleccionado(p) || webEsAsistenteReal_(p);
+    });
+    const confirmadas = participaciones.filter(webEsParticipacionConfirmada_);
+    const asistentes = participaciones.filter(webEsAsistenteReal_);
+    const aprobadas = participaciones.filter(function(p) {
+      const r = sigcNormalizarResultado(p.RESULTADO_FINAL);
+      return r === 'Aprobado' || r === 'Participó';
+    });
+    const certificados = participaciones.filter(function(p) {
+      return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí';
+    });
+    const cupos = actividades.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
+    const unicasInscritas = new Set(participaciones.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
+    const unicasAsistentes = new Set(asistentes.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
+
+    const hojaIntereses = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
+    const intereses = hojaIntereses ? webLeerTablaConCache_(ss, hojaIntereses.getName()) : [];
+    const interesesFiltrados = intereses.filter(function(i) {
+      return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo' &&
+        coincide(i.ESCUELA_LINEA, filtros.escuelaLinea) &&
+        coincide(i.AREA_TEMATICA, filtros.areaTematica);
+    });
+
+    // Análisis rápido de demanda con omitirDetalle = true para evitar ordenar miles de textos
+    const analisisDemanda = webConstruirAnalisisDemanda_(personas, interesesFiltrados, actividades, participaciones, todasActividades, participacionesTodasEnriq, true);
+    const coberturaMapa = webMapaCoberturaPersonaArea_(todasActividades, participacionesTodasEnriq);
+
+    const tasaAsistencia = seleccionadas.length ? asistentes.length / seleccionadas.length : 0;
+    const demografiaInscritos = webConstruirDemografia_(participaciones);
+    const demografiaAsistentes = webConstruirDemografia_(asistentes);
+    const comparativaDemografica = webConstruirComparativaDemografica_(demografiaInscritos, demografiaAsistentes);
+    const trayectoria = webConstruirEmbudoYTrayectoria_(participaciones, interesesFiltrados, coberturaMapa);
+
+    const idsSocio = unicasAsistentes.size > 0 ? unicasAsistentes : unicasInscritas;
+    const etiquetaSocio = unicasAsistentes.size > 0 ? 'Asistentes efectivos' : 'Inscritos (actividades aún sin asistencia)';
+    const socioeconomico = webConstruirPerfilSocioeconomico_(ss, idsSocio, pmjhPorId, etiquetaSocio);
+    const mapaPerfilesTodos = webLeerPerfilesSocioeconomicosLigero_(ss);
+    const idsBaseMadre = new Set(Object.keys(mapaPerfilesTodos));
+    const socioeconomicoBaseMadre = webConstruirPerfilSocioeconomico_(ss, idsBaseMadre, pmjhPorId, 'Base Madre completa');
+
+    const hojaEval = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.EVALUACIONES || 'EVALUACIONES_SATISFACCION');
+    const evaluacionesTodas = hojaEval ? webLeerTablaConCache_(ss, hojaEval.getName()) : [];
+    const evaluacionesFiltradas = evaluacionesTodas.filter(function(ev) {
+      return idsActividad.has(String(ev.ID_ACTIVIDAD || '')) && webEsRegistroActivo_(ev);
+    });
+    const resumenSatRaw = webCalcularResumenSatisfaccion_(evaluacionesFiltradas);
+    const resumenSatGlobal = {
+      totalEncuestas: resumenSatRaw.totalEncuestas || 0,
+      promedioGeneral: resumenSatRaw.promedioGeneral || 0,
+      porcentajeSatisfaccion: resumenSatRaw.porcentajeSatisfaccion || 0,
+      promedioRelator: resumenSatRaw.promedioRelator || 0,
+      promedioContenidos: resumenSatRaw.promedioContenidos || 0,
+      promedioOrganizacion: resumenSatRaw.promedioOrganizacion || 0
+    };
+
+    const participacionesPorAct = {};
+    participaciones.forEach(function(p) {
+      const k = String(p.ID_ACTIVIDAD || '');
+      if (!participacionesPorAct[k]) participacionesPorAct[k] = [];
+      participacionesPorAct[k].push(p);
+    });
+    const evalsPorAct = {};
+    evaluacionesFiltradas.forEach(function(ev) {
+      const k = String(ev.ID_ACTIVIDAD || '');
+      if (!evalsPorAct[k]) evalsPorAct[k] = [];
+      evalsPorAct[k].push(ev);
+    });
+
+    const salida = {
+      ok: true,
+      fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
+      indicadores: {
+        actividades: actividades.length,
+        personasUnicas: unicasInscritas.size,
+        asistentesUnicos: unicasAsistentes.size,
+        inscripciones: participaciones.length,
+        seleccionadas: seleccionadas.length,
+        confirmadas: confirmadas.length,
+        asistentes: asistentes.length,
+        aprobadas: aprobadas.length,
+        certificadas: certificados.length,
+        cupos: cupos,
+        ocupacion: cupos ? seleccionadas.length / cupos : 0,
+        seleccion: participaciones.length ? seleccionadas.length / participaciones.length : 0,
+        tasaConfirmacion: seleccionadas.length ? confirmadas.length / seleccionadas.length : 0,
+        asistencia: tasaAsistencia,
+        inasistencia: seleccionadas.length ? 1 - tasaAsistencia : 0,
+        aprobacion: asistentes.length ? aprobadas.length / asistentes.length : 0,
+        certificacion: asistentes.length ? certificados.length / asistentes.length : 0,
+        personasRecurrentes: trayectoria.personasRecurrentes,
+        tasaRecurrencia: trayectoria.tasaRecurrencia,
+        promedioCursosPorAsistente: trayectoria.promedioCursosPorAsistente,
+        tasaOrigenBaseMadre: trayectoria.tasaOrigenBaseMadre,
+        demandaRegistrada: analisisDemanda.resumen.personasConDemanda,
+        interesesActivos: analisisDemanda.resumen.interesesActivos,
+        demandasAtendidas: analisisDemanda.resumen.demandasAtendidas,
+        personasCapacitadas: unicasAsistentes.size,
+        brechaDemanda: analisisDemanda.resumen.demandasPendientes,
+        coberturaDemanda: analisisDemanda.resumen.cobertura,
+        satisfaccionPromedio: resumenSatGlobal.promedioGeneral,
+        satisfaccionPorcentaje: resumenSatGlobal.porcentajeSatisfaccion,
+        totalEncuestas: resumenSatGlobal.totalEncuestas
+      },
+      satisfaccionGlobal: resumenSatGlobal,
+      porTematica: webAgruparConteo_(actividades.map(function(a) { return { valor: a.AREA_TEMATICA ? webCapitalizarPalabras_(a.AREA_TEMATICA) : 'Sin área' }; }), 'valor'),
+      porInstitucion: webAgruparConteo_(actividades.map(function(a) { return { valor: webNormalizarInstitucionCategoria_(a.INSTITUCION_ASOCIADA) }; }), 'valor'),
+      porModalidad: webAgruparConteo_(actividades.map(function(a) { return { valor: webNormalizarModalidadCategoria_(a.MODALIDAD) }; }), 'valor'),
+      porGenero: demografiaAsistentes.porGenero,
+      porTramoEdad: demografiaAsistentes.porTramoEdad,
+      porComuna: demografiaAsistentes.porComuna,
+      porPMJH: demografiaAsistentes.porPMJH,
+      demografia: demografiaAsistentes,
+      demografiaInscritos: demografiaInscritos,
+      demografiaAsistentes: demografiaAsistentes,
+      comparativaDemografica: comparativaDemografica,
+      socioeconomico: socioeconomico,
+      socioeconomicoBaseMadre: socioeconomicoBaseMadre,
+      embudo: trayectoria.embudo,
+      recurrenciaAsistentes: trayectoria.recurrenciaAsistentes,
+      recurrenciaInscritos: trayectoria.recurrenciaInscritos,
+      origenAsistentes: trayectoria.origenAsistentes,
+      trayectoriaPersonas: (trayectoria.trayectoriaPersonas || []).slice(0, 600),
+      demanda: {
+        resumen: analisisDemanda.resumen,
+        filas: analisisDemanda.filas,
+        demografiaDemandantes: analisisDemanda.demografiaDemandantes,
+        demografiaPendientes: analisisDemanda.demografiaPendientes
+      },
+      actividades: actividades.map(function(a) {
+        const idA = String(a.ID_ACTIVIDAD || '');
+        const grupo = participacionesPorAct[idA] || [];
+        const evalsAct = evalsPorAct[idA] || [];
+        const satAct = webCalcularResumenSatisfaccion_(evalsAct);
+        const cuposAct = Number(a.CUPOS) || 0;
+        const selAct = grupo.filter(function(p) { return sigcEsSeleccionado(p) || webEsAsistenteReal_(p); }).length;
+        const confAct = grupo.filter(webEsParticipacionConfirmada_).length;
+        const asisAct = grupo.filter(webEsAsistenteReal_).length;
+        const aprobAct = grupo.filter(function(p) {
+          const rf = sigcNormalizarResultado(p.RESULTADO_FINAL);
+          return rf === 'Aprobado' || rf === 'Participó';
+        }).length;
+        const certAct = grupo.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; }).length;
+        return {
+          ID_ACTIVIDAD: idA,
+          NOMBRE_ACTIVIDAD: String(a.NOMBRE_ACTIVIDAD || ''),
+          ANO: String(a.ANO || ''),
+          ESCUELA_LINEA: String(a.ESCUELA_LINEA || a.PROGRAMA || ''),
+          AREA_TEMATICA: String(a.AREA_TEMATICA || ''),
+          INSTITUCION_ASOCIADA: String(a.INSTITUCION_ASOCIADA || ''),
+          MODALIDAD: String(a.MODALIDAD || ''),
+          ESTADO_ACTIVIDAD: String(a.ESTADO_ACTIVIDAD || ''),
+          CUPOS: cuposAct,
+          INSCRIPCIONES: grupo.length,
+          SELECCIONADAS: selAct,
+          CONFIRMADAS: confAct,
+          ASISTENTES: asisAct,
+          APROBADAS: aprobAct,
+          CERTIFICADAS: certAct,
+          TASA_OCUPACION: cuposAct ? selAct / cuposAct : 0,
+          TASA_ASISTENCIA: selAct ? asisAct / selAct : 0,
+          ENCUESTAS: satAct.totalEncuestas || 0,
+          NOTA_SATISFACCION: satAct.promedioGeneral || 0,
+          PORCENTAJE_SATISFACCION: satAct.porcentajeSatisfaccion || 0
+        };
+      })
+    };
+    return JSON.parse(JSON.stringify(salida));
+  } catch (errRep) {
+    console.error('Error en obtenerReporteEstadistico: ' + errRep.message);
+    return {
+      ok: false,
+      error: true,
+      mensaje: 'Error al calcular reporte: ' + errRep.message
+    };
+  }
 }
 
 /** Listado operativo de asistencia con datos de persona y capacitación. */
@@ -2423,33 +2754,36 @@ function webClaveArea_(linea, area) {
   return sigcNormalizarClave(linea) + '|' + sigcNormalizarClave(area);
 }
 
-/** Mapa ID_PERSONA -> área -> true cuando la capacitación fue efectiva. */
+/** Mapa ID_PERSONA -> área -> true cuando la capacitación fue efectiva o tuvo asistencia real. */
 function webMapaCoberturaPersonaArea_(actividades, participaciones) {
   const actividadesPorId = webIndexar_(actividades.filter(function(actividad) {
     return !webEsActividadArchivada_(actividad);
   }), 'ID_ACTIVIDAD');
   const cobertura = {};
   participaciones.filter(webEsRegistroActivo_).forEach(function(p) {
-    if (!sigcEsSeleccionado(p)) return;
-    const resultado = sigcNormalizarResultado(p.RESULTADO_FINAL);
-    if (['Participó', 'Aprobado'].indexOf(resultado) < 0) return;
+    if (!webEsParticipacionEfectivaReal_(p)) return;
     const actividad = actividadesPorId[p.ID_ACTIVIDAD] || {};
-    if (!actividad.ESCUELA_LINEA || !actividad.AREA_TEMATICA) return;
+    const lineaAct = actividad.ESCUELA_LINEA || actividad.PROGRAMA;
+    if (!lineaAct || !actividad.AREA_TEMATICA) return;
     const idPersona = String(p.ID_PERSONA || '');
     if (!idPersona) return;
     if (!cobertura[idPersona]) cobertura[idPersona] = {};
-    cobertura[idPersona][webClaveArea_(actividad.ESCUELA_LINEA, actividad.AREA_TEMATICA)] = true;
+    cobertura[idPersona][webClaveArea_(lineaAct, actividad.AREA_TEMATICA)] = true;
   });
   return cobertura;
 }
 
-function webConstruirAnalisisDemanda_(personas, intereses, actividades, participaciones) {
+function webConstruirAnalisisDemanda_(personas, intereses, actividades, participaciones, actividadesCobertura, participacionesCobertura, omitirDetalle) {
   const personasPorId = webIndexar_(personas, 'ID_PERSONA');
-  const cobertura = webMapaCoberturaPersonaArea_(actividades, participaciones);
+  const cobertura = webMapaCoberturaPersonaArea_(
+    actividadesCobertura || actividades,
+    participacionesCobertura || participaciones
+  );
   const areas = {};
   const detalle = [];
   const indiceDetallePorClave = {};
   const personasConDemanda = new Set();
+  const personasConDemandaPendiente = new Set();
 
   function asegurarArea(linea, area) {
     const clave = webClaveArea_(linea, area);
@@ -2462,6 +2796,9 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
         capacitadas: new Set(),
         inscritos: new Set(),
         seleccionados: new Set(),
+        inscritosTotalesOferta: 0,
+        asistentesTotalesOferta: 0,
+        cuposOfertados: 0,
         actividades: new Set()
       };
     }
@@ -2479,6 +2816,8 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
     agrupacion.demandantes.add(idPersona);
     personasConDemanda.add(idPersona);
     if (capacitada) agrupacion.capacitadas.add(idPersona);
+    else personasConDemandaPendiente.add(idPersona);
+    if (omitirDetalle) return;
     const claveDetalle = idPersona + '|' + agrupacion.clave;
     const persona = personasPorId[idPersona] || {};
     const ordenReciente = webFechaNumero_(
@@ -2491,7 +2830,10 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
         ID_PERSONA: idPersona,
         NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
         CORREO: persona.CORREO || '',
-        COMUNA: persona.COMUNA || '',
+        COMUNA: webNormalizarComunaCategoria_(persona.COMUNA),
+        BARRIO: webNormalizarBarrioCategoria_(persona.BARRIO),
+        GENERO: webNormalizarGeneroCategoria_(persona.GENERO),
+        EDAD: persona.EDAD !== undefined && persona.EDAD !== '' ? persona.EDAD : webCalcularEdad_(persona.FECHA_NACIMIENTO),
         ESCUELA_LINEA: linea,
         AREA_TEMATICA: area,
         CAPACITADA: capacitada ? 'Sí' : 'No',
@@ -2508,33 +2850,45 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
   }), 'ID_ACTIVIDAD');
   actividades.forEach(function(actividad) {
     if (webEsActividadArchivada_(actividad)) return;
-    if (!actividad.ESCUELA_LINEA || !actividad.AREA_TEMATICA) return;
-    asegurarArea(actividad.ESCUELA_LINEA, actividad.AREA_TEMATICA)
-      .actividades.add(String(actividad.ID_ACTIVIDAD || ''));
+    const lineaAct = actividad.ESCUELA_LINEA || actividad.PROGRAMA;
+    if (!lineaAct || !actividad.AREA_TEMATICA) return;
+    const ag = asegurarArea(lineaAct, actividad.AREA_TEMATICA);
+    const idAct = String(actividad.ID_ACTIVIDAD || '');
+    if (idAct && !ag.actividades.has(idAct)) {
+      ag.actividades.add(idAct);
+      ag.cuposOfertados += Number(actividad.CUPOS || 0);
+    }
   });
   participaciones.filter(webEsRegistroActivo_).forEach(function(p) {
     const actividad = actividadesPorId[p.ID_ACTIVIDAD] || {};
-    if (!actividad.ESCUELA_LINEA || !actividad.AREA_TEMATICA) return;
-    const agrupacion = asegurarArea(actividad.ESCUELA_LINEA, actividad.AREA_TEMATICA);
+    const lineaAct = actividad.ESCUELA_LINEA || actividad.PROGRAMA;
+    if (!lineaAct || !actividad.AREA_TEMATICA) return;
+    const agrupacion = asegurarArea(lineaAct, actividad.AREA_TEMATICA);
+    agrupacion.inscritosTotalesOferta++;
+    if (webEsAsistenteReal_(p)) agrupacion.asistentesTotalesOferta++;
     const idPersona = String(p.ID_PERSONA || '');
     if (!idPersona) return;
-    // El embudo de Demanda solo considera a quienes declararon ese mismo interés.
-    // Así no se mezclan participantes del área que nunca formaron parte de la demanda declarada.
+    // El embudo de Demanda considera a quienes declararon ese mismo interés.
     if (!agrupacion.demandantes.has(idPersona)) return;
     agrupacion.inscritos.add(idPersona);
-    if (sigcEsSeleccionado(p)) agrupacion.seleccionados.add(idPersona);
+    if (sigcEsSeleccionado(p) || webEsAsistenteReal_(p)) agrupacion.seleccionados.add(idPersona);
   });
 
   const filas = Object.keys(areas).map(function(clave) {
     const item = areas[clave];
     const demanda = item.demandantes.size;
     const capacitadas = item.capacitadas.size;
+    const cuposOf = item.cuposOfertados;
     return {
       CLAVE: clave,
       ESCUELA_LINEA: item.escuelaLinea,
       AREA_TEMATICA: item.areaTematica,
       DEMANDANTES: demanda,
       ACTIVIDADES_OFERTADAS: Array.from(item.actividades).filter(Boolean).length,
+      CUPOS_OFERTADOS: cuposOf,
+      PRESION_CUPOS: cuposOf > 0 ? demanda / cuposOf : null,
+      INSCRITOS_OFERTA: item.inscritosTotalesOferta,
+      ASISTENTES_OFERTA: item.asistentesTotalesOferta,
       INSCRITOS: item.inscritos.size,
       SELECCIONADOS: item.seleccionados.size,
       CAPACITADAS: capacitadas,
@@ -2542,21 +2896,22 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
       COBERTURA: demanda ? capacitadas / demanda : 0
     };
   }).filter(function(item) {
-    return item.DEMANDANTES > 0;
+    return item.DEMANDANTES > 0 || item.ACTIVIDADES_OFERTADAS > 0;
   }).sort(function(a, b) {
-    return b.DEMANDANTES - a.DEMANDANTES || b.PENDIENTES - a.PENDIENTES;
+    return b.DEMANDANTES - a.DEMANDANTES || b.PENDIENTES - a.PENDIENTES || b.ASISTENTES_OFERTA - a.ASISTENTES_OFERTA;
   });
 
-  const totalVinculos = filas.reduce(function(total, fila) { return total + fila.DEMANDANTES; }, 0);
-  const totalAtendidos = filas.reduce(function(total, fila) { return total + fila.CAPACITADAS; }, 0);
+  const filasConDemanda = filas.filter(function(f) { return f.DEMANDANTES > 0; });
+  const totalVinculos = filasConDemanda.reduce(function(total, fila) { return total + fila.DEMANDANTES; }, 0);
+  const totalAtendidos = filasConDemanda.reduce(function(total, fila) { return total + fila.CAPACITADAS; }, 0);
   const porEscuela = {};
-  filas.forEach(function(fila) {
+  filasConDemanda.forEach(function(fila) {
     porEscuela[fila.ESCUELA_LINEA] = (porEscuela[fila.ESCUELA_LINEA] || 0) + fila.DEMANDANTES;
   });
   const escuelas = Object.keys(porEscuela).map(function(nombre) {
     return {nombre: nombre, valor: porEscuela[nombre]};
   }).sort(function(a, b) { return b.valor - a.valor; });
-  const areasRanking = filas.map(function(fila) {
+  const areasRanking = filasConDemanda.map(function(fila) {
     return {
       nombre: fila.AREA_TEMATICA,
       escuela: fila.ESCUELA_LINEA,
@@ -2565,9 +2920,20 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
       pendientes: fila.PENDIENTES
     };
   }).sort(function(a, b) { return b.valor - a.valor; });
+
+  const listaDemandantes = Array.from(personasConDemanda).map(function(idP) {
+    return personasPorId[idP] || { ID_PERSONA: idP };
+  });
+  const listaPendientes = Array.from(personasConDemandaPendiente).map(function(idP) {
+    return personasPorId[idP] || { ID_PERSONA: idP };
+  });
+  const demDemandantes = webConstruirDemografia_(listaDemandantes);
+  const demPendientes = webConstruirDemografia_(listaPendientes);
+
   return {
     resumen: {
       personasConDemanda: personasConDemanda.size,
+      personasConDemandaPendiente: personasConDemandaPendiente.size,
       interesesActivos: totalVinculos,
       demandasAtendidas: totalAtendidos,
       demandasPendientes: Math.max(totalVinculos - totalAtendidos, 0),
@@ -2576,13 +2942,20 @@ function webConstruirAnalisisDemanda_(personas, intereses, actividades, particip
       areaMasDemandada: areasRanking.length ? areasRanking[0].nombre : ''
     },
     filas: filas,
-    detalle: detalle.sort(function(a, b) {
-      return (b.ORDEN_RECIENTE || 0) - (a.ORDEN_RECIENTE || 0) ||
-        String(a.NOMBRE_COMPLETO).localeCompare(String(b.NOMBRE_COMPLETO), 'es', {sensitivity: 'base'});
+    demografiaDemandantes: demDemandantes,
+    demografiaPendientes: demPendientes,
+    detalle: omitirDetalle ? [] : detalle.sort(function(a, b) {
+      const dif = (b.ORDEN_RECIENTE || 0) - (a.ORDEN_RECIENTE || 0);
+      if (dif !== 0) return dif;
+      return String(a.NOMBRE_COMPLETO) < String(b.NOMBRE_COMPLETO) ? -1 : 1;
     }),
     graficos: {
       porEscuela: escuelas,
-      rankingAreas: areasRanking.slice(0, 10)
+      rankingAreas: areasRanking.slice(0, 10),
+      porGenero: demDemandantes.porGenero,
+      porTramoEdad: demDemandantes.porTramoEdad,
+      porComuna: demDemandantes.porComuna.slice(0, 10),
+      porBarrioPendiente: demPendientes.porBarrio.slice(0, 10)
     }
   };
 }
@@ -2854,6 +3227,10 @@ function webInvalidarDashboard_() {
   try {
     const cache = CacheService.getScriptCache();
     cache.remove('SIGC_DASHBOARD_RESUMEN_V3');
+    cache.remove('SIGC_DASHBOARD_RESUMEN_V4');
+    cache.remove('SIGC_DASHBOARD_RESUMEN_V5');
+    cache.remove('SIGC_DASHBOARD_RESUMEN_V6');
+    cache.remove('SIGC_DASHBOARD_RESUMEN_V7');
     cache.put('SIGC_DASHBOARD_DIRTY', '1', 21600);
   } catch (e) {
     console.warn('Error al invalidar caché de dashboard: ' + e.message);
@@ -2914,19 +3291,21 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
     ) >= 0;
   }).length;
   const cupos = actividadesOperativas.reduce(function(s, a) { return s + (Number(a.CUPOS) || 0); }, 0);
-  const asistentes = activasRegistro.filter(function(p) {
-    return Number(p.SESIONES_ASISTIDAS || 0) > 0 || ['Participó', 'Aprobado', 'Desaprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
-  });
+  const asistentes = activasRegistro.filter(webEsAsistenteReal_);
   const certificados = activasRegistro.filter(function(p) { return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí'; });
+  const inscritosUnicos = new Set(activasRegistro.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
   const demandaPersonas = new Set((intereses || []).filter(function(i) {
     return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo';
   }).map(function(i) { return String(i.ID_PERSONA || ''); }).filter(Boolean));
   const capacitadas = new Set(asistentes.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
   return {
     totalPersonas: personas.length,
+    totalInscritosUnicos: inscritosUnicos.size,
+    totalAsistentesUnicos: capacitadas.size,
     totalActividades: actividadesOperativas.length,
     actividadesActivas: activas,
     totalParticipaciones: activasRegistro.length,
+    totalAsistencias: asistentes.length,
     participacionEfectiva: efectivas,
     tasaAprobacion: evaluables.length
       ? aprobados / evaluables.length
@@ -2982,7 +3361,7 @@ function webAgruparTramosEdad_(personas) {
 
 function webNormalizarGeneroCategoria_(valor) {
   const c = sigcNormalizarClave(valor);
-  if (!c || c === 'no informado' || c === 'sin informacion' || c === 'na' || c === 'n a') {
+  if (!c || c === 'no informado' || c === 'sin informacion' || c === 'na' || c === 'n a' || c.indexOf('prefiere no') >= 0 || c.indexOf('prefiero no') >= 0) {
     return 'No informado';
   }
   if (c.indexOf('mujer') >= 0 || c.indexOf('femen') >= 0 || c === 'f') return 'Femenino';
@@ -2990,26 +3369,345 @@ function webNormalizarGeneroCategoria_(valor) {
   return 'Otro';
 }
 
-/** Demografía agregada; nunca devuelve una nómina de personas. */
-function webConstruirDemografia_(participaciones) {
+function webCapitalizarPalabras_(texto) {
+  return String(texto || '').trim().replace(/\s+/g, ' ').split(' ').map(function(w, idx) {
+    const low = w.toLowerCase();
+    if (idx > 0 && ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'en'].indexOf(low) >= 0) return low;
+    return low ? low.charAt(0).toUpperCase() + low.slice(1) : '';
+  }).join(' ');
+}
+
+function webNormalizarComunaCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a', 'sin comuna', 'ninguna', '-'].indexOf(c) >= 0) {
+    return 'No informado';
+  }
+  const mapaComunas = {
+    'santiago': 'Santiago', 'santiago centro': 'Santiago', 'stgo': 'Santiago', 'stgo centro': 'Santiago',
+    'estacion central': 'Estación Central', 'maipu': 'Maipú', 'nunoa': 'Ñuñoa',
+    'penalolen': 'Peñalolén', 'conchali': 'Conchalí', 'san joaquin': 'San Joaquín',
+    'san ramon': 'San Ramón', 'curacavi': 'Curacaví', 'alhue': 'Alhué', 'maria pinto': 'María Pinto',
+    'jose maria caro': 'Lo Espejo', 'puente alto': 'Puente Alto', 'la florida': 'La Florida',
+    'san miguel': 'San Miguel', 'independencia': 'Independencia', 'recoleta': 'Recoleta',
+    'quinta normal': 'Quinta Normal', 'pedro aguirre cerda': 'Pedro Aguirre Cerda',
+    'providencia': 'Providencia', 'las condes': 'Las Condes', 'macul': 'Macul',
+    'san bernardo': 'San Bernardo', 'quilicura': 'Quilicura', 'pudahuel': 'Pudahuel',
+    'cerro navia': 'Cerro Navia', 'lo prado': 'Lo Prado', 'cerrillos': 'Cerrillos',
+    'la cisterna': 'La Cisterna', 'el bosque': 'El Bosque', 'la granja': 'La Granja',
+    'la pintana': 'La Pintana', 'lo espejo': 'Lo Espejo', 'renca': 'Renca', 'huechuraba': 'Huechuraba'
+  };
+  return mapaComunas[c] || webCapitalizarPalabras_(valor);
+}
+
+function webNormalizarBarrioCategoria_(valor) {
+  let c = sigcNormalizarClave(valor);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a', 'sin barrio', 'no se', 'ninguno', '-'].indexOf(c) >= 0) {
+    return 'No informado';
+  }
+  if (c.indexOf('fuera de la comuna') >= 0 || c.indexOf('otra comuna') >= 0) return 'Fuera de Santiago';
+  if (c.indexOf('otro sector') >= 0) return 'Otro sector de Santiago';
+  c = c.replace(/^barrio\s+/, '').replace(/^sector\s+/, '').trim();
+  const mapaBarrios = {
+    'yungay': 'Yungay', 'franklin': 'Franklin', 'brasil': 'Brasil', 'meiggs': 'Meiggs',
+    'lastarria': 'Lastarria', 'republica': 'República', 'ejercito': 'Ejército',
+    'matta sur': 'Matta Sur', 'matta norte': 'Matta Norte', 'santa isabel': 'Santa Isabel',
+    'parque ohiggins': "Parque O'Higgins", 'parque o higgins': "Parque O'Higgins",
+    'parque almagro': 'Parque Almagro', 'paris londres': 'París - Londres',
+    'santa lucia forestal': 'Santa Lucía - Forestal', 'concha y toro': 'Concha y Toro',
+    'dieciocho': 'Dieciocho', 'huemul': 'Huemul', 'bogota': 'Bogotá',
+    'san eugenio': 'San Eugenio', 'san vicente': 'San Vicente', 'san borja': 'San Borja',
+    'san diego': 'San Diego', 'plaza de armas': 'Plaza de Armas', 'civico': 'Cívico',
+    'arturo prat': 'Arturo Prat', 'balmaceda': 'Balmaceda', 'club hipico': 'Club Hípico',
+    'panama': 'Panamá', 'viel': 'Viel'
+  };
+  return mapaBarrios[c] || webCapitalizarPalabras_(c);
+}
+
+function webNormalizarEstadoActividadCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c) return 'Planificada';
+  if (c.indexOf('planific') >= 0) return 'Planificada';
+  if (c.indexOf('difus') >= 0) return 'Difusión';
+  if (c.indexOf('inscripc') >= 0) return 'Inscripción abierta';
+  if (c.indexOf('ejecuc') >= 0) return 'En ejecución';
+  if (c.indexOf('ejecutad') >= 0) return 'Ejecutada';
+  if (c.indexOf('cerrad') >= 0) return 'Cerrada';
+  if (c.indexOf('suspend') >= 0) return 'Suspendida';
+  return webCapitalizarPalabras_(valor);
+}
+
+function webNormalizarEscuelaCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c) return 'Sin línea';
+  if (c.indexOf('emprend') >= 0) return 'Emprendimiento';
+  if (c.indexOf('empleo') >= 0 || c.indexOf('empleabil') >= 0) return 'Empleo';
+  if (c.indexOf('transvers') >= 0 || c.indexOf('digital') >= 0) return 'Transversal';
+  return webCapitalizarPalabras_(valor);
+}
+
+function webNormalizarModalidadCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c) return 'Presencial';
+  if (c.indexOf('presenc') >= 0) return 'Presencial';
+  if (c.indexOf('virtual') >= 0 || c.indexOf('online') >= 0 || c.indexOf('linea') >= 0) return 'Virtual';
+  if (c.indexOf('hibrid') >= 0 || c.indexOf('mixta') >= 0 || c.indexOf('semipresenc') >= 0) return 'Híbrida';
+  return webCapitalizarPalabras_(valor);
+}
+
+function webNormalizarInstitucionCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c || c === 'no informado' || c === 'sin institucion') return 'Sin institución / Interna';
+  if (c.indexOf('sence') >= 0) return 'SENCE';
+  if (c.indexOf('sercotec') >= 0) return 'SERCOTEC';
+  if (c.indexOf('fosis') >= 0) return 'FOSIS';
+  if (c.indexOf('ipchile') >= 0 || c.indexOf('ip chile') >= 0) return 'IPChile';
+  if (c.indexOf('aiep') >= 0) return 'AIEP';
+  if (c.indexOf('santiago') >= 0 || c.indexOf('didel') >= 0 || c.indexOf('municipal') >= 0) return 'Municipalidad de Santiago';
+  return webCapitalizarPalabras_(valor);
+}
+
+function webNormalizarNacionalidadCategoria_(valor) {
+  const c = sigcNormalizarClave(valor);
+  if (!c || ['no informado', 'sin informacion', 'na', 'n a', '-'].indexOf(c) >= 0) {
+    return 'No informado';
+  }
+  if (c.indexOf('chil') === 0) return 'Chilena';
+  if (c.indexOf('venez') === 0) return 'Venezolana';
+  if (c.indexOf('peru') === 0) return 'Peruana';
+  if (c.indexOf('colomb') === 0) return 'Colombiana';
+  if (c.indexOf('hait') === 0) return 'Haitiana';
+  if (c.indexOf('boliv') === 0) return 'Boliviana';
+  if (c.indexOf('ecuat') === 0 || c.indexOf('ecuad') === 0) return 'Ecuatoriana';
+  if (c.indexOf('argent') === 0) return 'Argentina';
+  if (c.indexOf('dominic') >= 0) return 'Dominicana';
+  if (c.indexOf('cuban') === 0 || c === 'cuba') return 'Cubana';
+  if (c.indexOf('brasil') === 0) return 'Brasileña';
+  if (c.indexOf('paragu') === 0) return 'Paraguaya';
+  if (c.indexOf('urugu') === 0) return 'Uruguaya';
+  if (c.indexOf('mexic') === 0) return 'Mexicana';
+  if (c.indexOf('espan') === 0) return 'Española';
+  return webCapitalizarPalabras_(valor);
+}
+
+function webEsAsistenteReal_(p) {
+  if (!p) return false;
+  const ses = Number(p.SESIONES_ASISTIDAS || 0);
+  const resF = sigcNormalizarResultado(p.RESULTADO_FINAL);
+  const resA = sigcNormalizarTexto(p.RESULTADO_ASISTENCIA);
+  return ses > 0 || ['Participó', 'Aprobado', 'Desaprobado'].indexOf(resF) >= 0 ||
+    ['Participó', 'Asistió'].indexOf(resA) >= 0;
+}
+
+function webEsParticipacionEfectivaReal_(p) {
+  if (!p) return false;
+  const resF = sigcNormalizarResultado(p.RESULTADO_FINAL);
+  if (['Participó', 'Aprobado'].indexOf(resF) >= 0) return true;
+  return Number(p.SESIONES_ASISTIDAS || 0) > 0 && !sigcEsResultadoDefinitivo(p.RESULTADO_FINAL);
+}
+
+/** Demografía agregada sobre personas únicas; nunca devuelve PII directa. */
+function webConstruirDemografia_(registros) {
   const porId = {};
-  (participaciones || []).forEach(function(p) {
-    const id = String(p.ID_PERSONA || '');
-    if (id && !porId[id]) porId[id] = p;
+  (registros || []).forEach(function(p, idx) {
+    const id = String(p.ID_PERSONA || '').trim() || ('_ANON_' + idx);
+    if (!porId[id]) {
+      porId[id] = Object.assign({}, p);
+    } else {
+      ['GENERO', 'EDAD', 'COMUNA', 'BARRIO', 'NACIONALIDAD', 'PARTICIPA_PMJH'].forEach(function(k) {
+        const act = porId[id][k];
+        if ((act === '' || act === null || act === undefined || act === 'No informado') &&
+            p[k] !== '' && p[k] !== null && p[k] !== undefined && p[k] !== 'No informado') {
+          porId[id][k] = p[k];
+        }
+      });
+    }
   });
   const personas = Object.keys(porId).map(function(id) { return porId[id]; });
   const edades = personas.map(function(p) {
-    return webEdadNumeroValida_(p.EDAD);
-  }).filter(function(e) { return e !== null; });
+    const e = webEdadNumeroValida_(p.EDAD !== undefined && p.EDAD !== '' ? p.EDAD : webCalcularEdad_(p.FECHA_NACIMIENTO));
+    return e;
+  }).filter(function(e) { return e !== null; }).sort(function(a, b) { return a - b; });
+  const medianaEdad = edades.length
+    ? (edades.length % 2 === 1
+        ? edades[Math.floor(edades.length / 2)]
+        : (edades[edades.length / 2 - 1] + edades[edades.length / 2]) / 2)
+    : null;
+  const porGenero = webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarGeneroCategoria_(p.GENERO)}; }), 'valor');
+  const porTramoEdad = webAgruparTramosEdad_(personas.map(function(p) {
+    return { EDAD: p.EDAD !== undefined && p.EDAD !== '' ? p.EDAD : webCalcularEdad_(p.FECHA_NACIMIENTO) };
+  }));
+  const porComuna = webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarComunaCategoria_(p.COMUNA)}; }), 'valor');
+  const porBarrioTodos = webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarBarrioCategoria_(p.BARRIO)}; }), 'valor');
+  const barriosInformados = porBarrioTodos.filter(function(x) { return x.nombre !== 'No informado'; });
+  const porNacionalidad = webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarNacionalidadCategoria_(p.NACIONALIDAD)}; }), 'valor');
+  const porPMJH = webAgruparConteo_(personas.map(function(p) { return {valor: p.PARTICIPA_PMJH || 'No informado'}; }), 'valor');
+
+  const totalGeneroInf = porGenero.filter(function(x) { return x.nombre !== 'No informado'; }).reduce(function(s, x) { return s + x.valor; }, 0);
+  const fem = (porGenero.find(function(x) { return x.nombre === 'Femenino'; }) || {valor: 0}).valor;
+  const totalNacInf = porNacionalidad.filter(function(x) { return x.nombre !== 'No informado'; }).reduce(function(s, x) { return s + x.valor; }, 0);
+  const chil = (porNacionalidad.find(function(x) { return x.nombre === 'Chilena'; }) || {valor: 0}).valor;
+  const totalComInf = porComuna.filter(function(x) { return x.nombre !== 'No informado'; }).reduce(function(s, x) { return s + x.valor; }, 0);
+  const stgo = (porComuna.find(function(x) { return x.nombre === 'Santiago'; }) || {valor: 0}).valor;
+
   return {
+    totalPersonas: personas.length,
     personasConDatoEdad: edades.length,
     edadPromedio: edades.length ? edades.reduce(function(s, e) { return s + e; }, 0) / edades.length : null,
-    porGenero: webAgruparConteo_(personas.map(function(p) { return {valor: webNormalizarGeneroCategoria_(p.GENERO)}; }), 'valor'),
-    porTramoEdad: webAgruparTramosEdad_(personas),
-    porComuna: webAgruparConteo_(personas.map(function(p) { return {valor: p.COMUNA || 'No informado'}; }), 'valor'),
-    porPMJH: webAgruparConteo_(personas.map(function(p) { return {valor: p.PARTICIPA_PMJH || 'No informado'}; }), 'valor')
+    medianaEdad: medianaEdad,
+    porcentajeFemenino: totalGeneroInf ? fem / totalGeneroInf : 0,
+    porcentajeExtranjeros: totalNacInf ? Math.max(0, totalNacInf - chil) / totalNacInf : 0,
+    porcentajeSantiago: totalComInf ? stgo / totalComInf : 0,
+    porGenero: porGenero,
+    porTramoEdad: porTramoEdad,
+    porComuna: porComuna,
+    porBarrio: barriosInformados.length ? barriosInformados : porBarrioTodos,
+    porBarrioCompleto: porBarrioTodos,
+    porNacionalidad: porNacionalidad,
+    porPMJH: porPMJH
   };
 }
+
+function webConstruirSerieComparativa_(listaInscritos, listaAsistentes, limite, mantenerOrdenInscritos) {
+  const mapaAsis = {};
+  (listaAsistentes || []).forEach(function(x) { mapaAsis[x.nombre] = Number(x.valor || 0); });
+  const base = (listaInscritos || []).map(function(x) {
+    const ins = Number(x.valor || 0);
+    const asis = mapaAsis[x.nombre] || 0;
+    return {
+      nombre: x.nombre,
+      inscritos: ins,
+      asistentes: asis,
+      tasaAsistencia: ins > 0 ? asis / ins : 0
+    };
+  });
+  if (!mantenerOrdenInscritos) {
+    base.sort(function(a, b) { return b.inscritos - a.inscritos || b.asistentes - a.asistentes; });
+  }
+  return limite ? base.slice(0, limite) : base;
+}
+
+function webConstruirComparativaDemografica_(demInscritos, demAsistentes) {
+  const ins = demInscritos || {};
+  const asis = demAsistentes || {};
+  return {
+    porGenero: webConstruirSerieComparativa_(ins.porGenero, asis.porGenero, 0, true),
+    porTramoEdad: webConstruirSerieComparativa_(ins.porTramoEdad, asis.porTramoEdad, 0, true),
+    porComuna: webConstruirSerieComparativa_(ins.porComuna, asis.porComuna, 10, true),
+    porBarrio: webConstruirSerieComparativa_(ins.porBarrio, asis.porBarrio, 10, true),
+    porNacionalidad: webConstruirSerieComparativa_(ins.porNacionalidad, asis.porNacionalidad, 8, true)
+  };
+}
+
+function webConstruirEmbudoYTrayectoria_(participacionesActivas, interesesActivos, coberturaMapa) {
+  const lista = Array.isArray(participacionesActivas) ? participacionesActivas : [];
+  const seleccionadas = lista.filter(function(p) {
+    return sigcEsSeleccionado(p) || webEsAsistenteReal_(p);
+  });
+  const confirmadas = lista.filter(function(p) {
+    return webEsParticipacionConfirmada_(p);
+  });
+  const asistentes = lista.filter(webEsAsistenteReal_);
+  const efectivas = lista.filter(function(p) {
+    return ['Participó', 'Aprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0;
+  });
+  const certificadas = lista.filter(function(p) {
+    return sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí';
+  });
+
+  const embudo = [
+    { nombre: '1. Inscripciones', valor: lista.length },
+    { nombre: '2. Seleccionadas', valor: seleccionadas.length },
+    { nombre: '3. Confirmadas', valor: confirmadas.length },
+    { nombre: '4. Asistentes (≥1 ses.)', valor: asistentes.length },
+    { nombre: '5. Aprobadas / Participó', valor: efectivas.length },
+    { nombre: '6. Certificadas', valor: certificadas.length }
+  ];
+
+  // Agrupación por persona única para trayectoria y recurrencia
+  const demandaPorPersona = {};
+  (interesesActivos || []).forEach(function(i) {
+    const idP = String(i.ID_PERSONA || '').trim();
+    if (!idP) return;
+    demandaPorPersona[idP] = (demandaPorPersona[idP] || 0) + 1;
+  });
+
+  const porPersona = {};
+  lista.forEach(function(p) {
+    const idP = String(p.ID_PERSONA || '').trim();
+    if (!idP) return;
+    if (!porPersona[idP]) {
+      porPersona[idP] = {
+        ID_PERSONA: idP,
+        GENERO: webNormalizarGeneroCategoria_(p.GENERO),
+        EDAD: p.EDAD !== undefined && p.EDAD !== '' ? p.EDAD : webCalcularEdad_(p.FECHA_NACIMIENTO),
+        COMUNA: webNormalizarComunaCategoria_(p.COMUNA),
+        BARRIO: webNormalizarBarrioCategoria_(p.BARRIO),
+        NACIONALIDAD: webNormalizarNacionalidadCategoria_(p.NACIONALIDAD),
+        INSCRIPCIONES: 0,
+        SELECCIONES: 0,
+        ASISTENCIAS: 0,
+        EFECTIVAS: 0,
+        CERTIFICADOS: 0,
+        DEMANDAS_DECLARADAS: demandaPorPersona[idP] || 0,
+        DEMANDAS_CUBIERTAS: coberturaMapa && coberturaMapa[idP] ? Object.keys(coberturaMapa[idP]).length : 0
+      };
+    }
+    const item = porPersona[idP];
+    item.INSCRIPCIONES++;
+    if (sigcEsSeleccionado(p) || webEsAsistenteReal_(p)) item.SELECCIONES++;
+    if (webEsAsistenteReal_(p)) item.ASISTENCIAS++;
+    if (['Participó', 'Aprobado'].indexOf(sigcNormalizarResultado(p.RESULTADO_FINAL)) >= 0) item.EFECTIVAS++;
+    if (sigcNormalizarSiNo(p.CERTIFICADO, 'No') === 'Sí') item.CERTIFICADOS++;
+  });
+
+  const personasArr = Object.keys(porPersona).map(function(idP) { return porPersona[idP]; });
+  const asistentesUnicosArr = personasArr.filter(function(x) { return x.ASISTENCIAS > 0; });
+  const tramosRecAsis = { '1 capacitación': 0, '2 capacitaciones': 0, '3 capacitaciones': 0, '4 o más': 0 };
+  const tramosRecIns = { '1 inscripción': 0, '2 inscripciones': 0, '3 inscripciones': 0, '4 o más': 0 };
+  let recurrentesAsis = 0;
+  let conBaseMadreAsis = 0;
+  let conPertinenciaDemanda = 0;
+
+  personasArr.forEach(function(x) {
+    if (x.INSCRIPCIONES === 1) tramosRecIns['1 inscripción']++;
+    else if (x.INSCRIPCIONES === 2) tramosRecIns['2 inscripciones']++;
+    else if (x.INSCRIPCIONES === 3) tramosRecIns['3 inscripciones']++;
+    else if (x.INSCRIPCIONES >= 4) tramosRecIns['4 o más']++;
+  });
+
+  asistentesUnicosArr.forEach(function(x) {
+    if (x.ASISTENCIAS === 1) tramosRecAsis['1 capacitación']++;
+    else if (x.ASISTENCIAS === 2) { tramosRecAsis['2 capacitaciones']++; recurrentesAsis++; }
+    else if (x.ASISTENCIAS === 3) { tramosRecAsis['3 capacitaciones']++; recurrentesAsis++; }
+    else if (x.ASISTENCIAS >= 4) { tramosRecAsis['4 o más']++; recurrentesAsis++; }
+    if (x.DEMANDAS_DECLARADAS > 0) conBaseMadreAsis++;
+    if (x.DEMANDAS_CUBIERTAS > 0) conPertinenciaDemanda++;
+  });
+
+  personasArr.sort(function(a, b) {
+    return b.ASISTENCIAS - a.ASISTENCIAS || b.INSCRIPCIONES - a.INSCRIPCIONES;
+  });
+
+  return {
+    embudo: embudo,
+    inscritosUnicos: personasArr.length,
+    asistentesUnicos: asistentesUnicosArr.length,
+    personasRecurrentes: recurrentesAsis,
+    tasaRecurrencia: asistentesUnicosArr.length ? recurrentesAsis / asistentesUnicosArr.length : 0,
+    promedioCursosPorAsistente: asistentesUnicosArr.length ? asistentes.length / asistentesUnicosArr.length : 0,
+    asistentesDesdeBaseMadre: conBaseMadreAsis,
+    tasaOrigenBaseMadre: asistentesUnicosArr.length ? conBaseMadreAsis / asistentesUnicosArr.length : 0,
+    asistentesConDemandaCubierta: conPertinenciaDemanda,
+    recurrenciaAsistentes: Object.keys(tramosRecAsis).map(function(k) { return { nombre: k, valor: tramosRecAsis[k] }; }),
+    recurrenciaInscritos: Object.keys(tramosRecIns).map(function(k) { return { nombre: k, valor: tramosRecIns[k] }; }),
+    origenAsistentes: [
+      { nombre: 'Con registro en Base Madre', valor: conBaseMadreAsis },
+      { nombre: 'Inscripción directa a curso', valor: Math.max(0, asistentesUnicosArr.length - conBaseMadreAsis) }
+    ],
+    trayectoriaPersonas: personasArr.slice(0, 2000)
+  };
+}
+
 function webConstruirGraficos_(actividades, participaciones, personas) {
   const actividadesOperativas = actividades.filter(function(actividad) {
     return !webEsActividadArchivada_(actividad);
@@ -3021,6 +3719,7 @@ function webConstruirGraficos_(actividades, participaciones, personas) {
     return webEsRegistroActivo_(participacion) &&
       idsActividadesOperativas.has(String(participacion.ID_ACTIVIDAD || ''));
   });
+  const asistentesReales = activas.filter(webEsAsistenteReal_);
   const seleccionadasDefinitivas = activas.filter(function(participacion) {
     return sigcEsSeleccionado(participacion) &&
       sigcEsResultadoDefinitivo(participacion.RESULTADO_FINAL);
@@ -3031,37 +3730,53 @@ function webConstruirGraficos_(actividades, participaciones, personas) {
       ['Participó', 'Aprobado'].indexOf(resultado) >= 0;
   });
   const personasBase = Array.isArray(personas) ? personas : [];
-  const demografiaPart = webConstruirDemografia_(activas);
+  const demBase = webConstruirDemografia_(personasBase);
+  const demInscritos = webConstruirDemografia_(activas);
+  const demAsistentes = webConstruirDemografia_(asistentesReales);
+  const comparativa = webConstruirComparativaDemografica_(demInscritos, demAsistentes);
+  const trayectoria = webConstruirEmbudoYTrayectoria_(activas, [], null);
+
+  const insPorAct = webAgruparConteo_(activas, 'NOMBRE_ACTIVIDAD');
+  const asisPorAct = webAgruparConteo_(asistentesReales, 'NOMBRE_ACTIVIDAD');
+  const comparativaActividades = webConstruirSerieComparativa_(insPorAct, asisPorAct, 10, false);
+
   return {
     actividadesPorEstado: webAgruparConteo_(
-      actividadesOperativas,
-      'ESTADO_ACTIVIDAD'
+      actividadesOperativas.map(function(a) { return { valor: webNormalizarEstadoActividadCategoria_(a.ESTADO_ACTIVIDAD) }; }),
+      'valor'
     ),
     actividadesPorEscuela: webAgruparConteo_(
-      actividadesOperativas,
-      'ESCUELA_LINEA'
+      actividadesOperativas.map(function(a) { return { valor: webNormalizarEscuelaCategoria_(a.ESCUELA_LINEA || a.PROGRAMA) }; }),
+      'valor'
     ),
     actividadesPorArea: webAgruparConteo_(
-      actividadesOperativas,
-      'AREA_TEMATICA'
+      actividadesOperativas.map(function(a) { return { valor: a.AREA_TEMATICA ? webCapitalizarPalabras_(a.AREA_TEMATICA) : 'Sin área' }; }),
+      'valor'
     ).slice(0, 10),
     resultados: webAgruparConteoNormalizadoResultados_(
       seleccionadasDefinitivas
     ),
-    participacionesPorActividad: webAgruparConteo_(
-      activas,
-      'NOMBRE_ACTIVIDAD'
-    ).slice(0, 10),
+    comparativaActividades: comparativaActividades,
+    participacionesPorActividad: insPorAct.slice(0, 10),
     participacionEfectivaPorActividad: webAgruparConteo_(
       efectivas,
       'NOMBRE_ACTIVIDAD'
     ).slice(0, 10),
-    personasPorGenero: webAgruparConteo_(personasBase.map(function(p) {
-      return { valor: webNormalizarGeneroCategoria_(p.GENERO) };
-    }), 'valor'),
-    personasPorTramoEdad: webAgruparTramosEdad_(personasBase),
-    personasPorComuna: webAgruparConteo_(personasBase, 'COMUNA').slice(0, 10),
-    participantesPorGenero: demografiaPart.porGenero
+    embudoParticipacion: trayectoria.embudo,
+    recurrenciaAsistentes: trayectoria.recurrenciaAsistentes,
+    personasPorGenero: demBase.porGenero,
+    personasPorTramoEdad: demBase.porTramoEdad,
+    personasPorComuna: demBase.porComuna.slice(0, 10),
+    personasPorNacionalidad: demBase.porNacionalidad.slice(0, 8),
+    participantesPorGenero: demAsistentes.porGenero,
+    inscritosPorGenero: demInscritos.porGenero,
+    asistentesPorGenero: demAsistentes.porGenero,
+    asistentesPorTramoEdad: demAsistentes.porTramoEdad,
+    asistentesPorComuna: demAsistentes.porComuna.slice(0, 10),
+    asistentesPorNacionalidad: demAsistentes.porNacionalidad.slice(0, 8),
+    comparativaGenero: comparativa.porGenero,
+    comparativaEdad: comparativa.porTramoEdad,
+    comparativaComuna: comparativa.porComuna
   };
 }
 function webAgruparConteo_(lista, campo) {
@@ -3279,24 +3994,38 @@ function webFechaNacimientoValida_(partes) {
 }
 
 function webCalcularEdad_(valor) {
+  if (valor === null || valor === undefined || valor === '') return '';
   const partes = webPartesFechaNacimiento_(valor);
-  if (!webFechaNacimientoValida_(partes)) return '';
-  const nacimiento = new Date(
-    partes.anio,
-    partes.mes - 1,
-    partes.dia
-  );
-  const hoy = new Date();
-  if (nacimiento.getTime() > hoy.getTime()) return '';
-  let edad = hoy.getFullYear() - nacimiento.getFullYear();
-  const aunNoCumple =
-    hoy.getMonth() < nacimiento.getMonth() ||
-    (
-      hoy.getMonth() === nacimiento.getMonth() &&
-      hoy.getDate() < nacimiento.getDate()
+  if (webFechaNacimientoValida_(partes)) {
+    const nacimiento = new Date(
+      partes.anio,
+      partes.mes - 1,
+      partes.dia
     );
-  if (aunNoCumple) edad--;
-  return edad >= 0 && edad <= 120 ? edad : '';
+    const hoy = new Date();
+    if (nacimiento.getTime() > hoy.getTime()) return '';
+    let edad = hoy.getFullYear() - nacimiento.getFullYear();
+    const aunNoCumple =
+      hoy.getMonth() < nacimiento.getMonth() ||
+      (
+        hoy.getMonth() === nacimiento.getMonth() &&
+        hoy.getDate() < nacimiento.getDate()
+      );
+    if (aunNoCumple) edad--;
+    return edad >= 0 && edad <= 120 ? edad : '';
+  }
+  const texto = String(valor || '').trim();
+  const mEdad = texto.match(/^(\d{1,3})(?:\s*(?:a[ñn]os?|a\.?))?$/i);
+  if (mEdad) {
+    const edadDirecta = Number(mEdad[1]);
+    if (edadDirecta >= 10 && edadDirecta <= 110) return edadDirecta;
+  }
+  const mAnio = texto.match(/^(19\d{2}|20[0-1]\d)$/);
+  if (mAnio) {
+    const dif = new Date().getFullYear() - Number(mAnio[1]);
+    if (dif >= 10 && dif <= 110) return dif;
+  }
+  return '';
 }
 
 function webNormalizarFechaNacimiento_(valor) {

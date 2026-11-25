@@ -1,22 +1,10 @@
 <section id="formularios" class="view">
         <div class="section-head">
-          <div><h2>Formularios</h2><p>Administre el formulario público de intereses (Base Madre) y las inscripciones por capacitación.</p></div>
+          <div><h2>Formularios</h2><p>Administre la vinculación de Base Madre y los formularios de inscripción por capacitación.</p></div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn" type="button" onclick="recuperarTodosFormulariosWeb()">⚡ Sincronizar pendientes</button>
             <button class="btn secondary" type="button" onclick="activarMotorUnicoFormulariosWeb()" title="Usa 1 solo activador cada 15 min para todos los formularios activos">⏱️ Auto-sync (1 trigger)</button>
             <button class="btn secondary" type="button" onclick="cargarFormularios(true)">Actualizar conteos</button>
-          </div>
-        </div>
-        <div class="card panel" style="margin-bottom:18px">
-          <h3>Formulario público de registro e intereses</h3>
-          <p>Comparta este formulario para incorporar personas a la base y conocer sus intereses de capacitación. Sus respuestas actualizan <strong>PERSONAS</strong> e <strong>INTERESES_CAPACITACION</strong>; no crean participaciones.</p>
-          <div id="estadoFormularioIntereses" class="notice" style="margin:14px 0">Comprobando si el formulario institucional ya fue creado…</div>
-          <div class="form-actions">
-            <button id="btnCrearFormularioIntereses" class="btn" type="button" onclick="crearFormularioInteresesWeb()">Crear formulario institucional</button>
-            <button id="btnCopiarFormularioIntereses" class="btn secondary" type="button" onclick="copiarEnlaceFormularioIntereses()" hidden>Copiar enlace público</button>
-            <a id="linkAbrirFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Abrir formulario</a>
-            <a id="linkEditarFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Editar formulario</a>
-            <a id="linkRespuestasFormularioIntereses" class="btn secondary" target="_blank" rel="noopener" hidden>Abrir respuestas</a>
           </div>
         </div>
         <div class="card panel" style="margin-bottom:18px">
@@ -76,8 +64,12 @@
               </select>
             </div>
             <div class="field full"><label>URL de la hoja de respuestas *</label><input id="formularioUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit?...gid=..."></div>
-            <div class="notice">Pegue el enlace de la <strong>Google Sheet de respuestas</strong>, no el enlace público del Form. El ID interno de la actividad nunca se pregunta al ciudadano.</div>
-            <div class="form-actions"><button class="btn" type="button" onclick="vincularFormularioWeb()">Vincular formulario</button></div>
+            <div class="notice">Pegue el enlace de la <strong>Google Sheet de respuestas</strong> si ya tiene un Form externo, o cree automáticamente el <strong>Formulario Estándar SIGC</strong> (con RUT, Género, Fecha de nacimiento, Barrios de Santiago y Nacionalidad ya normalizados).</div>
+            <div class="form-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn" type="button" onclick="vincularFormularioWeb()">🔗 Vincular hoja externa</button>
+              <button class="btn secondary" type="button" onclick="crearFormularioEstandarActividadWeb()">📋 Crear Formulario Estándar SIGC para esta Actividad</button>
+            </div>
+            <div id="resultadoFormEstandarAct" class="notice" style="margin-top:12px;" hidden></div>
           </div>
         </div>
         <div class="module-kpis">

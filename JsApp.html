@@ -557,6 +557,9 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     texto('kpiActividades', r.totalActividades ?? 0);
     texto('kpiActivas', r.actividadesActivas ?? 0);
     texto('kpiParticipaciones', r.totalParticipaciones ?? 0);
+    texto('kpiInscritosUnicos', r.totalInscritosUnicos ?? 0);
+    texto('kpiParticipacionesReales', r.totalAsistencias ?? 0);
+    texto('kpiAsistentesUnicos', r.totalAsistentesUnicos ?? r.personasCapacitadas ?? 0);
     texto('kpiEfectiva', r.participacionEfectiva || 0);
     texto('kpiAprobacion', formatoPorcentaje(r.tasaAprobacion));
     texto('kpiTasaParticipacion', formatoPorcentaje(r.tasaParticipacion));
@@ -726,14 +729,17 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const specs = [
       ['chartEstados', 'doughnut', g.actividadesPorEstado, false],
       ['chartEscuelas', 'doughnut', g.actividadesPorEscuela, false],
-      ['chartResultados', 'doughnut', g.resultados, false],
+      ['chartEmbudo', 'bar', g.embudoParticipacion, true],
       ['chartAreas', 'bar', (g.actividadesPorArea || []).slice(0, 10), true],
-      ['chartParticipaciones', 'bar', (g.participacionesPorActividad || []).slice(0, 10), true],
-      ['chartEfectiva', 'bar', (g.participacionEfectivaPorActividad || []).slice(0, 10), true],
+      ['chartRecurrencia', 'bar', g.recurrenciaAsistentes, false],
       ['chartPerGenero', 'doughnut', g.personasPorGenero, false],
-      ['chartPartGenero', 'doughnut', g.participantesPorGenero, false],
       ['chartPerEdad', 'bar', g.personasPorTramoEdad, false],
-      ['chartPerComuna', 'bar', (g.personasPorComuna || []).slice(0, 10), true]
+      ['chartPerComuna', 'bar', (g.personasPorComuna || []).slice(0, 10), true],
+      ['chartPerNacionalidad', 'bar', (g.personasPorNacionalidad || []).slice(0, 8), true],
+      ['chartPartGenero', 'doughnut', g.asistentesPorGenero || g.participantesPorGenero, false],
+      ['chartAsisEdad', 'bar', g.asistentesPorTramoEdad, false],
+      ['chartAsisComuna', 'bar', (g.asistentesPorComuna || []).slice(0, 10), true],
+      ['chartAsisNacionalidad', 'bar', (g.asistentesPorNacionalidad || []).slice(0, 8), true]
     ];
     specs.forEach(([id, tipo, datos, horizontal]) => {
       if (Array.isArray(datos) && datos.length > 0) {
@@ -741,6 +747,88 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       } else if (charts[id]) {
         charts[id].destroy();
         delete charts[id];
+      }
+    });
+    crearGraficoComparativo('chartActComparativa', g.comparativaActividades || [], {
+      horizontal: true,
+      labelA: 'Inscripciones',
+      labelB: 'Asistentes reales'
+    });
+  }
+
+  function crearGraficoComparativo(id, datos, opciones = {}) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (charts[id]) {
+      charts[id].destroy();
+      delete charts[id];
+    }
+    if (!Array.isArray(datos) || !datos.length) return;
+    const horizontal = !!opciones.horizontal;
+    const campoA = opciones.campoA || 'inscritos';
+    const campoB = opciones.campoB || 'asistentes';
+    const labelA = opciones.labelA || 'Inscritos únicos';
+    const labelB = opciones.labelB || 'Asistentes únicos';
+    const colorA = opciones.colorA || '#1e3a8a';
+    const colorB = opciones.colorB || '#10b981';
+    const etiquetasCompletas = datos.map(x => String(x.nombre || 'No informado'));
+    const etiquetasCortas = etiquetasCompletas.map(t => t.length > 30 ? t.slice(0, 28) + '…' : t);
+
+    charts[id] = new Chart(el, {
+      type: 'bar',
+      data: {
+        labels: etiquetasCortas,
+        datasets: [
+          {
+            label: labelA,
+            data: datos.map(x => Number(x[campoA] || 0)),
+            backgroundColor: colorA,
+            borderRadius: 5
+          },
+          {
+            label: labelB,
+            data: datos.map(x => Number(x[campoB] || 0)),
+            backgroundColor: colorB,
+            borderRadius: 5
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: horizontal ? 'y' : 'x',
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: { boxWidth: 12, padding: 12, font: { size: 11.5 } }
+          },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              title: items => {
+                const idx = items?.[0]?.dataIndex ?? 0;
+                return etiquetasCompletas[idx] || '';
+              },
+              label: ctx => {
+                const idx = ctx.dataIndex ?? 0;
+                const fila = datos[idx] || {};
+                const base = Number(fila[campoA] || 0);
+                const val = Number(ctx.raw || 0);
+                if (ctx.datasetIndex === 1 && base > 0) {
+                  const pct = ((val / base) * 100).toFixed(1);
+                  return ` ${ctx.dataset.label}: ${val.toLocaleString('es-CL')} (${pct}% de conversión)`;
+                }
+                return ` ${ctx.dataset.label}: ${val.toLocaleString('es-CL')}`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: horizontal ? {} : { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { precision: 0 } },
+          x: horizontal ? { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { precision: 0 } } : { grid: { display: false } }
+        }
       }
     });
   }
@@ -2206,23 +2294,38 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     const gd = demanda.graficos || {};
     crearGrafico('chartDemandaEscuela', 'doughnut', gd.porEscuela || []);
     crearGrafico('chartDemandaAreas', 'bar', gd.rankingAreas || [], true);
+    crearGrafico('chartDemandaGenero', 'doughnut', gd.porGenero || []);
+    crearGrafico('chartDemandaEdad', 'bar', gd.porTramoEdad || [], false);
+    crearGrafico('chartDemandaComuna', 'bar', gd.porComuna || [], true);
+    crearGrafico('chartDemandaBarrio', 'bar', gd.porBarrioPendiente || [], true);
     const q = normalizar(document.getElementById('buscarDemanda')?.value || '');
     const escuela = normalizar(document.getElementById('filtroDemandaEscuela')?.value || '');
     const area = normalizar(document.getElementById('filtroDemandaArea')?.value || '');
     const filas = (demanda.filas || []).filter(f =>
+      f.DEMANDANTES > 0 &&
       (!escuela || normalizar(f.ESCUELA_LINEA) === escuela) &&
       (!area || normalizar(f.AREA_TEMATICA) === area) &&
       normalizar([f.ESCUELA_LINEA,f.AREA_TEMATICA].join(' ')).includes(q)
     );
     const tbody = document.getElementById('tablaDemanda');
     if (!tbody) return;
-    tbody.innerHTML = filas.length ? filas.map(f => `<tr>
+    tbody.innerHTML = filas.length ? filas.map(f => {
+      const presionTxt = f.PRESION_CUPOS != null
+        ? `${Number(f.PRESION_CUPOS).toFixed(1)}x`
+        : (f.DEMANDANTES > 0 ? 'Sin oferta' : '—');
+      const presionCls = f.PRESION_CUPOS == null && f.DEMANDANTES > 0
+        ? 'danger'
+        : (Number(f.PRESION_CUPOS || 0) > 2 ? 'warning' : 'success');
+      return `<tr>
       <td>${esc(f.ESCUELA_LINEA)}</td><td><strong>${esc(f.AREA_TEMATICA)}</strong></td>
-      <td>${esc(f.DEMANDANTES)}</td><td>${esc(f.ACTIVIDADES_OFERTADAS)}</td><td>${esc(f.INSCRITOS)}</td>
+      <td><strong>${esc(f.DEMANDANTES)}</strong></td><td>${esc(f.ACTIVIDADES_OFERTADAS)}</td><td>${esc(f.CUPOS_OFERTADOS || 0)}</td>
+      <td><span class="badge ${presionCls}">${esc(presionTxt)}</span></td>
+      <td>${esc(f.INSCRITOS)}</td>
       <td>${esc(f.SELECCIONADOS)}</td><td>${esc(f.CAPACITADAS)}</td><td>${esc(f.PENDIENTES)}</td>
       <td><span class="badge">${esc(formatoPorcentaje(f.COBERTURA))}</span></td>
       <td><button class="btn secondary compact" type="button" data-clave="${esc(f.CLAVE)}" onclick="verDetalleDemanda(this.dataset.clave)">Ver personas</button></td>
-    </tr>`).join('') : '<tr><td colspan="10" class="empty-state">Aún no hay intereses registrados que coincidan con el filtro.</td></tr>';
+    </tr>`;
+    }).join('') : '<tr><td colspan="12" class="empty-state">Aún no hay intereses registrados que coincidan con el filtro.</td></tr>';
   }
   function verDetalleDemanda(clave) {
     const fila = (DB.demanda?.filas || []).find(f => String(f.CLAVE) === String(clave));
@@ -2240,12 +2343,67 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
       botonCorreos.disabled = correos.length === 0;
       botonCorreos.textContent = correos.length ? `Copiar ${correos.length} correos` : 'Sin correos para copiar';
     }
-    document.getElementById('tablaDetalleDemanda').innerHTML = detalle.map(p => `<tr>
-      <td><strong>${esc(p.NOMBRE_COMPLETO)}</strong></td><td>${esc(p.CORREO || 'Sin correo')}</td><td>${esc(p.COMUNA)}</td>
-      <td><span class="badge">${esc(p.CAPACITADA === 'Sí' ? 'Cubierta' : 'Pendiente')}</span></td></tr>`).join('') ||
-      '<tr><td colspan="4" class="empty-state">No hay personas para mostrar.</td></tr>';
+    document.getElementById('tablaDetalleDemanda').innerHTML = detalle.map(p => {
+      const edadTxt = p.EDAD !== '' && p.EDAD != null ? `${p.EDAD} años` : 'Edad s/i';
+      const barrioTxt = p.BARRIO && p.BARRIO !== 'No informado' ? ` · ${p.BARRIO}` : '';
+      return `<tr>
+      <td><strong>${esc(p.NOMBRE_COMPLETO)}</strong></td>
+      <td>${esc(p.GENERO || 'No informado')}<br><span class="muted">${esc(edadTxt)}</span></td>
+      <td>${esc(p.CORREO || 'Sin correo')}</td>
+      <td>${esc(p.COMUNA || 'No informado')}${esc(barrioTxt)}</td>
+      <td><span class="badge ${p.CAPACITADA === 'Sí' ? 'success' : 'warning'}">${esc(p.CAPACITADA === 'Sí' ? 'Cubierta' : 'Pendiente')}</span></td></tr>`;
+    }).join('') ||
+      '<tr><td colspan="5" class="empty-state">No hay personas para mostrar.</td></tr>';
     document.getElementById('detalleDemanda').hidden = false;
     document.getElementById('detalleDemanda').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+  function exportarDemandaExcel() {
+    const demanda = DB.demanda;
+    if (!demanda || !Array.isArray(demanda.filas) || !demanda.filas.length) {
+      notificar('Cargue primero la vista de Demanda para exportar.', true);
+      return;
+    }
+    const seguro = v => esc(v == null ? '' : v);
+    const filaXml = valores => `<Row>${valores.map(v => `<Cell><Data ss:Type="String">${seguro(v)}</Data></Cell>`).join('')}</Row>`;
+    const tablaXml = (nombre, encabezados, datos) => `<Worksheet ss:Name="${seguro(nombre)}"><Table>${filaXml(encabezados)}${datos.map(filaXml).join('')}</Table></Worksheet>`;
+    const r = demanda.resumen || {};
+    const demD = demanda.demografiaDemandantes || {};
+    const demP = demanda.demografiaPendientes || {};
+    const hojaRes = tablaXml('1_Resumen_Demanda', ['Indicador', 'Valor'], [
+      ['Personas únicas con demanda activa', r.personasConDemanda || 0],
+      ['Personas con al menos una demanda pendiente', r.personasConDemandaPendiente || 0],
+      ['Total intereses temáticos declarados', r.interesesActivos || 0],
+      ['Intereses cubiertos con capacitación efectiva', r.demandasAtendidas || 0],
+      ['Intereses aún pendientes de atención', r.demandasPendientes || 0],
+      ['Tasa de cobertura global', formatoPorcentaje(r.cobertura || 0)],
+      ['Escuela más demandada', r.escuelaMasDemandada || '—'],
+      ['Área temática más demandada', r.areaMasDemandada || '—'],
+      ['Edad promedio de demandantes', demD.edadPromedio == null ? 'No disponible' : `${Number(demD.edadPromedio).toFixed(1)} años`]
+    ]);
+    const hojaMatriz = tablaXml('2_Matriz_Demanda_Oferta', [
+      'Escuela / Línea', 'Área Temática', 'Personas Demandantes', 'Cursos Ofertados', 'Cupos Ofertados',
+      'Presión por Cupo', 'Inscritos Totales Área', 'Asistentes Totales Área',
+      'Demandantes Inscritos', 'Demandantes Seleccionados', 'Demandantes Cubiertos', 'Demanda Pendiente', '% Cobertura'
+    ], (demanda.filas || []).map(f => [
+      f.ESCUELA_LINEA, f.AREA_TEMATICA, f.DEMANDANTES, f.ACTIVIDADES_OFERTADAS, f.CUPOS_OFERTADOS || 0,
+      f.PRESION_CUPOS != null ? `${Number(f.PRESION_CUPOS).toFixed(2)}x` : 'Sin oferta',
+      f.INSCRITOS_OFERTA || 0, f.ASISTENTES_OFERTA || 0,
+      f.INSCRITOS, f.SELECCIONADOS, f.CAPACITADAS, f.PENDIENTES, formatoPorcentaje(f.COBERTURA || 0)
+    ]));
+    const filasDemog = []
+      .concat((demD.porGenero || []).map(x => ['Demandantes totales', 'Género', x.nombre, x.valor]))
+      .concat((demD.porTramoEdad || []).map(x => ['Demandantes totales', 'Tramo de edad', x.nombre, x.valor]))
+      .concat((demD.porComuna || []).map(x => ['Demandantes totales', 'Comuna', x.nombre, x.valor]))
+      .concat((demD.porBarrio || []).slice(0, 30).map(x => ['Demandantes totales', 'Barrio', x.nombre, x.valor]))
+      .concat((demD.porNacionalidad || []).map(x => ['Demandantes totales', 'Nacionalidad', x.nombre, x.valor]))
+      .concat((demP.porBarrio || []).slice(0, 30).map(x => ['Con demanda pendiente', 'Barrio', x.nombre, x.valor]));
+    const hojaDemog = tablaXml('3_Demografia_Demanda', ['Población', 'Dimensión', 'Categoría', 'Personas'], filasDemog);
+    const xml = '<' + '?xml version="1.0"?' + '><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' + hojaRes + hojaMatriz + hojaDemog + '</Workbook>';
+    const enlace = document.createElement('a');
+    enlace.href = URL.createObjectURL(new Blob([xml], {type:'application/vnd.ms-excel'}));
+    enlace.download = `reporte_demanda_sigc_${new Date().toISOString().slice(0,10)}.xls`;
+    enlace.click();
+    URL.revokeObjectURL(enlace.href);
   }
   function cerrarDetalleDemanda() {
     document.getElementById('detalleDemanda').hidden = true;
@@ -5782,6 +5940,12 @@ filasActividadesHtml + '\n\n' +
       const detalle = detalles.join('<br>') || '—';
       const activo = normalizar(f.estado) === 'activo';
       const automatizacion = f.activador || {estado: activo ? 'Sin diagnóstico' : 'No requerido', operativo: !activo};
+      const btnLinkPub = f.urlPublica
+        ? `<button class="btn secondary compact" type="button" data-url="${esc(f.urlPublica)}" onclick="copiarUrlFormularioTabla_(this.dataset.url)" title="Copiar enlace público del formulario">🔗 Link</button>`
+        : '';
+      const linkEditPub = f.urlEdicion
+        ? `<a class="btn secondary compact" href="${esc(f.urlEdicion)}" target="_blank" rel="noopener" title="Editar Google Form">✏️</a>`
+        : '';
       return `<tr>
         <td><strong>${esc(f.actividad)}</strong><br><span class="muted">${esc(f.idActividad)}</span></td>
         <td>${esc(f.archivo)}<br><span class="muted">${esc(f.hoja)}</span></td>
@@ -5794,6 +5958,7 @@ filasActividadesHtml + '\n\n' +
         <td>${detalle}</td>
         <td>
           <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+            ${btnLinkPub}${linkEditPub}
             <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="repararYRecuperarFormularioWeb(this.dataset.id)" title="Reprocesar e inscribir todas las respuestas de la planilla">⚡ Reprocesar</button>
             <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" onclick="cargarCasosRevision(this.dataset.id)" ${(r.revision || 0) ? '' : 'disabled'}>Casos (${esc(r.revision || 0)})</button>
             <button class="btn secondary compact" type="button" data-id="${esc(f.idConfig)}" data-activo="${activo ? '0' : '1'}" onclick="cambiarEstadoFormularioWeb(this.dataset.id,this.dataset.activo)">${activo ? 'Desactivar' : 'Activar'}</button>
@@ -5853,6 +6018,48 @@ filasActividadesHtml + '\n\n' +
     } catch (error) {
       window.prompt('Copie el enlace público:', enlace);
     }
+  }
+  async function copiarUrlFormularioTabla_(url) {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      notificar('Enlace público del formulario copiado.');
+    } catch (e) {
+      window.prompt('Copie el enlace público:', url);
+    }
+  }
+  function crearFormularioEstandarActividadWeb() {
+    const idActividad = document.getElementById('formularioActividad')?.value || '';
+    if (!idActividad) {
+      notificar('Primero seleccione una actividad en el buscador superior.', true);
+      return;
+    }
+    if (!confirm('Se creará (o verificará) el Google Form Estándar SIGC para esta actividad, vinculado automáticamente a la planilla central y sin gastar activadores extra. ¿Desea continuar?')) {
+      return;
+    }
+    mostrarCarga(true, 'Creando Formulario Estándar SIGC…');
+    google.script.run
+      .withSuccessHandler(r => {
+        mostrarCarga(false);
+        notificar(r.mensaje || 'Formulario estándar creado y vinculado.');
+        const caja = document.getElementById('resultadoFormEstandarAct');
+        if (caja && r.urlPublica) {
+          caja.hidden = false;
+          caja.innerHTML = `
+            <strong>${esc(r.mensaje)}</strong>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <button class="btn compact" type="button" data-url="${esc(r.urlPublica)}" onclick="copiarUrlFormularioTabla_(this.dataset.url)">📋 Copiar enlace público</button>
+              <a class="btn secondary compact" href="${esc(r.urlPublica)}" target="_blank" rel="noopener">Abrir formulario</a>
+              <a class="btn secondary compact" href="${esc(r.urlEdicion)}" target="_blank" rel="noopener">Editar en Google Forms</a>
+            </div>`;
+        }
+        cargarFormularios(true);
+      })
+      .withFailureHandler(error => {
+        mostrarCarga(false);
+        notificar(error.message || String(error), true);
+      })
+      .crearFormularioEstandarActividadDesdeWeb({ idActividad });
   }
   function vincularFormularioWeb() {
     const idActividad = document.getElementById('formularioActividad')?.value || '';
@@ -6141,10 +6348,22 @@ filasActividadesHtml + '\n\n' +
       areaTematica:document.getElementById('repArea')?.value || '', institucion:document.getElementById('repInstitucion')?.value.trim() || '',
       modalidad:document.getElementById('repModalidad')?.value || '', estado:document.getElementById('repEstado')?.value || ''};
     google.script.run.withSuccessHandler(datos => {
-      REPORTE = datos;
-      renderReporte();
-      texto('estadoReporte', `Reporte actualizado: ${datos?.fechaActualizacion || 'ahora'}`);
       mostrarCarga(false);
+      if (!datos || datos.error || datos.ok === false) {
+        REPORTE = null;
+        const msg = (datos && datos.mensaje) || 'El servidor no devolvió datos (posible tiempo de espera excedido). Intente con un filtro de año o escuela.';
+        texto('estadoReporte', 'No fue posible generar el reporte: ' + msg);
+        notificar(msg, true);
+        return;
+      }
+      REPORTE = datos;
+      try {
+        renderReporte();
+        texto('estadoReporte', `Reporte actualizado: ${datos.fechaActualizacion || 'ahora'}. Ya puede descargar el Excel o el Informe PDF.`);
+      } catch (eRender) {
+        console.error(eRender);
+        texto('estadoReporte', 'Datos recibidos, pero ocurrió un error al dibujar: ' + eRender.message);
+      }
     }).withFailureHandler(error => {
       mostrarCarga(false);
       texto('estadoReporte', 'No fue posible generar el reporte.');
@@ -6153,21 +6372,93 @@ filasActividadesHtml + '\n\n' +
   }
   function renderReporte() {
     const i = REPORTE?.indicadores || {};
-    texto('repActividades', i.actividades || 0); texto('repPersonas', i.personasUnicas || 0); texto('repInscripciones', i.inscripciones || 0);
-    texto('repSeleccionadas', i.seleccionadas || 0); texto('repAsistentes', i.asistentes || 0); texto('repTasaAsistencia', formatoPorcentaje(i.asistencia || 0));
-    texto('repTasaSeleccion', formatoPorcentaje(i.seleccion || 0)); texto('repTasaInasistencia', formatoPorcentaje(i.inasistencia || 0));
-    texto('repTasaAprobacion', formatoPorcentaje(i.aprobacion || 0)); texto('repTasaCertificacion', formatoPorcentaje(i.certificacion || 0));
-    texto('repBrechaDemanda', i.brechaDemanda || 0); texto('repEdadPromedio', REPORTE?.demografia?.edadPromedio == null ? '—' : `${Number(REPORTE.demografia.edadPromedio).toFixed(1)} años`);
+    const dIns = REPORTE?.demografiaInscritos || {};
+    const dAsis = REPORTE?.demografiaAsistentes || REPORTE?.demografia || {};
+    const comp = REPORTE?.comparativaDemografica || {};
+    const dem = REPORTE?.demanda || { filas: [] };
+
+    texto('repActividades', i.actividades || 0);
+    texto('repCupos', i.cupos || 0);
+    texto('repPersonas', i.personasUnicas || 0);
+    texto('repAsistentesUnicos', i.asistentesUnicos ?? dAsis.totalPersonas ?? 0);
+    texto('repInscripciones', i.inscripciones || 0);
+    texto('repSeleccionadas', i.seleccionadas || 0);
+    texto('repAsistentes', i.asistentes || 0);
+    texto('repTasaAsistencia', formatoPorcentaje(i.asistencia || 0));
+    texto('repTasaSeleccion', formatoPorcentaje(i.seleccion || 0));
+    texto('repTasaInasistencia', formatoPorcentaje(i.inasistencia || 0));
+    texto('repTasaAprobacion', formatoPorcentaje(i.aprobacion || 0));
+    texto('repTasaCertificacion', formatoPorcentaje(i.certificacion || 0));
+    texto('repTasaRecurrencia', `${formatoPorcentaje(i.tasaRecurrencia || 0)} (${i.personasRecurrentes || 0})`);
+    texto('repBrechaDemanda', i.brechaDemanda || 0);
+    texto('repCoberturaDemanda', formatoPorcentaje(i.coberturaDemanda || 0));
+
+    const edadInsTxt = dIns.edadPromedio == null ? '—' : `${Number(dIns.edadPromedio).toFixed(1)}`;
+    const edadAsisTxt = dAsis.edadPromedio == null ? '—' : `${Number(dAsis.edadPromedio).toFixed(1)}`;
+    texto('repEdadPromedio', (edadInsTxt === '—' && edadAsisTxt === '—') ? '—' : `${edadInsTxt} / ${edadAsisTxt} a.`);
+
     const satPromRep = Number(i.satisfaccionPromedio || 0);
     const satTotRep = Number(i.totalEncuestas || 0);
     texto('repSatisfaccionPromedio', satTotRep > 0 ? `${satPromRep.toFixed(1)} / 5.0 (${i.satisfaccionPorcentaje || 0}%)` : '—');
     texto('repTotalEncuestas', satTotRep);
-    crearGrafico('chartRepTematica','bar',(REPORTE?.porTematica || []).slice(0,10),true);
-    crearGrafico('chartRepInstitucion','bar',(REPORTE?.porInstitucion || []).slice(0,10),true);
-    crearGrafico('chartRepModalidad','doughnut',REPORTE?.porModalidad || []);
-    crearGrafico('chartRepGenero','doughnut',REPORTE?.porGenero || []);
-    crearGrafico('chartRepEdad','bar',REPORTE?.porTramoEdad || [],true);
-    crearGrafico('chartRepComuna','bar',(REPORTE?.porComuna || []).slice(0,10),true);
+
+    const limpiarOSet = (id, tipo, arr, horiz = false) => {
+      if (Array.isArray(arr) && arr.length) crearGrafico(id, tipo, arr, horiz);
+      else if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    };
+
+    limpiarOSet('chartRepEmbudo', 'bar', REPORTE?.embudo || [], true);
+    limpiarOSet('chartRepRecurrencia', 'bar', REPORTE?.recurrenciaAsistentes || [], false);
+    limpiarOSet('chartRepOrigen', 'doughnut', REPORTE?.origenAsistentes || [], false);
+    limpiarOSet('chartRepTematica', 'bar', (REPORTE?.porTematica || []).slice(0, 10), true);
+    limpiarOSet('chartRepInstitucion', 'bar', (REPORTE?.porInstitucion || []).slice(0, 10), true);
+    limpiarOSet('chartRepModalidad', 'doughnut', REPORTE?.porModalidad || [], false);
+    limpiarOSet('chartRepGenero', 'doughnut', dAsis.porGenero || REPORTE?.porGenero || [], false);
+    renderSeccionSocioeconomicaReporte();
+
+    crearGraficoComparativo('chartRepGeneroComp', comp.porGenero || [], { horizontal: false });
+    crearGraficoComparativo('chartRepEdad', comp.porTramoEdad || [], { horizontal: false });
+    crearGraficoComparativo('chartRepComuna', comp.porComuna || [], { horizontal: true });
+    crearGraficoComparativo('chartRepBarrio', comp.porBarrio || [], { horizontal: true });
+    crearGraficoComparativo('chartRepNacionalidad', comp.porNacionalidad || [], { horizontal: true });
+
+    const topAreasDemanda = (dem.filas || []).filter(f => f.DEMANDANTES > 0).slice(0, 10).map(f => ({
+      nombre: f.AREA_TEMATICA,
+      demandantes: f.DEMANDANTES,
+      cubiertas: f.CAPACITADAS
+    }));
+    crearGraficoComparativo('chartRepDemandaAreas', topAreasDemanda, {
+      horizontal: true,
+      campoA: 'demandantes',
+      campoB: 'cubiertas',
+      labelA: 'Personas demandantes',
+      labelB: 'Demandantes cubiertos',
+      colorA: '#f59e0b',
+      colorB: '#10b981'
+    });
+    limpiarOSet('chartRepDemandaBarrios', 'bar', (dem.demografiaPendientes?.porBarrio || []).slice(0, 10), true);
+
+    const tbodyDem = document.getElementById('tablaReportesDemanda');
+    if (tbodyDem) {
+      const filasDem = (dem.filas || []).filter(f => f.DEMANDANTES > 0 || f.ACTIVIDADES_OFERTADAS > 0);
+      tbodyDem.innerHTML = filasDem.length ? filasDem.map(f => {
+        const presTxt = f.PRESION_CUPOS != null ? `${Number(f.PRESION_CUPOS).toFixed(1)}x` : (f.DEMANDANTES > 0 ? 'Sin cupos' : '—');
+        return `<tr>
+          <td>${esc(f.ESCUELA_LINEA)}</td>
+          <td><strong>${esc(f.AREA_TEMATICA)}</strong></td>
+          <td><strong>${esc(f.DEMANDANTES)}</strong></td>
+          <td>${esc(f.ACTIVIDADES_OFERTADAS)}</td>
+          <td>${esc(f.CUPOS_OFERTADOS || 0)}</td>
+          <td><span class="badge ${f.PRESION_CUPOS == null && f.DEMANDANTES > 0 ? 'danger' : 'neutral'}">${esc(presTxt)}</span></td>
+          <td>${esc(f.INSCRITOS_OFERTA || 0)}</td>
+          <td>${esc(f.ASISTENTES_OFERTA || 0)}</td>
+          <td>${esc(f.CAPACITADAS)}</td>
+          <td><strong>${esc(f.PENDIENTES)}</strong></td>
+          <td><span class="badge ${f.COBERTURA >= 0.3 ? 'success' : 'warning'}">${esc(formatoPorcentaje(f.COBERTURA || 0))}</span></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="11" class="empty-state">Sin registros de demanda u oferta para este filtro.</td></tr>';
+    }
+
     const filas = REPORTE?.actividades || [];
     document.getElementById('tablaReportes').innerHTML = filas.length ? filas.map(a => {
       const nEnc = Number(a.ENCUESTAS || 0);
@@ -6176,8 +6467,28 @@ filasActividadesHtml + '\n\n' +
       const celdaSat = nEnc > 0
         ? `<span class="badge success" title="${nEnc} encuesta(s) consolidada(s)">${notaSat.toFixed(1)} ★ (${porcSat}%) · ${nEnc} enc.</span>`
         : '<span style="color:#94a3b8;font-size:12px;">—</span>';
-      return `<tr><td><strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong></td><td>${esc(a.ANO)}</td><td>${esc(a.ESCUELA_LINEA)}</td><td>${esc(a.AREA_TEMATICA)}</td><td>${esc(a.INSTITUCION_ASOCIADA)}</td><td>${esc(a.MODALIDAD)}</td><td>${esc(a.ESTADO_ACTIVIDAD)}</td><td>${esc(a.CUPOS)}</td><td>${esc(a.INSCRIPCIONES)}</td><td>${esc(a.SELECCIONADAS)}</td><td>${esc(a.ASISTENTES)}</td><td>${celdaSat}</td></tr>`;
-    }).join('') : '<tr><td colspan="12" class="empty-state">No hay actividades para los filtros seleccionados.</td></tr>';
+      return `<tr><td><strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong></td><td>${esc(a.ANO)}</td><td>${esc(a.ESCUELA_LINEA)}</td><td>${esc(a.AREA_TEMATICA)}</td><td>${esc(a.INSTITUCION_ASOCIADA)}</td><td>${esc(a.MODALIDAD)}</td><td>${esc(a.ESTADO_ACTIVIDAD)}</td><td>${esc(a.CUPOS)}</td><td>${esc(a.INSCRIPCIONES)}</td><td>${esc(a.SELECCIONADAS)}</td><td><strong>${esc(a.ASISTENTES)}</strong></td><td>${esc(formatoPorcentaje(a.TASA_ASISTENCIA || 0))}</td><td>${esc(a.APROBADAS || 0)}</td><td>${celdaSat}</td></tr>`;
+    }).join('') : '<tr><td colspan="14" class="empty-state">No hay actividades para los filtros seleccionados.</td></tr>';
+  }
+  function renderSeccionSocioeconomicaReporte() {
+    if (!REPORTE) return;
+    const modo = document.getElementById('repSocioUniverso')?.value || 'asistentes';
+    const so = (modo === 'base_madre' && REPORTE.socioeconomicoBaseMadre)
+      ? REPORTE.socioeconomicoBaseMadre
+      : (REPORTE.socioeconomico || {});
+    const limpiarOSet = (id, tipo, arr, horiz = false) => {
+      if (Array.isArray(arr) && arr.length) crearGrafico(id, tipo, arr, horiz);
+      else if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    };
+    texto('repSocioNota', so.totalEvaluados
+      ? `Población evaluada: ${so.poblacionEvaluada} (${so.totalEvaluados} personas). Con perfil Base Madre: ${so.personasConPerfilBaseMadre} (${formatoPorcentaje(so.coberturaPerfil || 0)}). Las categorías "No informado" se excluyen de los gráficos.`
+      : 'Sin personas para caracterizar con los filtros actuales.');
+    limpiarOSet('chartRepSocioFocal', 'bar', so.gruposFocalizacion || [], true);
+    limpiarOSet('chartRepSocioOcup', 'doughnut', so.porSituacionOcupacional || [], false);
+    limpiarOSet('chartRepSocioEdu', 'bar', so.porNivelEducacional || [], true);
+    limpiarOSet('chartRepSocioRsh', 'bar', so.porTramoRSH || [], true);
+    limpiarOSet('chartRepSocioSii', 'doughnut', so.porFormalizacionSII || [], false);
+    limpiarOSet('chartRepSocioRubro', 'bar', so.porRubroEmprendimiento || [], true);
   }
   function cargarReporteAsistencias() {
     const selectorActividad = document.getElementById('gestionActividad');
@@ -6446,22 +6757,245 @@ filasActividadesHtml + '\n\n' +
   function exportarReporteExcel() {
     if (!REPORTE) { notificar('Primero genere el reporte.', true); return; }
     const xml = reporteExcelXml(REPORTE);
-    const enlace = document.createElement('a'); enlace.href = URL.createObjectURL(new Blob([xml], {type:'application/vnd.ms-excel'}));
-    enlace.download = 'reporte_sigc.xls'; enlace.click(); URL.revokeObjectURL(enlace.href);
+    const enlace = document.createElement('a');
+    enlace.href = URL.createObjectURL(new Blob([xml], {type:'application/vnd.ms-excel'}));
+    enlace.download = `reporte_integral_sigc_${new Date().toISOString().slice(0,10)}.xls`;
+    enlace.click();
+    URL.revokeObjectURL(enlace.href);
   }
+
   function reporteExcelXml(reporte) {
     const seguro = v => esc(v == null ? '' : v);
     const fila = valores => `<Row>${valores.map(v => `<Cell><Data ss:Type="String">${seguro(v)}</Data></Cell>`).join('')}</Row>`;
     const tabla = (nombre, encabezados, datos) => `<Worksheet ss:Name="${seguro(nombre)}"><Table>${fila(encabezados)}${datos.map(fila).join('')}</Table></Worksheet>`;
-    const i = reporte.indicadores || {}, d = reporte.demografia || {};
-    const indicadores = [['Fecha de actualización',reporte.fechaActualizacion],['Actividades',i.actividades],['Personas únicas',i.personasUnicas],['Participaciones',i.inscripciones],['Seleccionadas',i.seleccionadas],['Asistentes',i.asistentes],['Aprobadas',i.aprobadas],['Certificadas',i.certificadas],['Cupos ofrecidos',i.cupos],['Tasa de ocupación',formatoPorcentaje(i.ocupacion)],['Tasa de selección',formatoPorcentaje(i.seleccion)],['Tasa de asistencia',formatoPorcentaje(i.asistencia)],['Tasa de inasistencia',formatoPorcentaje(i.inasistencia)],['Tasa de aprobación',formatoPorcentaje(i.aprobacion)],['Tasa de certificación',formatoPorcentaje(i.certificacion)],['Demanda registrada',i.demandaRegistrada],['Personas capacitadas',i.personasCapacitadas],['Brecha demanda',i.brechaDemanda],['Cobertura de demanda',formatoPorcentaje(i.coberturaDemanda)],['Edad promedio',d.edadPromedio == null ? 'No disponible' : `${Number(d.edadPromedio).toFixed(1)} años`],['Personas con dato de edad',d.personasConDatoEdad || 0]];
-    const detalleCampos = ['ID_ACTIVIDAD','NOMBRE_ACTIVIDAD','ANO','ESCUELA_LINEA','AREA_TEMATICA','INSTITUCION_ASOCIADA','MODALIDAD','ESTADO_ACTIVIDAD','CUPOS','INSCRIPCIONES','SELECCIONADAS','ASISTENTES'];
-    const hojaResumen = tabla('Resumen', ['Indicador','Valor'], indicadores);
-    const hojaActividades = tabla('Actividades', detalleCampos, (reporte.actividades || []).map(x => detalleCampos.map(c => x[c])));
-    const hojaGenero = tabla('Demografia', ['Dimensión','Categoría','Cantidad'], [].concat((reporte.porGenero||[]).map(x=>['Género',x.nombre,x.valor]),(reporte.porTramoEdad||[]).map(x=>['Tramo de edad',x.nombre,x.valor]),(reporte.porComuna||[]).map(x=>['Comuna',x.nombre,x.valor]),(reporte.porPMJH||[]).map(x=>['PMJH',x.nombre,x.valor])));
-    // Apps Script reserva los delimitadores de scriptlet durante
-    // HtmlTemplate.evaluate(). Esta concatenación conserva el XML final.
-    return '<' + '?xml version="1.0"?' + '><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' + hojaResumen + hojaActividades + hojaGenero + '</Workbook>';
+    const i = reporte.indicadores || {};
+    const dIns = reporte.demografiaInscritos || {};
+    const dAsis = reporte.demografiaAsistentes || reporte.demografia || {};
+    const comp = reporte.comparativaDemografica || {};
+    const dem = reporte.demanda || { resumen: {}, filas: [] };
+
+    const indicadores = [
+      ['Fecha de generación', reporte.fechaActualizacion],
+      ['Actividades evaluadas', i.actividades || 0],
+      ['Cupos totales ofrecidos', i.cupos || 0],
+      ['Inscripciones activas totales', i.inscripciones || 0],
+      ['Personas únicas inscritas', i.personasUnicas || 0],
+      ['Personas únicas asistentes (participación real)', i.asistentesUnicos ?? dAsis.totalPersonas ?? 0],
+      ['Participaciones seleccionadas', i.seleccionadas || 0],
+      ['Participaciones confirmadas', i.confirmadas || 0],
+      ['Asistencias efectivas totales', i.asistentes || 0],
+      ['Participaciones aprobadas / efectivas', i.aprobadas || 0],
+      ['Participaciones certificadas', i.certificadas || 0],
+      ['Tasa de ocupación de cupos', formatoPorcentaje(i.ocupacion || 0)],
+      ['Tasa de selección', formatoPorcentaje(i.seleccion || 0)],
+      ['Tasa de confirmación sobre seleccionadas', formatoPorcentaje(i.tasaConfirmacion || 0)],
+      ['Tasa de asistencia efectiva', formatoPorcentaje(i.asistencia || 0)],
+      ['Tasa de inasistencia / deserción', formatoPorcentaje(i.inasistencia || 0)],
+      ['Tasa de aprobación / logro', formatoPorcentaje(i.aprobacion || 0)],
+      ['Tasa de certificación', formatoPorcentaje(i.certificacion || 0)],
+      ['Personas recurrentes (2 o más capacitaciones asistidas)', i.personasRecurrentes || 0],
+      ['Tasa de recurrencia / fidelización', formatoPorcentaje(i.tasaRecurrencia || 0)],
+      ['Promedio de capacitaciones por asistente único', Number(i.promedioCursosPorAsistente || 0).toFixed(2)],
+      ['% Asistentes provenientes de Base Madre', formatoPorcentaje(i.tasaOrigenBaseMadre || 0)],
+      ['Edad promedio de inscritos únicos', dIns.edadPromedio == null ? 'No disponible' : `${Number(dIns.edadPromedio).toFixed(1)} años`],
+      ['Edad promedio de asistentes únicos', dAsis.edadPromedio == null ? 'No disponible' : `${Number(dAsis.edadPromedio).toFixed(1)} años`],
+      ['% Mujeres entre inscritos (dato informado)', formatoPorcentaje(dIns.porcentajeFemenino || 0)],
+      ['% Mujeres entre asistentes (dato informado)', formatoPorcentaje(dAsis.porcentajeFemenino || 0)],
+      ['% Personas extranjeras entre asistentes (dato informado)', formatoPorcentaje(dAsis.porcentajeExtranjeros || 0)],
+      ['% Residentes en comuna de Santiago entre asistentes', formatoPorcentaje(dAsis.porcentajeSantiago || 0)],
+      ['Personas únicas con demanda registrada', i.demandaRegistrada || 0],
+      ['Intereses temáticos activos', i.interesesActivos || 0],
+      ['Intereses temáticos cubiertos', i.demandasAtendidas || 0],
+      ['Brecha de demanda pendiente', i.brechaDemanda || 0],
+      ['Cobertura efectiva de demanda', formatoPorcentaje(i.coberturaDemanda || 0)],
+      ['Promedio satisfacción global (escala 1 a 5)', Number(i.totalEncuestas || 0) > 0 ? Number(i.satisfaccionPromedio || 0).toFixed(2) : 'Sin encuestas'],
+      ['Encuestas de satisfacción aplicadas', i.totalEncuestas || 0]
+    ];
+
+    const embudoArr = reporte.embudo || [];
+    const baseEmbudo = Number(embudoArr[0]?.valor || 0);
+    const filasEmbudo = embudoArr.map((et, idx) => {
+      const ant = idx > 0 ? Number(embudoArr[idx - 1]?.valor || 0) : Number(et.valor || 0);
+      const val = Number(et.valor || 0);
+      return [
+        'Embudo de conversión',
+        et.nombre,
+        val,
+        baseEmbudo > 0 ? formatoPorcentaje(val / baseEmbudo) : '0%',
+        idx === 0 ? '100%' : (ant > 0 ? formatoPorcentaje(val / ant) : '0%')
+      ];
+    }).concat(
+      (reporte.recurrenciaAsistentes || []).map(x => ['Recurrencia de asistentes', x.nombre, x.valor, (i.asistentesUnicos ? formatoPorcentaje(x.valor / i.asistentesUnicos) : '0%'), '—']),
+      (reporte.recurrenciaInscritos || []).map(x => ['Recurrencia de inscritos', x.nombre, x.valor, (i.personasUnicas ? formatoPorcentaje(x.valor / i.personasUnicas) : '0%'), '—']),
+      (reporte.origenAsistentes || []).map(x => ['Origen de asistentes', x.nombre, x.valor, (i.asistentesUnicos ? formatoPorcentaje(x.valor / i.asistentesUnicos) : '0%'), '—'])
+    );
+
+    const armarDemog = d => [].concat(
+      (d.porGenero || []).map(x => ['Género', x.nombre, x.valor, d.totalPersonas ? formatoPorcentaje(x.valor / d.totalPersonas) : '0%']),
+      (d.porTramoEdad || []).map(x => ['Tramo de edad', x.nombre, x.valor, d.totalPersonas ? formatoPorcentaje(x.valor / d.totalPersonas) : '0%']),
+      (d.porComuna || []).map(x => ['Comuna', x.nombre, x.valor, d.totalPersonas ? formatoPorcentaje(x.valor / d.totalPersonas) : '0%']),
+      (d.porBarrioCompleto || d.porBarrio || []).map(x => ['Barrio', x.nombre, x.valor, d.totalPersonas ? formatoPorcentaje(x.valor / d.totalPersonas) : '0%']),
+      (d.porNacionalidad || []).map(x => ['Nacionalidad', x.nombre, x.valor, d.totalPersonas ? formatoPorcentaje(x.valor / d.totalPersonas) : '0%'])
+    );
+
+    const filasCompAsis = [].concat(
+      (comp.porGenero || []).map(x => ['Comparativa Género', x.nombre, x.inscritos, x.asistentes, formatoPorcentaje(x.tasaAsistencia || 0)]),
+      (comp.porTramoEdad || []).map(x => ['Comparativa Tramo Edad', x.nombre, x.inscritos, x.asistentes, formatoPorcentaje(x.tasaAsistencia || 0)]),
+      (comp.porComuna || []).map(x => ['Comparativa Top Comunas', x.nombre, x.inscritos, x.asistentes, formatoPorcentaje(x.tasaAsistencia || 0)]),
+      (comp.porBarrio || []).map(x => ['Comparativa Top Barrios', x.nombre, x.inscritos, x.asistentes, formatoPorcentaje(x.tasaAsistencia || 0)]),
+      (comp.porNacionalidad || []).map(x => ['Comparativa Nacionalidad', x.nombre, x.inscritos, x.asistentes, formatoPorcentaje(x.tasaAsistencia || 0)])
+    );
+
+    const hojaResumen = tabla('1_Resumen_Ejecutivo', ['Indicador', 'Valor'], indicadores);
+    const hojaEmbudo = tabla('2_Embudo_y_Recurrencia', ['Bloque', 'Categoría / Etapa', 'Cantidad', '% sobre Total', '% Conversión Etapa Previa'], filasEmbudo);
+    const hojaDemIns = tabla('3_Demografia_Inscritos', ['Dimensión', 'Categoría', 'Personas Inscritas', '% sobre Inscritos'], armarDemog(dIns));
+    const hojaDemAsis = tabla('4_Inscritos_vs_Asistentes', ['Dimensión', 'Categoría', 'Inscritos Únicos', 'Asistentes Únicos', '% Conversión a Asistencia'], filasCompAsis);
+    const hojaDemanda = tabla('5_Demanda_y_Brechas', [
+      'Escuela / Línea', 'Área Temática', 'Personas Demandantes', 'Cursos Ofertados', 'Cupos Ofertados',
+      'Presión por Cupo', 'Inscritos Totales', 'Asistentes Totales', 'Demandantes Cubiertos', 'Brecha Pendiente', '% Cobertura'
+    ], (dem.filas || []).map(f => [
+      f.ESCUELA_LINEA, f.AREA_TEMATICA, f.DEMANDANTES, f.ACTIVIDADES_OFERTADAS, f.CUPOS_OFERTADOS || 0,
+      f.PRESION_CUPOS != null ? `${Number(f.PRESION_CUPOS).toFixed(2)}x` : 'Sin cupos',
+      f.INSCRITOS_OFERTA || 0, f.ASISTENTES_OFERTA || 0, f.CAPACITADAS, f.PENDIENTES, formatoPorcentaje(f.COBERTURA || 0)
+    ]));
+    const hojaActividades = tabla('6_Detalle_Actividades', [
+      'ID Actividad', 'Nombre Actividad', 'Año', 'Escuela / Línea', 'Área Temática', 'Institución',
+      'Modalidad', 'Estado', 'Cupos', 'Inscripciones', 'Seleccionadas', 'Confirmadas', 'Asistentes',
+      '% Ocupación', '% Asistencia', 'Aprobadas', 'Certificadas', 'Nota Satisfacción', 'Encuestas'
+    ], (reporte.actividades || []).map(a => [
+      a.ID_ACTIVIDAD, a.NOMBRE_ACTIVIDAD, a.ANO, a.ESCUELA_LINEA, a.AREA_TEMATICA, a.INSTITUCION_ASOCIADA,
+      a.MODALIDAD, a.ESTADO_ACTIVIDAD, a.CUPOS, a.INSCRIPCIONES, a.SELECCIONADAS, a.CONFIRMADAS || 0, a.ASISTENTES,
+      formatoPorcentaje(a.TASA_OCUPACION || 0), formatoPorcentaje(a.TASA_ASISTENCIA || 0),
+      a.APROBADAS || 0, a.CERTIFICADAS || 0,
+      Number(a.ENCUESTAS || 0) > 0 ? Number(a.NOTA_SATISFACCION || 0).toFixed(2) : '—', a.ENCUESTAS || 0
+    ]));
+    const hojaTrayectoria = tabla('7_Trayectoria_Personas', [
+      'ID Persona', 'Género', 'Edad', 'Comuna', 'Barrio', 'Nacionalidad',
+      'Inscripciones', 'Selecciones', 'Asistencias Efectivas', 'Aprobaciones', 'Certificados',
+      'Demandas Declaradas', 'Demandas Cubiertas'
+    ], (reporte.trayectoriaPersonas || []).map(p => [
+      p.ID_PERSONA, p.GENERO, p.EDAD === '' ? 'No informado' : p.EDAD, p.COMUNA, p.BARRIO, p.NACIONALIDAD,
+      p.INSCRIPCIONES, p.SELECCIONES, p.ASISTENCIAS, p.EFECTIVAS, p.CERTIFICADOS,
+      p.DEMANDAS_DECLARADAS, p.DEMANDAS_CUBIERTAS
+    ]));
+
+    const so = reporte.socioeconomico || {};
+    const totSo = Number(so.personasConPerfilBaseMadre || 0);
+    const filaSo = (dim, lista) => (lista || []).map(x => [dim, x.nombre, x.valor, totSo ? formatoPorcentaje(x.valor / totSo) : '0%']);
+    const hojaSocio = tabla('8_Perfil_Socioeconomico', ['Dimensión', 'Categoría', 'Personas', '% sobre personas con perfil Base Madre'], [
+      ['Población evaluada', so.poblacionEvaluada || '—', so.totalEvaluados || 0, '—'],
+      ['Con perfil Base Madre', 'Cobertura del perfil', totSo, formatoPorcentaje(so.coberturaPerfil || 0)]
+    ].concat(
+      filaSo('Grupo de focalización', so.gruposFocalizacion),
+      filaSo('Situación ocupacional', so.porSituacionOcupacional),
+      filaSo('Nivel educacional', so.porNivelEducacional),
+      filaSo('Tramo RSH', so.porTramoRSH),
+      filaSo('Formalización SII', so.porFormalizacionSII),
+      filaSo('Rubro emprendimiento', so.porRubroEmprendimiento)
+    ));
+
+    return '<' + '?xml version="1.0"?' + '><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+      hojaResumen + hojaEmbudo + hojaDemIns + hojaDemAsis + hojaSocio + hojaDemanda + hojaActividades + hojaTrayectoria + '</Workbook>';
+  }
+
+  function imprimirInformeEjecutivoSIGC() {
+    if (!REPORTE) {
+      notificar('Primero presione "Generar reporte" para construir el informe ejecutivo.', true);
+      return;
+    }
+    const i = REPORTE.indicadores || {};
+    const dIns = REPORTE.demografiaInscritos || {};
+    const dAsis = REPORTE.demografiaAsistentes || REPORTE.demografia || {};
+    const comp = REPORTE.comparativaDemografica || {};
+    const dem = REPORTE.demanda || { filas: [] };
+
+    const filtroDesc = [
+      document.getElementById('repAno')?.value ? `Año: ${document.getElementById('repAno').value}` : 'Año: Todos',
+      document.getElementById('repEscuela')?.value ? `Escuela: ${document.getElementById('repEscuela').value}` : 'Escuela: Todas',
+      document.getElementById('repArea')?.value ? `Área: ${document.getElementById('repArea').value}` : 'Área: Todas',
+      document.getElementById('repModalidad')?.value ? `Modalidad: ${document.getElementById('repModalidad').value}` : ''
+    ].filter(Boolean).join(' · ');
+
+    const filasEmbudoHtml = (REPORTE.embudo || []).map((et, idx, arr) => {
+      const base = Number(arr[0]?.valor || 0);
+      const val = Number(et.valor || 0);
+      return `<tr><td>${esc(et.nombre)}</td><td style="text-align:right"><strong>${val.toLocaleString('es-CL')}</strong></td><td style="text-align:right">${base ? formatoPorcentaje(val / base) : '0%'}</td></tr>`;
+    }).join('');
+
+    const filasCompHtml = (titulo, lista) => (lista || []).map(x =>
+      `<tr><td>${esc(titulo)}</td><td><strong>${esc(x.nombre)}</strong></td><td style="text-align:right">${Number(x.inscritos || 0).toLocaleString('es-CL')}</td><td style="text-align:right"><strong>${Number(x.asistentes || 0).toLocaleString('es-CL')}</strong></td><td style="text-align:right">${formatoPorcentaje(x.tasaAsistencia || 0)}</td></tr>`
+    ).join('');
+
+    const filasDemHtml = (dem.filas || []).filter(f => f.DEMANDANTES > 0).slice(0, 15).map(f =>
+      `<tr><td>${esc(f.ESCUELA_LINEA)}</td><td><strong>${esc(f.AREA_TEMATICA)}</strong></td><td style="text-align:right">${f.DEMANDANTES}</td><td style="text-align:right">${f.ACTIVIDADES_OFERTADAS} (${f.CUPOS_OFERTADOS || 0} cupos)</td><td style="text-align:right">${f.CAPACITADAS}</td><td style="text-align:right"><strong>${f.PENDIENTES}</strong></td><td style="text-align:right">${formatoPorcentaje(f.COBERTURA || 0)}</td></tr>`
+    ).join('');
+
+    const filasActHtml = (REPORTE.actividades || []).slice(0, 40).map(a =>
+      `<tr><td><strong>${esc(a.NOMBRE_ACTIVIDAD)}</strong></td><td>${esc(a.ESCUELA_LINEA)}</td><td>${esc(a.MODALIDAD)}</td><td style="text-align:right">${a.CUPOS}</td><td style="text-align:right">${a.INSCRIPCIONES}</td><td style="text-align:right"><strong>${a.ASISTENTES}</strong></td><td style="text-align:right">${formatoPorcentaje(a.TASA_ASISTENCIA || 0)}</td></tr>`
+    ).join('');
+
+    const win = window.open('', '_blank');
+    if (!win) {
+      notificar('Permita ventanas emergentes en su navegador para abrir el Informe PDF.', true);
+      return;
+    }
+    const docHtml = '<' + '!DOCTYPE html><' + 'html lang="es"><' + 'head><meta charset="utf-8"><title>Informe Ejecutivo SIGC — DIDEL</title>' +
+      '<style>' +
+      'body{font-family:Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;margin:28px;font-size:12px;line-height:1.45}' +
+      '.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1e3a8a;padding-bottom:12px;margin-bottom:18px}' +
+      'h1{margin:0;font-size:20px;color:#1e3a8a} h2{font-size:14px;color:#1e3a8a;border-bottom:1px solid #cbd5e1;padding-bottom:4px;margin:20px 0 10px}' +
+      '.meta{color:#475569;font-size:11px;text-align:right}' +
+      '.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}' +
+      '.kpi{border:1px solid #cbd5e1;border-radius:6px;padding:8px 10px;background:#f8fafc}' +
+      '.kpi span{display:block;font-size:10.5px;color:#64748b} .kpi strong{font-size:15px;color:#0f172a}' +
+      'table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11px}' +
+      'th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:left} th{background:#f1f5f9;color:#1e293b}' +
+      '.btn-print{background:#1e3a8a;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600;margin-bottom:14px}' +
+      '@media print{.no-print{display:none} body{margin:12px}}' +
+      '</style><' + '/head><' + 'body>' +
+      '<div class="no-print"><button class="btn-print" onclick="window.print()">🖨️ Imprimir o Guardar como PDF</button></div>' +
+      '<div class="hdr"><div><h1>Informe Ejecutivo de Capacitaciones — SIGC</h1><div>Municipalidad de Santiago · Subdirección de Desarrollo Económico Local (DIDEL)</div></div>' +
+      `<div class="meta"><strong>Actualizado:</strong> ${esc(REPORTE.fechaActualizacion || '')}<br>${esc(filtroDesc)}</div></div>` +
+      '<div class="kpis">' +
+      `<div class="kpi"><span>Actividades / Cupos</span><strong>${i.actividades || 0} / ${i.cupos || 0}</strong></div>` +
+      `<div class="kpi"><span>Inscritos únicos → Asistentes únicos</span><strong>${i.personasUnicas || 0} → ${i.asistentesUnicos ?? dAsis.totalPersonas ?? 0}</strong></div>` +
+      `<div class="kpi"><span>Inscripciones → Asistencias</span><strong>${i.inscripciones || 0} → ${i.asistentes || 0}</strong></div>` +
+      `<div class="kpi"><span>Tasa de asistencia efectiva</span><strong>${formatoPorcentaje(i.asistencia || 0)}</strong></div>` +
+      `<div class="kpi"><span>Edad prom. (Inscritos / Asistentes)</span><strong>${dIns.edadPromedio == null ? '—' : Number(dIns.edadPromedio).toFixed(1)} / ${dAsis.edadPromedio == null ? '—' : Number(dAsis.edadPromedio).toFixed(1)} años</strong></div>` +
+      `<div class="kpi"><span>% Mujeres (Inscritas / Asistentes)</span><strong>${formatoPorcentaje(dIns.porcentajeFemenino || 0)} / ${formatoPorcentaje(dAsis.porcentajeFemenino || 0)}</strong></div>` +
+      `<div class="kpi"><span>Recurrencia (2+ capacitaciones)</span><strong>${formatoPorcentaje(i.tasaRecurrencia || 0)} (${i.personasRecurrentes || 0})</strong></div>` +
+      `<div class="kpi"><span>Cobertura de demanda / Brecha</span><strong>${formatoPorcentaje(i.coberturaDemanda || 0)} (${i.brechaDemanda || 0} pend.)</strong></div>` +
+      '</div>' +
+      '<h2>1. Embudo de Conversión de Participaciones</h2>' +
+      '<table><thead><tr><th>Etapa del proceso</th><th style="text-align:right">Participaciones</th><th style="text-align:right">% sobre Inscripciones</th></tr></thead><tbody>' + filasEmbudoHtml + '</tbody></table>' +
+      '<h2>2. Perfil Demográfico Comparativo: Inscritos vs. Participantes Efectivos (Asistentes)</h2>' +
+      '<table><thead><tr><th>Dimensión</th><th>Categoría</th><th style="text-align:right">Inscritos Únicos</th><th style="text-align:right">Asistentes Únicos</th><th style="text-align:right">% Conversión</th></tr></thead><tbody>' +
+      filasCompHtml('Género', comp.porGenero) + filasCompHtml('Tramo Edad', comp.porTramoEdad) + filasCompHtml('Top Comunas', (comp.porComuna || []).slice(0, 6)) + filasCompHtml('Nacionalidad', (comp.porNacionalidad || []).slice(0, 5)) +
+      '</tbody></table>' +
+      (function() {
+        const so = REPORTE.socioeconomico || {};
+        const filasSo = [].concat(
+          (so.gruposFocalizacion || []).map(x => ['Focalización', x.nombre, x.valor]),
+          (so.porSituacionOcupacional || []).slice(0, 6).map(x => ['Ocupación', x.nombre, x.valor]),
+          (so.porNivelEducacional || []).slice(0, 6).map(x => ['Educación', x.nombre, x.valor]),
+          (so.porTramoRSH || []).slice(0, 8).map(x => ['Tramo RSH', x.nombre, x.valor]),
+          (so.porFormalizacionSII || []).map(x => ['Formalización SII', x.nombre, x.valor])
+        ).map(r => `<tr><td>${esc(r[0])}</td><td><strong>${esc(r[1])}</strong></td><td style="text-align:right">${Number(r[2] || 0).toLocaleString('es-CL')}</td></tr>`).join('');
+        return '<h2>2b. Caracterización Socioeconómica y Productiva (Base Madre)</h2>' +
+          `<p>Población: ${esc(so.poblacionEvaluada || '—')} · ${so.totalEvaluados || 0} personas · con perfil Base Madre: ${so.personasConPerfilBaseMadre || 0} (${formatoPorcentaje(so.coberturaPerfil || 0)})</p>` +
+          '<table><thead><tr><th>Dimensión</th><th>Categoría</th><th style="text-align:right">Personas</th></tr></thead><tbody>' +
+          (filasSo || '<tr><td colspan="3">Sin información socioeconómica disponible.</td></tr>') + '</tbody></table>';
+      })() +
+      '<h2>3. Matriz de Demanda Declarada vs. Oferta y Brechas (Top 15 Áreas)</h2>' +
+      '<table><thead><tr><th>Escuela</th><th>Área Temática</th><th style="text-align:right">Demandantes</th><th style="text-align:right">Oferta</th><th style="text-align:right">Cubiertos</th><th style="text-align:right">Brecha</th><th style="text-align:right">% Cobertura</th></tr></thead><tbody>' +
+      (filasDemHtml || '<tr><td colspan="7">Sin datos de demanda en este filtro.</td></tr>') + '</tbody></table>' +
+      '<h2>4. Resumen de Actividades Ejecutadas / Filtradas</h2>' +
+      '<table><thead><tr><th>Actividad</th><th>Escuela</th><th>Modalidad</th><th style="text-align:right">Cupos</th><th style="text-align:right">Inscritos</th><th style="text-align:right">Asistentes</th><th style="text-align:right">% Asist.</th></tr></thead><tbody>' +
+      (filasActHtml || '<tr><td colspan="7">Sin actividades en este filtro.</td></tr>') + '</tbody></table>' +
+      '<' + '/body><' + '/html>';
+    win.document.open();
+    win.document.write(docHtml);
+    win.document.close();
   }
   const CAMPOS_IMPORTACION = [
     ['NOMBRE_COMPLETO','Nombre completo'], ['NOMBRES','Nombres'], ['APELLIDOS','Apellidos'], ['RUT','RUT'],

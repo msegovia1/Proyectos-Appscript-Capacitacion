@@ -895,6 +895,257 @@ function crearFormularioRegistroInteresesDesdeWeb() {
   }
 }
 
+/**
+ * Crea en 1 clic un Google Form estándar SIGC para una actividad específica,
+ * con campos normalizados (RUT, Género, Fecha de nacimiento, Barrios de Santiago, Nacionalidad),
+ * lo vincula a la planilla central (sin consumir activadores extra) y actualiza LINK_INSCRIPCION.
+ */
+function crearFormularioEstandarActividadDesdeWeb(datos) {
+  datos = datos || {};
+  const idActividad = String(datos.idActividad || '').trim();
+  if (!idActividad) throw new Error('Seleccione una actividad para crear su formulario.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    prepararConfigFormularios();
+    const central = sigcSpreadsheetCentral_();
+    const hojaAct = central.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);
+    if (!hojaAct || hojaAct.getLastRow() < 2) throw new Error('No se encontró la hoja ACTIVIDADES.');
+    const datosAct = hojaAct.getDataRange().getValues();
+    const mAct = mapaEncabezados_(datosAct[0]);
+    let filaActNum = -1;
+    let actObj = null;
+    for (let r = 1; r < datosAct.length; r++) {
+      if (String(datosAct[r][mAct['ID ACTIVIDAD']] || '').trim() === idActividad) {
+        filaActNum = r + 1;
+        actObj = {};
+        datosAct[0].forEach(function(h, c) {
+          const k = normalizarEncabezado_(h);
+          if (k) actObj[k] = datosAct[r][c];
+        });
+        break;
+      }
+    }
+    if (!actObj) throw new Error('No se encontró la actividad ' + idActividad + '.');
+
+    const nombreAct = String(actObj['NOMBRE ACTIVIDAD'] || idActividad).trim();
+    const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
+    const cfgDatos = hojaConfig.getDataRange().getValues();
+    const mCfg = mapaEncabezados_(cfgDatos[0]);
+
+    // Verificar si ya existe un Form estándar creado por SIGC para esta actividad
+    for (let i = 1; i < cfgDatos.length; i++) {
+      const tipo = normalizarEncabezado_(cfgDatos[i][mCfg['TIPO']]);
+      const idActCfg = String(cfgDatos[i][mCfg['ID ACTIVIDAD']] || '').trim();
+      const creadoSigc = normalizarEncabezado_(cfgDatos[i][mCfg['CREADO POR SIGC']]);
+      const formIdExist = String(cfgDatos[i][mCfg['FORM ID']] || '').trim();
+      const ssRespId = String(cfgDatos[i][mCfg['SPREADSHEET RESPUESTAS ID']] || '').trim();
+      if (tipo === 'INSCRIPCION' && idActCfg === idActividad && creadoSigc === 'SI' && formIdExist) {
+        try {
+          const formExist = FormApp.openById(formIdExist);
+          if (formExist) {
+            try { formExist.setRequireLogin(false); } catch (e) {}
+            try { formExist.setLimitOneResponsePerUser(false); } catch (e) {}
+            hojaConfig.getRange(i + 1, mCfg['ESTADO'] + 1).setValue('Activo');
+            if (ssRespId) instalarTriggerFormularioVinculado_(ssRespId);
+            const urlPub = formExist.getPublishedUrl();
+            if (mAct['LINK INSCRIPCION'] !== undefined && !String(actObj['LINK INSCRIPCION'] || '').trim()) {
+              hojaAct.getRange(filaActNum, mAct['LINK INSCRIPCION'] + 1).setValue(urlPub);
+            }
+            try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (e) {}
+            return {
+              ok: true,
+              existente: true,
+              mensaje: 'Esta actividad ya tenía un Formulario Estándar SIGC activo. Se verificó su vínculo.',
+              formId: formIdExist,
+              urlPublica: urlPub,
+              urlEdicion: formExist.getEditUrl(),
+              urlRespuestas: ssRespId ? 'https://docs.google.com/spreadsheets/d/' + ssRespId + '/edit' : ''
+            };
+          }
+        } catch (eEx) {
+          console.warn('Form previo inaccesible, se generará uno nuevo: ' + eEx.message);
+        }
+      }
+    }
+
+    const titulo = 'Inscripción: ' + nombreAct + ' — Municipalidad de Santiago';
+    const form = FormApp.create(titulo);
+    const descPartes = [
+      'Municipalidad de Santiago • Subdirección de Desarrollo Económico Local (DIDEL)',
+      'Actividad: ' + nombreAct + ' (' + idActividad + ')'
+    ];
+    if (actObj['ESCUELA LINEA']) descPartes.push('Escuela / Línea: ' + actObj['ESCUELA LINEA']);
+    if (actObj['MODALIDAD']) descPartes.push('Modalidad: ' + actObj['MODALIDAD']);
+    if (actObj['HORARIO']) descPartes.push('Horario: ' + actObj['HORARIO']);
+    descPartes.push('\nComplete sus datos con precisión para gestionar su postulación y emitir su certificado cuando corresponda.');
+    form.setDescription(descPartes.join('\n'));
+    form.setConfirmationMessage(
+      '¡Postulación registrada! Sus datos fueron recibidos por el Sistema Integrado de Gestión de Capacitaciones (SIGC) de la Municipalidad de Santiago. Nos comunicaremos vía correo o WhatsApp si resulta seleccionado/a.'
+    );
+    try { form.setRequireLogin(false); } catch (e) {}
+    try { form.setLimitOneResponsePerUser(false); } catch (e) {}
+    form.setAllowResponseEdits(false);
+    form.setCollectEmail(false);
+
+    // Campos normalizados SIGC (evita errores de formato y vacíos demográficos)
+    form.addTextItem()
+      .setTitle('Nombre completo')
+      .setHelpText('Ingrese sus nombres y apellidos completos.')
+      .setRequired(true);
+
+    form.addMultipleChoiceItem()
+      .setTitle('Tipo de documento')
+      .setChoiceValues(['RUT', 'Pasaporte'])
+      .setRequired(true);
+
+    form.addTextItem()
+      .setTitle('Número de documento / RUT')
+      .setHelpText('Si es RUT, escríbalo con guion (Ej.: 12345678-9). Si es pasaporte, ingrese el número exacto.')
+      .setRequired(true);
+
+    form.addTextItem()
+      .setTitle('Correo electrónico')
+      .setHelpText('Correo donde recibirá confirmación de selección y enlaces de clase.')
+      .setRequired(true);
+
+    form.addTextItem()
+      .setTitle('Teléfono')
+      .setHelpText('Número móvil de contacto / WhatsApp (Ej.: +56912345678).')
+      .setRequired(true);
+
+    form.addDateItem()
+      .setTitle('Fecha nacimiento')
+      .setHelpText('Seleccione su fecha de nacimiento.')
+      .setRequired(true);
+
+    form.addMultipleChoiceItem()
+      .setTitle('Género')
+      .setChoiceValues(['Femenino', 'Masculino', 'No binario', 'Otro / Prefiero no informar'])
+      .setRequired(true);
+
+    form.addListItem()
+      .setTitle('Nacionalidad')
+      .setChoiceValues([
+        'Chilena', 'Venezolana', 'Peruana', 'Colombiana', 'Haitiana',
+        'Boliviana', 'Ecuatoriana', 'Argentina', 'Dominicana', 'Cubana', 'Otra'
+      ])
+      .setRequired(true);
+
+    form.addTextItem()
+      .setTitle('Comuna')
+      .setHelpText('Comuna de residencia actual (Ej.: Santiago).')
+      .setRequired(true);
+
+    form.addListItem()
+      .setTitle('Barrio')
+      .setHelpText('Si reside en Santiago, seleccione su barrio.')
+      .setChoiceValues([
+        'Barrio Arturo Prat', 'Barrio Balmaceda', 'Barrio Bogotá', 'Barrio Brasil',
+        'Barrio Cívico', 'Barrio Club Hípico', 'Barrio Concha y Toro', 'Barrio Dieciocho',
+        'Barrio Ejército', 'Barrio Franklin', 'Barrio Huemul', 'Barrio Lastarria',
+        'Barrio Matta Norte', 'Barrio Matta Sur', 'Barrio Meiggs', 'Barrio Panamá',
+        'Barrio París - Londres', 'Barrio Parque Almagro', 'Barrio Parque O\'Higgins',
+        'Barrio Plaza de Armas', 'Barrio República', 'Barrio San Borja',
+        'Barrio San Diego', 'Barrio San Eugenio', 'Barrio San Vicente',
+        'Barrio Santa Isabel', 'Barrio Santa Lucía - Forestal', 'Barrio Viel',
+        'Barrio Yungay', 'Otro sector de Santiago', 'Fuera de la comuna de Santiago'
+      ])
+      .setRequired(false);
+
+    form.addMultipleChoiceItem()
+      .setTitle('Participa o participó en PMJH')
+      .setChoiceValues(['Sí', 'No'])
+      .setRequired(true);
+
+    form.addMultipleChoiceItem()
+      .setTitle('Autoriza contacto')
+      .setChoiceValues(['Sí', 'No'])
+      .setRequired(true);
+
+    form.addParagraphTextItem()
+      .setTitle('Observaciones')
+      .setHelpText('Comentarios o requerimientos de accesibilidad (opcional).')
+      .setRequired(false);
+
+    // Vincular destino a la planilla central para no gastar activadores adicionales
+    const hojasPrevias = central.getSheets().map(function(s) { return s.getName(); });
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, central.getId());
+    SpreadsheetApp.flush();
+    Utilities.sleep(1000);
+
+    const hojasActuales = central.getSheets();
+    let nombreHojaRespuestas = '';
+    for (let h = 0; h < hojasActuales.length; h++) {
+      if (hojasPrevias.indexOf(hojasActuales[h].getName()) === -1) {
+        nombreHojaRespuestas = hojasActuales[h].getName();
+        break;
+      }
+    }
+    if (!nombreHojaRespuestas) {
+      for (let h = 0; h < hojasActuales.length; h++) {
+        try {
+          if (hojasActuales[h].getFormUrl() && hojasActuales[h].getFormUrl().indexOf(form.getId()) >= 0) {
+            nombreHojaRespuestas = hojasActuales[h].getName();
+            break;
+          }
+        } catch (eUrl) {}
+      }
+    }
+    if (!nombreHojaRespuestas) {
+      nombreHojaRespuestas = hojasActuales[hojasActuales.length - 1].getName();
+    }
+
+    // Renombrar la pestaña a algo identificable si tiene nombre genérico
+    try {
+      const hojaDest = central.getSheetByName(nombreHojaRespuestas);
+      const nombreDeseado = 'RESP_' + idActividad;
+      if (hojaDest && !central.getSheetByName(nombreDeseado)) {
+        hojaDest.setName(nombreDeseado);
+        nombreHojaRespuestas = nombreDeseado;
+      }
+    } catch (eRen) {}
+
+    const idConfig = 'FOR-' + Utilities.getUuid().slice(0, 8).toUpperCase();
+    const urlPub = form.getPublishedUrl();
+    const urlEdit = form.getEditUrl();
+    hojaConfig.appendRow([
+      idConfig,
+      'INSCRIPCION',
+      central.getId(),
+      nombreHojaRespuestas,
+      idActividad,
+      'Activo',
+      new Date(),
+      form.getId(),
+      urlPub,
+      urlEdit,
+      'SI'
+    ]);
+
+    if (mAct['LINK INSCRIPCION'] !== undefined && !String(actObj['LINK INSCRIPCION'] || '').trim()) {
+      hojaAct.getRange(filaActNum, mAct['LINK INSCRIPCION'] + 1).setValue(urlPub);
+    }
+
+    instalarTriggerFormularioVinculado_(central.getId());
+    try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (e) {}
+    sigcInvalidarCache_();
+
+    return {
+      ok: true,
+      existente: false,
+      mensaje: '¡Formulario Estándar SIGC creado y vinculado a ' + nombreAct + '!',
+      formId: form.getId(),
+      urlPublica: urlPub,
+      urlEdicion: urlEdit,
+      urlRespuestas: 'https://docs.google.com/spreadsheets/d/' + central.getId() + '/edit'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function eliminarFormularioVinculado(idConfig) {
   prepararConfigFormularios();
   const central = sigcSpreadsheetCentral_();
