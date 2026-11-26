@@ -65,7 +65,7 @@
             <div class="field"><label>Cupos</label><input name="CUPOS" type="number" min="0"></div>
             <div class="field"><label>Fecha inicio</label><input id="editFechaInicio" name="FECHA_INICIO" type="date" onchange="sincronizarFechaInicioFormulario('edit')"></div>
             <div class="field"><label>Fecha término</label><input id="editFechaTermino" name="FECHA_TERMINO" type="date" onchange="sincronizarFechaTerminoFormulario('edit')"></div>
-            <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Online</option><option>Híbrida</option></select></div>
+            <div class="field"><label>Modalidad</label><select name="MODALIDAD"><option>Presencial</option><option>Virtual</option><option>Híbrida</option></select></div>
 
             <!-- PLANIFICADOR DE CRONOGRAMA Y SESIONES EN EDICION -->
             <div class="schedule-builder-card">
@@ -83,7 +83,7 @@
               <div class="days-picker-group">
                 <label>Días de clase en la semana:</label>
                 <div class="days-toggles-row" id="editDiasSemana">
-                  <button type="button" class="day-toggle-btn active" data-dia="1" onclick="alternarDiaSemana('edit', 1)">Lun</button>
+                  <button type="button" class="day-toggle-btn" data-dia="1" onclick="alternarDiaSemana('edit', 1)">Lun</button>
                   <button type="button" class="day-toggle-btn" data-dia="2" onclick="alternarDiaSemana('edit', 2)">Mar</button>
                   <button type="button" class="day-toggle-btn" data-dia="3" onclick="alternarDiaSemana('edit', 3)">Mié</button>
                   <button type="button" class="day-toggle-btn" data-dia="4" onclick="alternarDiaSemana('edit', 4)">Jue</button>

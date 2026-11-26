@@ -3037,6 +3037,15 @@ filasActividadesHtml + '\n\n' +
   function sincronizarFechaInicioFormulario(prefijo) {
     const fiVal = document.getElementById(`${prefijo}FechaInicio`)?.value;
     if (!fiVal) return;
+    const diasAct = obtenerDiasSeleccionados(prefijo);
+    if (diasAct.length === 0) {
+      const p = fiVal.split('-');
+      if (p.length === 3) {
+        const dia = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0).getDay();
+        const btn = document.getElementById(`${prefijo}DiasSemana`)?.querySelector(`[data-dia="${dia}"]`);
+        if (btn) btn.classList.add('active');
+      }
+    }
     const sesiones = SESIONES_CRONOGRAMA[prefijo] || [];
     if (sesiones.length > 0) {
       sesiones[0].fecha = fiVal;
@@ -3096,31 +3105,48 @@ filasActividadesHtml + '\n\n' +
 
     const partes = fInicioVal.split('-');
     let cursorFecha = new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]), 12, 0, 0);
-
-    if (diasSeleccionados.length === 0) {
-      const diaInicio = cursorFecha.getDay();
-      diasSeleccionados = [diaInicio];
-      const btn = document.getElementById(`${prefijo}DiasSemana`)?.querySelector(`[data-dia="${diaInicio}"]`);
-      if (btn) btn.classList.add('active');
-    }
+    const diaInicio = cursorFecha.getDay();
 
     const hInicio = document.getElementById(`${prefijo}HoraInicio`)?.value || '10:00';
     const hFin = document.getElementById(`${prefijo}HoraFin`)?.value || '12:00';
 
     const sesiones = [];
-    let intentos = 0;
-    while (sesiones.length < totalSesiones && intentos < 500) {
-      const diaSemana = cursorFecha.getDay();
-      if (diasSeleccionados.includes(diaSemana)) {
-        sesiones.push({
-          numero: sesiones.length + 1,
-          fecha: formatoClaveFecha(cursorFecha),
-          horaInicio: hInicio,
-          horaFin: hFin
-        });
+    if (totalSesiones === 1) {
+      // Para 1 sesión se respeta exactamente la Fecha de Inicio ingresada
+      document.querySelectorAll(`#${prefijo}DiasSemana .day-toggle-btn`).forEach(b => {
+        b.classList.toggle('active', Number(b.dataset.dia) === diaInicio);
+      });
+      sesiones.push({
+        numero: 1,
+        fecha: fInicioVal,
+        horaInicio: hInicio,
+        horaFin: hFin
+      });
+    } else {
+      if (diasSeleccionados.length === 0) {
+        diasSeleccionados = [diaInicio];
+        const btn = document.getElementById(`${prefijo}DiasSemana`)?.querySelector(`[data-dia="${diaInicio}"]`);
+        if (btn) btn.classList.add('active');
+      } else if (!diasSeleccionados.includes(diaInicio)) {
+        // Asegurar que la Sesión 1 comience exactamente en la Fecha de Inicio elegida
+        diasSeleccionados.push(diaInicio);
+        const btn = document.getElementById(`${prefijo}DiasSemana`)?.querySelector(`[data-dia="${diaInicio}"]`);
+        if (btn) btn.classList.add('active');
       }
-      cursorFecha.setDate(cursorFecha.getDate() + 1);
-      intentos++;
+      let intentos = 0;
+      while (sesiones.length < totalSesiones && intentos < 500) {
+        const diaSemana = cursorFecha.getDay();
+        if (diasSeleccionados.includes(diaSemana)) {
+          sesiones.push({
+            numero: sesiones.length + 1,
+            fecha: formatoClaveFecha(cursorFecha),
+            horaInicio: hInicio,
+            horaFin: hFin
+          });
+        }
+        cursorFecha.setDate(cursorFecha.getDate() + 1);
+        intentos++;
+      }
     }
 
     SESIONES_CRONOGRAMA[prefijo] = sesiones;
@@ -3814,8 +3840,12 @@ filasActividadesHtml + '\n\n' +
             renderParticipaciones();
           }
         }
-        notificar('Error al guardar en Google Sheets: ' + (error.message || String(error)), true);
-        actualizarEstadoSincronizacion('error', 'Error al guardar');
+        const msgErr = error && error.message ? error.message : String(error || 'Error desconocido');
+        notificar('Error al guardar en Google Sheets: ' + msgErr, true);
+        actualizarEstadoSincronizacion('error', 'Error al guardar: ' + msgErr.slice(0, 80));
+        if (form.id === 'formActividad') {
+          alert('No se pudo guardar la actividad en Google Sheets:\n\n' + msgErr);
+        }
       })[funcion](datos);
   }
 
@@ -7234,7 +7264,9 @@ filasActividadesHtml + '\n\n' +
     if (mapeo.NOMBRE_COMPLETO < 0 && mapeo.NOMBRES < 0) {
       throw new Error('Debe relacionar Nombre completo o las columnas Nombres y Apellidos.');
     }
-    if (mapeo.RUT < 0 && mapeo.NUMERO_DOCUMENTO < 0) throw new Error('Debe relacionar RUT u Otro documento.');
+    if (mapeo.RUT < 0 && mapeo.NUMERO_DOCUMENTO < 0 && mapeo.CORREO < 0 && mapeo.TELEFONO < 0) {
+      throw new Error('Debe relacionar RUT/Documento, o bien Correo o Teléfono para identificar a las personas.');
+    }
     return {
       idActividad: document.getElementById('importActividad')?.value || '',
       encabezados: IMPORTACION.encabezados,

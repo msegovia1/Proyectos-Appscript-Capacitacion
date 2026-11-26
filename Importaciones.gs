@@ -62,9 +62,30 @@ function analizarImportacionUniversal(datos) {
   const personas = leerTablaImportador_(ss.getSheetByName(SISTEMA.HOJAS.PERSONAS));
   const participaciones = leerTablaImportador_(ss.getSheetByName(SISTEMA.HOJAS.PARTICIPACIONES));
   const personasPorDocumento = {};
+  const personasPorCorreo = {};
+  const personasPorTelefono = {};
+  const personasPorNombreUnico = {};
   personas.filas.forEach(function(fila) {
     const clave = importadorClavePersona_(fila.datos);
     if (clave && !personasPorDocumento[clave]) personasPorDocumento[clave] = fila.datos;
+    const cor = sigcNormalizarCorreo(fila.datos.CORREO || '');
+    if (cor && sigcValidarCorreo(cor)) {
+      if (!personasPorCorreo[cor]) personasPorCorreo[cor] = [];
+      personasPorCorreo[cor].push(fila.datos);
+    }
+    const tel = sigcNormalizarTelefono(fila.datos.TELEFONO || '');
+    if (tel && sigcValidarTelefono(tel)) {
+      if (!personasPorTelefono[tel]) personasPorTelefono[tel] = [];
+      personasPorTelefono[tel].push(fila.datos);
+    }
+    const nomCl = sigcNormalizarClave(fila.datos.NOMBRE_COMPLETO || '');
+    if (nomCl && nomCl.split(' ').length >= 2) {
+      if (!Object.prototype.hasOwnProperty.call(personasPorNombreUnico, nomCl)) {
+        personasPorNombreUnico[nomCl] = fila.datos;
+      } else if (personasPorNombreUnico[nomCl] !== fila.datos) {
+        personasPorNombreUnico[nomCl] = null;
+      }
+    }
   });
   const participacionesActivas = {};
   participaciones.filas.forEach(function(fila) {
@@ -74,6 +95,10 @@ function analizarImportacionUniversal(datos) {
     ] = true;
   });
   const documentosLote = {};
+  const personasLotePorId = {};
+  const lotePorCorreo = {};
+  const lotePorTelefono = {};
+  const lotePorNombre = {};
   const resumen = {filas: filas.length, nuevas: 0, existentes: 0, duplicadas: 0, revision: 0};
   const vistaPrevia = [];
   filas.forEach(function(fila, indice) {
@@ -83,12 +108,50 @@ function analizarImportacionUniversal(datos) {
       if (!nombre) throw new Error('Falta el nombre completo.');
       const documento = importacionesResolverDocumentoTolerante_(registro, nombre);
       const clave = importadorClaveDocumento_(documento.tipo, documento.numero, registro.nacionalidad);
-      const persona = personasPorDocumento[clave];
+      const corReg = sigcNormalizarCorreo(registro.correo);
+      const telReg = sigcNormalizarTelefono(registro.telefono);
+      const nomCl = sigcNormalizarClave(nombre);
+
+      let persona = personasPorDocumento[clave];
+      let criterioCruce = '';
+      if (!persona && corReg && personasPorCorreo[corReg]) {
+        persona = personasPorCorreo[corReg].find(function(cand) {
+          return sigcSonNombresCompatibles(nombre, cand.NOMBRE_COMPLETO);
+        }) || null;
+        if (persona) criterioCruce = 'correo y nombre';
+      }
+      if (!persona && telReg && personasPorTelefono[telReg]) {
+        persona = personasPorTelefono[telReg].find(function(cand) {
+          return sigcSonNombresCompatibles(nombre, cand.NOMBRE_COMPLETO);
+        }) || null;
+        if (persona) criterioCruce = 'teléfono y nombre';
+      }
+      if (!persona && documento.historica && nomCl && personasPorNombreUnico[nomCl]) {
+        persona = personasPorNombreUnico[nomCl];
+        criterioCruce = 'nombre completo único';
+      }
+
+      const idPerExistente = persona ? String(persona.ID_PERSONA || '').trim() : '';
+      let duplicadoEnLote = Boolean(documentosLote[clave]) || (idPerExistente && Boolean(personasLotePorId[idPerExistente]));
+      let motivoDuplicadoLote = '';
+      if (!duplicadoEnLote && corReg && lotePorCorreo[corReg] && sigcSonNombresCompatibles(nombre, lotePorCorreo[corReg])) {
+        duplicadoEnLote = true;
+        motivoDuplicadoLote = 'Correo y nombre repetidos en el listado.';
+      }
+      if (!duplicadoEnLote && telReg && lotePorTelefono[telReg] && sigcSonNombresCompatibles(nombre, lotePorTelefono[telReg])) {
+        duplicadoEnLote = true;
+        motivoDuplicadoLote = 'Teléfono y nombre repetidos en el listado.';
+      }
+      if (!duplicadoEnLote && documento.historica && nomCl && nomCl.split(' ').length >= 2 && lotePorNombre[nomCl]) {
+        duplicadoEnLote = true;
+        motivoDuplicadoLote = 'Nombre completo repetido en el listado.';
+      }
+
       let estado = persona ? 'PERSONA_EXISTENTE' : 'PERSONA_NUEVA';
-      if (documentosLote[clave]) {
+      if (duplicadoEnLote) {
         estado = 'DUPLICADO_EN_LISTADO';
         resumen.duplicadas++;
-      } else if (persona && participacionesActivas[String(persona.ID_PERSONA || '') + '|' + idActividad]) {
+      } else if (idPerExistente && participacionesActivas[idPerExistente + '|' + idActividad]) {
         estado = 'PARTICIPACION_EXISTENTE';
         resumen.duplicadas++;
       } else if (persona) {
@@ -97,17 +160,26 @@ function analizarImportacionUniversal(datos) {
         resumen.nuevas++;
       }
       documentosLote[clave] = true;
+      if (idPerExistente) personasLotePorId[idPerExistente] = true;
+      if (corReg && sigcValidarCorreo(corReg) && !lotePorCorreo[corReg]) lotePorCorreo[corReg] = nombre;
+      if (telReg && sigcValidarTelefono(telReg) && !lotePorTelefono[telReg]) lotePorTelefono[telReg] = nombre;
+      if (nomCl && nomCl.split(' ').length >= 2 && !lotePorNombre[nomCl]) lotePorNombre[nomCl] = true;
+
       if (vistaPrevia.length < 250) {
+        const docMostrar = persona && (persona.RUT || persona.NUMERO_DOCUMENTO)
+          ? (persona.RUT || persona.NUMERO_DOCUMENTO)
+          : documento.numero;
+        const notaCruce = criterioCruce ? 'Asociado por ' + criterioCruce + ' · ' : (documento.advertencia ? documento.advertencia + ' · ' : '');
         vistaPrevia.push({
           fila: indice + 2,
           nombre: nombre,
-          documento: documento.numero,
+          documento: docMostrar,
           estado: estado,
-          detalle: (documento.advertencia ? documento.advertencia + ' · ' : '') + (estado === 'PERSONA_NUEVA'
+          detalle: notaCruce + (estado === 'PERSONA_NUEVA'
             ? 'Se creará la persona y su participación.'
             : estado === 'PERSONA_EXISTENTE'
               ? 'Se reutilizará la persona y se creará la participación.'
-              : 'No se creará una participación duplicada.')
+              : (motivoDuplicadoLote || 'No se creará una participación duplicada.'))
         });
       }
     } catch (error) {
@@ -151,10 +223,32 @@ function importarCapacitacionHistoricaUniversal(datos) {
     const personas = leerTablaImportador_(personasHoja);
     const participaciones = leerTablaImportador_(participacionesHoja);
     const personasPorDocumento = {};
-    personas.filas.forEach(function(fila) {
+    const personasPorCorreo = {};
+    const personasPorTelefono = {};
+    const personasPorNombreUnico = {};
+    function indexarPersonaImportador_(fila) {
       const clave = importadorClavePersona_(fila.datos);
       if (clave && !personasPorDocumento[clave]) personasPorDocumento[clave] = fila;
-    });
+      const cor = sigcNormalizarCorreo(fila.datos.CORREO || '');
+      if (cor && sigcValidarCorreo(cor)) {
+        if (!personasPorCorreo[cor]) personasPorCorreo[cor] = [];
+        personasPorCorreo[cor].push(fila);
+      }
+      const tel = sigcNormalizarTelefono(fila.datos.TELEFONO || '');
+      if (tel && sigcValidarTelefono(tel)) {
+        if (!personasPorTelefono[tel]) personasPorTelefono[tel] = [];
+        personasPorTelefono[tel].push(fila);
+      }
+      const nomCl = sigcNormalizarClave(fila.datos.NOMBRE_COMPLETO || '');
+      if (nomCl && nomCl.split(' ').length >= 2) {
+        if (!Object.prototype.hasOwnProperty.call(personasPorNombreUnico, nomCl)) {
+          personasPorNombreUnico[nomCl] = fila;
+        } else if (personasPorNombreUnico[nomCl] !== fila) {
+          personasPorNombreUnico[nomCl] = null; // homónimo: no asociar automáticamente por solo nombre
+        }
+      }
+    }
+    personas.filas.forEach(indexarPersonaImportador_);
     const participacionesActivas = {};
     participaciones.filas.forEach(function(fila) {
       if (sigcNormalizarSiNo(fila.datos.REGISTRO_ACTIVO, 'Sí') === 'No') return;
@@ -177,6 +271,11 @@ function importarCapacitacionHistoricaUniversal(datos) {
       participacionesCreadas: 0, duplicadosOmitidos: 0, revision: 0
     };
     const auditoria = [];
+    const nuevasPersonasRows = [];
+    const nuevasParticipacionesRows = [];
+    let huboPersonasModificadas = false;
+    const correoUsuarioLote = Session.getActiveUser().getEmail() || 'Usuario no disponible';
+    let siguienteFilaNuevaPersona = personasHoja.getLastRow() + 1;
     let maxSesionesLote = Number(actividad.sesionesTotales || 1);
     filas.forEach(function(fila, indice) {
       let estado = 'ERROR';
@@ -218,10 +317,39 @@ function importarCapacitacionHistoricaUniversal(datos) {
           PARTICIPA_PMJH: sigcNormalizarSiNo(registro.participaPmjh, 'No informado')
         };
         let personaFila = personasPorDocumento[claveDocumento];
+        let criterioCruce = 'documento';
+        if (!personaFila && correo && personasPorCorreo[correo]) {
+          personaFila = personasPorCorreo[correo].find(function(cand) {
+            return sigcSonNombresCompatibles(nombre, cand.datos.NOMBRE_COMPLETO);
+          }) || null;
+          if (personaFila) criterioCruce = 'correo y nombre';
+        }
+        if (!personaFila && telefono && personasPorTelefono[telefono]) {
+          personaFila = personasPorTelefono[telefono].find(function(cand) {
+            return sigcSonNombresCompatibles(nombre, cand.datos.NOMBRE_COMPLETO);
+          }) || null;
+          if (personaFila) criterioCruce = 'teléfono y nombre';
+        }
+        if (!personaFila && documento.historica) {
+          const nomCl = sigcNormalizarClave(nombre);
+          if (nomCl && personasPorNombreUnico[nomCl]) {
+            personaFila = personasPorNombreUnico[nomCl];
+            criterioCruce = 'nombre completo único';
+          } else if (nomCl && nomCl.split(' ').length >= 2 && personasPorNombreUnico[nomCl] === null) {
+            // Si hubo homónimo creado dentro de este mismo lote sin documento, buscarlo en las creadas del lote
+            const prevLote = personas.filas.find(function(cand) {
+              return sigcNormalizarClave(cand.datos.NOMBRE_COMPLETO || '') === nomCl;
+            });
+            if (prevLote) {
+              personaFila = prevLote;
+              criterioCruce = 'nombre repetido en lote';
+            }
+          }
+        }
         if (!personaFila) {
           idPersona = 'PER-' + String(siguientePersona++).padStart(6, '0');
           const ahora = new Date();
-          agregarFilaImportador_(personasHoja, personas.encabezados, Object.assign({
+          const objNuevaPersona = Object.assign({
             ID_PERSONA: idPersona,
             AUTORIZA_CONTACTO: 'No informado',
             FECHA_PRIMER_REGISTRO: registro.fechaInscripcion || ahora,
@@ -229,20 +357,55 @@ function importarCapacitacionHistoricaUniversal(datos) {
             ESTADO_CONTACTO: correo || telefono ? 'Activo' : 'Sin contacto',
             ULTIMA_ACTUALIZACION: ahora,
             OBSERVACIONES: 'Creado desde la sección Importaciones. Lote ' + importacionId
-          }, datosPersona));
+          }, datosPersona);
+          const arrNuevaPersona = nuevaFilaSegunEncabezados_(personas.encabezados, objNuevaPersona);
+          nuevasPersonasRows.push(arrNuevaPersona);
           personaFila = {
-            numeroFila: personasHoja.getLastRow(),
-            datos: Object.assign({ID_PERSONA: idPersona}, datosPersona)
+            numeroFila: siguienteFilaNuevaPersona++,
+            esNuevaLote: true,
+            arrNueva: arrNuevaPersona,
+            datos: objNuevaPersona
           };
-          personasPorDocumento[claveDocumento] = personaFila;
+          personas.filas.push(personaFila);
+          indexarPersonaImportador_(personaFila);
           resumen.personasCreadas++;
         } else {
           idPersona = String(personaFila.datos.ID_PERSONA || '').trim();
           if (!idPersona) throw new Error('La persona existente no tiene ID_PERSONA.');
-          importadorActualizarPersonaSinBorrar_(
-            personasHoja, personas.encabezados, personaFila.numeroFila, datosPersona
-          );
-          resumen.personasActualizadas++;
+          const datosActualizar = Object.assign({}, datosPersona);
+          // Si se asoció por correo/teléfono/nombre sin RUT en el Excel, no sobrescribir el documento previo
+          if (criterioCruce !== 'documento' && personaFila.datos.NUMERO_DOCUMENTO) {
+            delete datosActualizar.RUT;
+            delete datosActualizar.TIPO_DOCUMENTO;
+            delete datosActualizar.NUMERO_DOCUMENTO;
+          }
+          if (criterioCruce !== 'documento') {
+            notasExtra.push('Asociado a ficha existente por ' + criterioCruce + '.');
+          }
+          let cambioEnFicha = false;
+          Object.keys(datosActualizar).forEach(function(campo) {
+            const valNuevo = datosActualizar[campo];
+            if (valNuevo === '' || valNuevo === null || valNuevo === undefined) return;
+            const valAct = personaFila.datos[campo];
+            const actNorm = normalizarEncabezado_(valAct);
+            if (valAct !== '' && valAct !== null && valAct !== undefined &&
+                ['NO INFORMADO', 'SIN INFORMACION', 'N A'].indexOf(actNorm) < 0) {
+              return;
+            }
+            personaFila.datos[campo] = valNuevo;
+            cambioEnFicha = true;
+          });
+          if (cambioEnFicha) {
+            personaFila.datos.ULTIMA_ACTUALIZACION = new Date();
+            if (personaFila.esNuevaLote && personaFila.arrNueva) {
+              const filaAct = nuevaFilaSegunEncabezados_(personas.encabezados, personaFila.datos);
+              for (let c = 0; c < filaAct.length; c++) personaFila.arrNueva[c] = filaAct[c];
+            } else {
+              personaFila._modificada = true;
+              huboPersonasModificadas = true;
+            }
+            resumen.personasActualizadas++;
+          }
         }
         const claveParticipacion = idPersona + '|' + idActividad;
         if (participacionesActivas[claveParticipacion]) {
@@ -259,7 +422,7 @@ function importarCapacitacionHistoricaUniversal(datos) {
         const resultado = sigcCalcularResultado(actividad, sesionesAsistidas, sesionesTotales, finalizar);
         idParticipacion = 'PAR-' + new Date().getFullYear() + '-' +
           String(siguienteParticipacion++).padStart(6, '0');
-        agregarFilaImportador_(participacionesHoja, participaciones.encabezados, {
+        nuevasParticipacionesRows.push(nuevaFilaSegunEncabezados_(participaciones.encabezados, {
           ID_PARTICIPACION: idParticipacion,
           ID_PERSONA: idPersona,
           ID_ACTIVIDAD: idActividad,
@@ -279,12 +442,11 @@ function importarCapacitacionHistoricaUniversal(datos) {
           FILA_ORIGEN: indice + 2,
           REGISTRO_ACTIVO: 'Sí',
           ULTIMA_ACTUALIZACION: new Date()
-        });
+        }));
         participacionesActivas[claveParticipacion] = true;
         resumen.participacionesCreadas++;
         estado = 'PROCESADO';
         detalle = 'Persona y participación procesadas correctamente.';
-        sigcRegistrarLog('IMPORTAR', 'PARTICIPACION', idParticipacion, idPersona + ' | ' + idActividad);
       } catch (error) {
         resumen.revision++;
         estado = 'REVISION';
@@ -292,23 +454,73 @@ function importarCapacitacionHistoricaUniversal(datos) {
       } finally {
         auditoria.push([
           importacionId, indice + 2, new Date(),
-          Session.getActiveUser().getEmail() || 'Usuario no disponible',
+          correoUsuarioLote,
           JSON.stringify(importacionesFilaOriginal_(datos.encabezados || [], fila)),
           estado, idPersona, idParticipacion, detalle
         ]);
       }
     });
+    if (huboPersonasModificadas) {
+      personas.filas.forEach(function(pf) {
+        if (!pf._modificada || pf.esNuevaLote) return;
+        const rowArr = nuevaFilaSegunEncabezados_(personas.encabezados, pf.datos);
+        try {
+          personasHoja.getRange(pf.numeroFila, 1, 1, rowArr.length).setValues([rowArr]);
+        } catch (errUpdPer) {
+          if (/validaci[oó]n|validation/i.test(String(errUpdPer && errUpdPer.message || ''))) {
+            personasHoja.getRange(pf.numeroFila, 1, 1, rowArr.length).clearDataValidations();
+            personasHoja.getRange(pf.numeroFila, 1, 1, rowArr.length).setValues([rowArr]);
+          } else {
+            throw errUpdPer;
+          }
+        }
+      });
+    }
+    if (nuevasPersonasRows.length) {
+      try {
+        personasHoja.getRange(personasHoja.getLastRow() + 1, 1, nuevasPersonasRows.length, personas.encabezados.length)
+          .setValues(nuevasPersonasRows);
+      } catch (errInsPer) {
+        if (/validaci[oó]n|validation/i.test(String(errInsPer && errInsPer.message || ''))) {
+          const rIniP = personasHoja.getLastRow() + 1;
+          personasHoja.getRange(rIniP, 1, nuevasPersonasRows.length, personas.encabezados.length).clearDataValidations();
+          personasHoja.getRange(rIniP, 1, nuevasPersonasRows.length, personas.encabezados.length).setValues(nuevasPersonasRows);
+        } else {
+          throw errInsPer;
+        }
+      }
+    }
+    if (nuevasParticipacionesRows.length) {
+      try {
+        participacionesHoja.getRange(participacionesHoja.getLastRow() + 1, 1, nuevasParticipacionesRows.length, participaciones.encabezados.length)
+          .setValues(nuevasParticipacionesRows);
+      } catch (errInsPart) {
+        if (/validaci[oó]n|validation/i.test(String(errInsPart && errInsPart.message || ''))) {
+          const rIniPt = participacionesHoja.getLastRow() + 1;
+          participacionesHoja.getRange(rIniPt, 1, nuevasParticipacionesRows.length, participaciones.encabezados.length).clearDataValidations();
+          participacionesHoja.getRange(rIniPt, 1, nuevasParticipacionesRows.length, participaciones.encabezados.length).setValues(nuevasParticipacionesRows);
+        } else {
+          throw errInsPart;
+        }
+      }
+    }
     if (auditoria.length) {
       originales.getRange(originales.getLastRow() + 1, 1, auditoria.length, auditoria[0].length)
         .setValues(auditoria);
     }
     historial.appendRow([
-      importacionId, new Date(), Session.getActiveUser().getEmail() || 'Usuario no disponible',
+      importacionId, new Date(), correoUsuarioLote,
       'CAPACITACION_HISTORICA', idActividad, actividad.nombre, filas.length,
       resumen.personasCreadas, resumen.personasActualizadas,
       resumen.participacionesCreadas, resumen.duplicadosOmitidos,
       resumen.revision, 'Finalizada'
     ]);
+    sigcRegistrarLog(
+      'IMPORTAR',
+      'LOTE_IMPORTACION',
+      importacionId,
+      idActividad + ' | Creadas: ' + resumen.participacionesCreadas + ' | Personas nuevas: ' + resumen.personasCreadas
+    );
     if (maxSesionesLote > Number(actividad.sesionesTotales || 1) && actividad.fila) {
       try {
         const actHoja = ss.getSheetByName(SISTEMA.HOJAS.ACTIVIDADES);

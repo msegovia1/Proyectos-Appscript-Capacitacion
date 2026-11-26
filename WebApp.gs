@@ -569,6 +569,9 @@ function webNormalizarPersonaSalida_(persona) {
     NUMERO_DOCUMENTO: numero,
     DOCUMENTO: numero,
     EDAD: webCalcularEdad_(persona.FECHA_NACIMIENTO),
+    FECHA_NACIMIENTO: webCeldaAString_(persona.FECHA_NACIMIENTO),
+    FECHA_PRIMER_REGISTRO: webCeldaAString_(persona.FECHA_PRIMER_REGISTRO),
+    ULTIMA_ACTUALIZACION: webCeldaAString_(persona.ULTIMA_ACTUALIZACION),
     PARTICIPA_PMJH: sigcNormalizarSiNo(persona.PARTICIPA_PMJH, 'No informado')
   });
 }
@@ -1660,7 +1663,9 @@ function guardarActividad(datos) {
     if (!hoja) throw new Error('No se encontró la hoja ACTIVIDADES.');
     const tabla = webLeerTablaConFilas_(hoja);
     webAsegurarEncabezadosActividades_(hoja, tabla.encabezados);
-    const anio = String(datos.ANO || new Date().getFullYear());
+    const anio = Math.trunc(
+      webNumeroNoNegativo_(datos.ANO, new Date().getFullYear())
+    );
     const id = webCalcularSiguienteIdDesdeFilas_(
       tabla.filas,
       'ID_ACTIVIDAD',
@@ -1675,6 +1680,14 @@ function guardarActividad(datos) {
     const detalleSesiones = typeof datos.DETALLE_SESIONES === 'string'
       ? datos.DETALLE_SESIONES
       : JSON.stringify(datos.DETALLE_SESIONES || []);
+    const fechaIni = String(datos.FECHA_INICIO || '').trim();
+    const fechaFin = String(datos.FECHA_TERMINO || '').trim();
+    const mesIni = sigcNormalizarTexto(datos.MES_INICIO) || webMesDesdeFecha_(fechaIni);
+    const mesFin = sigcNormalizarTexto(datos.MES_TERMINO) || webMesDesdeFecha_(fechaFin);
+    const modalidadNorm = webNormalizarModalidadCategoria_(datos.MODALIDAD || 'Presencial');
+    const cuposVal = (datos.CUPOS !== '' && datos.CUPOS !== null && datos.CUPOS !== undefined)
+      ? Math.max(0, Math.trunc(Number(datos.CUPOS) || 0))
+      : '';
     const nuevaActividad = {
       ID_ACTIVIDAD: id,
       NOMBRE_ACTIVIDAD: sigcNormalizarTexto(datos.NOMBRE_ACTIVIDAD),
@@ -1683,10 +1696,10 @@ function guardarActividad(datos) {
       ESCUELA_LINEA: sigcNormalizarTexto(datos.ESCUELA_LINEA),
       AREA_TEMATICA: sigcNormalizarTexto(datos.AREA_TEMATICA),
       ANO: anio,
-      MES_INICIO: sigcNormalizarTexto(datos.MES_INICIO),
-      MES_TERMINO: sigcNormalizarTexto(datos.MES_TERMINO),
-      FECHA_INICIO: datos.FECHA_INICIO || '',
-      FECHA_TERMINO: datos.FECHA_TERMINO || '',
+      MES_INICIO: mesIni,
+      MES_TERMINO: mesFin,
+      FECHA_INICIO: fechaIni,
+      FECHA_TERMINO: fechaFin,
       HORARIO: sigcNormalizarTexto(datos.HORARIO),
       DETALLE_SESIONES: detalleSesiones === '[]' ? '' : detalleSesiones,
       SESIONES_TOTALES: Math.max(1, Number(datos.SESIONES_TOTALES || 1)),
@@ -1694,12 +1707,12 @@ function guardarActividad(datos) {
         ? sigcConvertirPorcentaje(datos.PORCENTAJE_APROBACION || 0.8)
         : '',
       REGLA_RESULTADO: regla,
-      CUPOS: datos.CUPOS || '',
+      CUPOS: cuposVal,
       REQUIERE_SELECCION: sigcNormalizarSiNo(
         datos.REQUIERE_SELECCION,
         'No'
       ),
-      MODALIDAD: sigcNormalizarTexto(datos.MODALIDAD) || 'Presencial',
+      MODALIDAD: modalidadNorm,
       INSTITUCION_ASOCIADA: sigcNormalizarTexto(datos.INSTITUCION_ASOCIADA),
       RESPONSABLE: sigcNormalizarTexto(datos.RESPONSABLE),
       ESTADO_ACTIVIDAD: sigcNormalizarTexto(datos.ESTADO_ACTIVIDAD) || 'Planificada',
@@ -1709,7 +1722,19 @@ function guardarActividad(datos) {
       REQUISITOS: sigcNormalizarTexto(datos.REQUISITOS),
       DESCRIPCION_CORTA: sigcNormalizarTexto(datos.DESCRIPCION_CORTA)
     };
-    webAgregarFilaPorEncabezados_(hoja, tabla.encabezados, nuevaActividad);
+    try {
+      webAgregarFilaPorEncabezados_(hoja, tabla.encabezados, nuevaActividad);
+    } catch (errInsert) {
+      // Si Google Sheets bloquea por una validación de datos estricta heredada (ej. lista desplegable),
+      // se flexibiliza la validación en la fila destino y se reintenta la escritura.
+      if (/validaci[oó]n|validation/i.test(String(errInsert && errInsert.message || ''))) {
+        const filaDestino = hoja.getLastRow() + 1;
+        hoja.getRange(filaDestino, 1, 1, tabla.encabezados.length).clearDataValidations();
+        webAgregarFilaPorEncabezados_(hoja, tabla.encabezados, nuevaActividad);
+      } else {
+        throw errInsert;
+      }
+    }
     try {
       webIntentarSincronizarCalendarApp_(hoja, tabla.encabezados, hoja.getLastRow(), nuevaActividad);
     } catch (eCal) {}
@@ -1858,7 +1883,7 @@ function actualizarActividad(datos) {
       REGLA_RESULTADO: regla,
       CUPOS: cupos,
       REQUIERE_SELECCION: sigcNormalizarSiNo(datos.REQUIERE_SELECCION, 'No'),
-      MODALIDAD: sigcNormalizarTexto(datos.MODALIDAD) || 'Presencial',
+      MODALIDAD: webNormalizarModalidadCategoria_(datos.MODALIDAD || 'Presencial'),
       INSTITUCION_ASOCIADA: sigcNormalizarTexto(datos.INSTITUCION_ASOCIADA),
       RESPONSABLE: sigcNormalizarTexto(datos.RESPONSABLE),
       ESTADO_ACTIVIDAD: estado,
@@ -2166,6 +2191,10 @@ function guardarParticipacion(datos) {
     );
     sigcInvalidarCacheTabla_(WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
     const participacionEnriquecida = Object.assign({}, nuevaParticipacion, {
+      FECHA_INSCRIPCION: webCeldaAString_(nuevaParticipacion.FECHA_INSCRIPCION),
+      FECHA_NOTIFICACION: webCeldaAString_(nuevaParticipacion.FECHA_NOTIFICACION),
+      FECHA_CERTIFICACION: webCeldaAString_(nuevaParticipacion.FECHA_CERTIFICACION),
+      ULTIMA_ACTUALIZACION: webCeldaAString_(nuevaParticipacion.ULTIMA_ACTUALIZACION),
       NOMBRE_COMPLETO: persona.NOMBRE_COMPLETO || '',
       RUT: persona.RUT || '',
       DOCUMENTO: persona.NUMERO_DOCUMENTO || persona.RUT || '',
@@ -3815,14 +3844,23 @@ function webAgregarFilaPorEncabezados_(hoja, encabezados, datos) {
   Object.keys(datos).forEach(function(campo) {
     normalizados[sigcNormalizarEncabezado(campo)] = datos[campo];
   });
-  hoja.appendRow(
-    encabezados.map(function(encabezado) {
-      const clave = sigcNormalizarEncabezado(encabezado);
-      return Object.prototype.hasOwnProperty.call(normalizados, clave)
-        ? normalizados[clave]
-        : '';
-    })
-  );
+  const filaValores = encabezados.map(function(encabezado) {
+    const clave = sigcNormalizarEncabezado(encabezado);
+    return Object.prototype.hasOwnProperty.call(normalizados, clave)
+      ? normalizados[clave]
+      : '';
+  });
+  try {
+    hoja.appendRow(filaValores);
+  } catch (errInsert) {
+    if (/validaci[oó]n|validation/i.test(String(errInsert && errInsert.message || ''))) {
+      const filaDestino = hoja.getLastRow() + 1;
+      hoja.getRange(filaDestino, 1, 1, encabezados.length).clearDataValidations();
+      hoja.appendRow(filaValores);
+    } else {
+      throw errInsert;
+    }
+  }
 }
 function webActualizarFilaPorEncabezados_(
   hoja,
@@ -3847,7 +3885,16 @@ function webActualizarFilaPorEncabezados_(
       ? normalizados[clave]
       : actual[indice];
   });
-  rango.setValues([nueva]);
+  try {
+    rango.setValues([nueva]);
+  } catch (errUpd) {
+    if (/validaci[oó]n|validation/i.test(String(errUpd && errUpd.message || ''))) {
+      rango.clearDataValidations();
+      rango.setValues([nueva]);
+    } else {
+      throw errUpd;
+    }
+  }
 }
 function webActualizarPersonaSinBorrar_(
   hoja,
