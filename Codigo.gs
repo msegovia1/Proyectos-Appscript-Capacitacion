@@ -1263,9 +1263,12 @@ function recuperarTodosFormulariosActivosDesdeWeb() {
  * los formularios activos sin consumir 1 activador por planilla.
  */
 function sincronizarFormulariosProgramado_() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return;
+  // Usar guardia de reentrada en caché en lugar de ScriptLock global para no bloquear a los usuarios web
+  // mientras se abren planillas externas de formularios. El candado real se toma solo al escribir pendientes.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('SIGC_SYNC_PROGRAMADO_ACTIVO') === '1') return;
   try {
+    cache.put('SIGC_SYNC_PROGRAMADO_ACTIVO', '1', 360);
     const central = sigcSpreadsheetCentral_();
     const hojaConfig = central.getSheetByName(SISTEMA.HOJAS.FORMULARIOS || 'CONFIG_FORMULARIOS');
     if (!hojaConfig || hojaConfig.getLastRow() < 2) return;
@@ -1290,13 +1293,14 @@ function sincronizarFormulariosProgramado_() {
       } catch (eForm) {
         console.warn('Sync programado falló en ' + hojaNom + ': ' + eForm.message);
       }
+      Utilities.sleep(150);
     }
     if (totalResueltas > 0) {
       sigcInvalidarCache_();
-      try { CacheService.getScriptCache().remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (eC) {}
+      try { cache.remove('SIGC_PANEL_FORMULARIOS_V1'); } catch (eC) {}
     }
   } finally {
-    lock.releaseLock();
+    try { cache.remove('SIGC_SYNC_PROGRAMADO_ACTIVO'); } catch (eC2) {}
   }
 }
 
@@ -1358,6 +1362,28 @@ function procesarPendientesFormularioVinculado_(spreadsheetId, hojaRespuestas, i
   if (!hoja) throw new Error('No se encontró la hoja de respuestas vinculada.');
   asegurarColumnasProceso_(hoja);
   if (hoja.getLastRow() < 2) return {intentadas: 0, resueltas: 0, revision: 0, restantes: 0};
+
+  // Pre-chequeo rápido FUERA del candado: si no hay filas pendientes, no adquirir ScriptLock ni leer PERSONAS/PARTICIPACIONES
+  if (!incluirRevisiones) {
+    const preValores = hoja.getDataRange().getValues();
+    if (preValores.length < 2) return {intentadas: 0, resueltas: 0, revision: 0, restantes: 0};
+    const preEnc = preValores[0];
+    const preMr = mapaEncabezados_(preEnc);
+    const preColEstado = preMr['ESTADO PROCESO'];
+    let hayPendientes = false;
+    for (let k = 1; k < preValores.length; k++) {
+      const fVal = preValores[k];
+      if (filaFormularioEstaVacia_(preEnc, fVal)) continue;
+      const estPre = normalizarEncabezado_(preColEstado === undefined ? '' : fVal[preColEstado]);
+      if (estPre === '') {
+        hayPendientes = true;
+        break;
+      }
+    }
+    if (!hayPendientes) {
+      return {intentadas: 0, resueltas: 0, revision: 0, restantes: 0};
+    }
+  }
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);

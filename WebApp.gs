@@ -4829,6 +4829,61 @@ function procesarFilaSatisfaccion_(hoja, fila, encabezados, valores, idActividad
 
   const promGeneral = Number((notas.reduce(function(a, b) { return a + b; }, 0) / notas.length).toFixed(2));
   const porcSat = Math.round((promGeneral / 5) * 100);
+
+  // Validación antiduplicados por fecha+notas+comentarios (evita doble ingreso entre Hoja de Respuestas y FormApp)
+  try {
+    const evalDupCheck = hojaEval.getDataRange().getValues();
+    if (evalDupCheck.length > 1) {
+      const mDup = mapaEncabezados_(evalDupCheck[0]);
+      const cFecha = mDup['FECHA REGISTRO'];
+      const cActivo = mDup['REGISTRO ACTIVO'];
+      const cRel = mDup['NOTA RELATOR'];
+      const cCont = mDup['NOTA CONTENIDOS'];
+      const cOrg = mDup['NOTA ORGANIZACION'];
+      const cGlob = mDup['NOTA GLOBAL'];
+      const cVal = mDup['LO MAS VALIOSO'];
+      const cSug = mDup['SUGERENCIAS'];
+      const cIdActDup = mDup['ID ACTIVIDAD'];
+      const tsNuevoMs = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
+      const valNorm = String(valioso || '').trim();
+      const sugNorm = String(sugerencias || '').trim();
+      const rVal = nRelator || promGeneral;
+      const cValN = nContenidos || promGeneral;
+      const oVal = nOrganizacion || promGeneral;
+      const gVal = nGlobal || promGeneral;
+
+      if (!isNaN(tsNuevoMs) && cFecha !== undefined) {
+        for (let d = 1; d < evalDupCheck.length; d++) {
+          const esActDup = cActivo !== undefined ? (sigcNormalizarSiNo(evalDupCheck[d][cActivo], 'Sí') !== 'No') : true;
+          if (!esActDup) continue;
+          const idEvDup = String(evalDupCheck[d][0] || '').trim();
+          const idActDup = cIdActDup !== undefined ? String(evalDupCheck[d][cIdActDup] || '').trim() : '';
+          if (!/^EVA-/i.test(idEvDup) || !idActDup || /^[1-5]$/.test(idActDup)) continue;
+
+          const fGuard = evalDupCheck[d][cFecha];
+          const tsGuardMs = fGuard instanceof Date ? fGuard.getTime() : new Date(fGuard).getTime();
+          if (isNaN(tsGuardMs) || Math.abs(tsGuardMs - tsNuevoMs) > 2000) continue;
+
+          const mismoRel = cRel === undefined || Math.abs(Number(evalDupCheck[d][cRel] || 0) - rVal) < 0.01;
+          const mismoCont = cCont === undefined || Math.abs(Number(evalDupCheck[d][cCont] || 0) - cValN) < 0.01;
+          const mismoOrg = cOrg === undefined || Math.abs(Number(evalDupCheck[d][cOrg] || 0) - oVal) < 0.01;
+          const mismoGlob = cGlob === undefined || Math.abs(Number(evalDupCheck[d][cGlob] || 0) - gVal) < 0.01;
+          const mismoValioso = cVal === undefined || String(evalDupCheck[d][cVal] || '').trim() === valNorm;
+          const mismaSug = cSug === undefined || String(evalDupCheck[d][cSug] || '').trim() === sugNorm;
+
+          if (mismoRel && mismoCont && mismoOrg && mismoGlob && mismoValioso && mismaSug) {
+            if (hoja && fila) {
+              try {
+                registrarResultadoEnRespuesta_(hoja, fila, '', idEvDup, 'DUPLICADO', 'Encuesta ya consolidada previamente (' + idEvDup + ').');
+              } catch (eDupReg) {}
+            }
+            return { omitida: true, estado: 'DUPLICADO', idParticipacion: idEvDup };
+          }
+        }
+      }
+    }
+  } catch (eDup) {}
+
   const idEval = 'EVA-' + Utilities.getUuid().slice(0, 8).toUpperCase();
 
   hojaEval.appendRow([
