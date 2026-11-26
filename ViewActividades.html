@@ -7,8 +7,15 @@
             <button class="btn" type="button" onclick="irAVista('registro-actividades')">＋ Registrar actividad</button>
           </div>
         </div>
-        <div class="table-tools">
+        <div class="table-tools" style="flex-wrap:wrap; gap:8px;">
           <input id="buscarActividades" placeholder="Buscar actividad..." oninput="renderConPausa('actividades')">
+          <select id="filtroEscuelaAct" onchange="reiniciarYRenderizar('actividades')" title="Filtrar por escuela o línea">
+            <option value="">Todas las líneas</option>
+            <option value="Empleo">Empleo</option>
+            <option value="Emprendimiento">Emprendimiento</option>
+            <option value="Transversal">Transversal</option>
+            <option value="__sin_linea__">Sin línea asignada</option>
+          </select>
           <select id="filtroEstado" onchange="reiniciarYRenderizar('actividades')">
             <option value="">Todos los estados</option>
             <option value="Planificada">Planificada</option>
@@ -25,6 +32,28 @@
             <option value="con">✅ Con asistencia registrada</option>
             <option value="sin">⚠️ Sin asistencia registrada</option>
           </select>
+          <select id="filtroMesAct" onchange="reiniciarYRenderizar('actividades')" title="Filtrar por mes de inicio">
+            <option value="">Todos los meses</option>
+            <option value="01">Enero</option>
+            <option value="02">Febrero</option>
+            <option value="03">Marzo</option>
+            <option value="04">Abril</option>
+            <option value="05">Mayo</option>
+            <option value="06">Junio</option>
+            <option value="07">Julio</option>
+            <option value="08">Agosto</option>
+            <option value="09">Septiembre</option>
+            <option value="10">Octubre</option>
+            <option value="11">Noviembre</option>
+            <option value="12">Diciembre</option>
+          </select>
+          <div style="display:flex; align-items:center; gap:4px; font-size:12px; color:#475569;">
+            <span>Desde</span>
+            <input id="filtroFechaDesdeAct" type="date" onchange="reiniciarYRenderizar('actividades')" style="width:auto; padding:6px 8px;">
+            <span>Hasta</span>
+            <input id="filtroFechaHastaAct" type="date" onchange="reiniciarYRenderizar('actividades')" style="width:auto; padding:6px 8px;">
+          </div>
+          <button class="btn secondary compact" type="button" onclick="limpiarFiltrosActividades()" title="Restablecer filtros">✕ Limpiar</button>
           <label class="checkline"><input id="mostrarActividadesArchivadas" type="checkbox" onchange="reiniciarYRenderizar('actividades')"> Mostrar archivadas</label>
         </div>
         <div class="table-container"><table><thead><tr><th>ID</th><th>Actividad</th><th>Tipo</th><th>Programa</th><th>Área</th><th>Año</th><th>Sesiones</th><th>Asistencia</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="tablaActividades"></tbody></table></div>

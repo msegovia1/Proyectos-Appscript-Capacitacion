@@ -952,18 +952,50 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     return 'warning';
   }
 
+  function limpiarFiltrosActividades() {
+    ['buscarActividades', 'filtroEscuelaAct', 'filtroEstado', 'filtroAsistenciaAct', 'filtroMesAct', 'filtroFechaDesdeAct', 'filtroFechaHastaAct'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const chk = document.getElementById('mostrarActividadesArchivadas');
+    if (chk) chk.checked = false;
+    reiniciarYRenderizar('actividades');
+  }
   function renderActividades() {
     poblarFiltroEstadosActividad_();
     const q = normalizar(document.getElementById('buscarActividades')?.value || '');
+    const filtroEscuela = normalizar(document.getElementById('filtroEscuelaAct')?.value || '');
     const estado = document.getElementById('filtroEstado')?.value || '';
     const filtroAsistencia = document.getElementById('filtroAsistenciaAct')?.value || '';
+    const filtroMes = document.getElementById('filtroMesAct')?.value || '';
+    const fechaDesde = document.getElementById('filtroFechaDesdeAct')?.value || '';
+    const fechaHasta = document.getElementById('filtroFechaHastaAct')?.value || '';
     const mostrarArchivadas = document.getElementById('mostrarActividadesArchivadas')?.checked === true;
     const filas = DB.actividades
       .filter(a => {
         const tieneAsis = Number(a._TOTAL_ASISTENTES || 0) > 0;
         if (filtroAsistencia === 'con' && !tieneAsis) return false;
         if (filtroAsistencia === 'sin' && tieneAsis) return false;
-        return normalizar([a.NOMBRE_ACTIVIDAD,a.TIPO_ACTIVIDAD,a.PROGRAMA,a.AREA_TEMATICA,a.ID_ACTIVIDAD].join(' ')).includes(q) &&
+
+        const lineaAct = normalizar(a.ESCUELA_LINEA || '');
+        if (filtroEscuela === '__sin_linea__') {
+          if (lineaAct) return false;
+        } else if (filtroEscuela && lineaAct !== filtroEscuela) {
+          return false;
+        }
+
+        const fIni = fechaInput(a.FECHA_INICIO);
+        const fFin = fechaInput(a.FECHA_TERMINO) || fIni;
+        if (filtroMes) {
+          const mesIni = fIni ? fIni.slice(5, 7) : '';
+          const mesesMap = { enero:'01', febrero:'02', marzo:'03', abril:'04', mayo:'05', junio:'06', julio:'07', agosto:'08', septiembre:'09', octubre:'10', noviembre:'11', diciembre:'12' };
+          const mesTexto = mesesMap[normalizar(a.MES_INICIO || '')] || '';
+          if ((mesIni || mesTexto) !== filtroMes) return false;
+        }
+        if (fechaDesde && (!fFin || fFin < fechaDesde)) return false;
+        if (fechaHasta && (!fIni || fIni > fechaHasta)) return false;
+
+        return normalizar([a.NOMBRE_ACTIVIDAD,a.TIPO_ACTIVIDAD,a.PROGRAMA,a.ESCUELA_LINEA,a.AREA_TEMATICA,a.ID_ACTIVIDAD].join(' ')).includes(q) &&
           (!estado || a.ESTADO_ACTIVIDAD === estado) &&
           (mostrarArchivadas || normalizar(estado) === 'archivada' || !esActividadArchivada_(a));
       })
@@ -985,7 +1017,7 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
         ${a.FECHA_INICIO ? `<br><small class="muted" style="font-size:11.5px">📅 ${esc(fechaActividadVisible(a.FECHA_INICIO))}${a.FECHA_TERMINO ? ' al ' + esc(fechaActividadVisible(a.FECHA_TERMINO)) : ''}</small>` : ''}${esActividadCalendarizadaGCal_(a) ? ' <span class="badge success" style="font-size:10px;padding:1px 6px;" title="Marcada como calendarizada en Google Calendar">✓ En GCal</span>' : ''}
       </td>
       <td>${esc(a.TIPO_ACTIVIDAD)}</td>
-      <td>${esc(a.PROGRAMA)}</td>
+      <td>${esc(a.ESCUELA_LINEA || a.PROGRAMA)}${a.ESCUELA_LINEA && a.PROGRAMA && a.ESCUELA_LINEA !== a.PROGRAMA ? `<br><small class="muted">${esc(a.PROGRAMA)}</small>` : ''}</td>
       <td>${esc(a.AREA_TEMATICA)}</td>
       <td>${esc(a.ANO)}</td>
       <td>${esc(a.SESIONES_TOTALES)}</td>
