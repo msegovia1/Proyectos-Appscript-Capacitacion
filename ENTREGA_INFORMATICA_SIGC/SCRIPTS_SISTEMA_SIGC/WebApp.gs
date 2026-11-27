@@ -399,8 +399,8 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   const propiedades = PropertiesService.getScriptProperties();
   // Las claves estables permiten reutilizar el último resumen entre versiones
   // compatibles, evitando un recálculo completo después de cada despliegue.
-  const clave = 'SIGC_DASHBOARD_RESUMEN_V7';
-  const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V7';
+  const clave = 'SIGC_DASHBOARD_RESUMEN_V8';
+  const clavePersistente = 'SIGC_DASHBOARD_ULTIMO_VALIDO_V8';
   const esDirty = cache.get('SIGC_DASHBOARD_DIRTY') === '1';
   if (!forzarActualizacion && !esDirty) {
     let salidaGuardada = null;
@@ -434,6 +434,8 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   const participaciones = webLeerTablaConCache_(ss, WEBAPP_CONFIG.HOJAS.PARTICIPACIONES);
   const interesesHoja = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.INTERESES || 'INTERESES_CAPACITACION');
   const intereses = interesesHoja ? webLeerTablaConCache_(ss, interesesHoja.getName()) : [];
+  const evalHojaDash = ss.getSheetByName(WEBAPP_CONFIG.HOJAS.EVALUACIONES || 'EVALUACIONES_SATISFACCION');
+  const evaluacionesDash = evalHojaDash ? webLeerTablaConCache_(ss, evalHojaDash.getName()) : [];
   const personasNormalizadas = personas.map(webNormalizarPersonaSalida_);
   const personasPorId = webIndexar_(personasNormalizadas, 'ID_PERSONA');
   const actividadesPorId = webIndexar_(actividades, 'ID_ACTIVIDAD');
@@ -453,7 +455,7 @@ function obtenerDashboardLiviano(forzarActualizacion, clientTimestamp) {
   });
   const salida = {
     fechaActualizacion: Utilities.formatDate(new Date(), WEBAPP_CONFIG.ZONA_HORARIA, 'dd-MM-yyyy HH:mm:ss'),
-    resumen: webConstruirResumen_(personasNormalizadas, actividades, enriquecidas, intereses),
+    resumen: webConstruirResumen_(personasNormalizadas, actividades, enriquecidas, intereses, evaluacionesDash),
     graficos: webConstruirGraficos_(actividades, enriquecidas, personasNormalizadas)
   };
   try {
@@ -3270,7 +3272,7 @@ function webEsActividadArchivada_(actividad) {
     actividad && actividad.ESTADO_ACTIVIDAD
   ) === 'ARCHIVADA';
 }
-function webConstruirResumen_(personas, actividades, participaciones, intereses) {
+function webConstruirResumen_(personas, actividades, participaciones, intereses, evaluaciones) {
   const actividadesOperativas = actividades.filter(function(actividad) {
     return !webEsActividadArchivada_(actividad);
   });
@@ -3327,6 +3329,62 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
     return sigcNormalizarClave(i.ESTADO_INTERES || 'Activo') !== 'inactivo';
   }).map(function(i) { return String(i.ID_PERSONA || ''); }).filter(Boolean));
   const capacitadas = new Set(asistentes.map(function(p) { return String(p.ID_PERSONA || ''); }).filter(Boolean));
+
+  // Indicador de completitud de datos por actividad operativa (para detectar qué falta importar o completar)
+  const conteoPorAct = {};
+  activasRegistro.forEach(function(p) {
+    const idA = String(p.ID_ACTIVIDAD || '').trim();
+    if (!idA) return;
+    if (!conteoPorAct[idA]) conteoPorAct[idA] = { inscritos: 0, asistentes: 0 };
+    conteoPorAct[idA].inscritos++;
+    if (webEsAsistenteReal_(p)) conteoPorAct[idA].asistentes++;
+  });
+  const encuestasPorAct = {};
+  (evaluaciones || []).forEach(function(ev) {
+    if (!webEsRegistroActivo_(ev)) return;
+    const idA = String(ev.ID_ACTIVIDAD || '').trim();
+    if (!idA) return;
+    encuestasPorAct[idA] = (encuestasPorAct[idA] || 0) + Math.max(1, Number(ev.CANTIDAD_RESPUESTAS || 1));
+  });
+
+  let compSinPart = 0, compSinAsis = 0, compSinEnc = 0, compFichaInc = 0;
+  const compDetalle = [];
+  actividadesOperativas.forEach(function(a) {
+    const estNorm = sigcNormalizarEncabezado(a.ESTADO_ACTIVIDAD);
+    if (estNorm === 'SUSPENDIDA' || estNorm === 'CANCELADA') return;
+    const idA = String(a.ID_ACTIVIDAD || '').trim();
+    const c = conteoPorAct[idA] || { inscritos: 0, asistentes: 0 };
+    const enc = encuestasPorAct[idA] || 0;
+    const esFin = (estNorm === 'EJECUTADA' || estNorm === 'CERRADA');
+
+    const faltaPart = c.inscritos === 0;
+    const faltaAsis = c.inscritos > 0 && c.asistentes === 0;
+    const faltaEnc = esFin && enc === 0;
+    const faltaFicha = !String(a.FECHA_INICIO || '').trim() ||
+      !String(a.ESCUELA_LINEA || a.PROGRAMA || '').trim() ||
+      !String(a.RELATOR || a.RESPONSABLE || '').trim();
+
+    const faltantes = [];
+    if (faltaPart) { compSinPart++; faltantes.push('participantes'); }
+    if (faltaAsis) { compSinAsis++; faltantes.push('asistencia'); }
+    if (faltaEnc) { compSinEnc++; faltantes.push('encuesta'); }
+    if (faltaFicha) { compFichaInc++; faltantes.push('ficha'); }
+
+    if (faltantes.length > 0) {
+      compDetalle.push({
+        id: idA,
+        nombre: String(a.NOMBRE_ACTIVIDAD || ''),
+        fecha: String(a.FECHA_INICIO || ''),
+        estado: String(a.ESTADO_ACTIVIDAD || ''),
+        linea: String(a.ESCUELA_LINEA || a.PROGRAMA || ''),
+        inscritos: c.inscritos,
+        asistentes: c.asistentes,
+        encuestas: enc,
+        faltantes: faltantes
+      });
+    }
+  });
+
   return {
     totalPersonas: personas.length,
     totalInscritosUnicos: inscritosUnicos.size,
@@ -3348,7 +3406,15 @@ function webConstruirResumen_(personas, actividades, participaciones, intereses)
     tasaCertificacion: asistentes.length ? certificados.length / asistentes.length : 0,
     demandaRegistrada: demandaPersonas.size,
     personasCapacitadas: capacitadas.size,
-    brechaDemanda: Math.max(0, demandaPersonas.size - capacitadas.size)
+    brechaDemanda: Math.max(0, demandaPersonas.size - capacitadas.size),
+    completitud: {
+      totalPendientes: compDetalle.length,
+      sinParticipantes: compSinPart,
+      sinAsistencia: compSinAsis,
+      sinEncuesta: compSinEnc,
+      fichaIncompleta: compFichaInc,
+      detalle: compDetalle
+    }
   };
 }
 

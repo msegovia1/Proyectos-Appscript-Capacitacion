@@ -21,6 +21,51 @@
           <div class="card kpi"><span>Tasa de certificación</span><strong id="kpiCertificacion">0%</strong></div>
           <div class="card kpi"><span>Brecha demanda</span><strong id="kpiBrecha">0</strong></div>
         </div>
+        <div class="card panel" id="cardCompletitudDashboard" style="margin:14px 0 16px 0; border-left:4px solid #f59e0b;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+              <h3 style="margin:0 0 2px 0; font-size:15px;">📋 Datos pendientes por completar en actividades</h3>
+              <p style="margin:0; font-size:12.5px; color:var(--gris,#64748b);">Haz clic en cualquier indicador para ver exactamente qué actividades faltan por importar o completar.</p>
+            </div>
+            <span id="compTotalBadge" class="badge" style="background:#fef3c7; color:#92400e; font-weight:700;">0 actividades con pendientes</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px; margin-top:12px;">
+            <button type="button" class="card" onclick="filtrarCompletitudDashboard('participantes')" id="btnComp_participantes" style="text-align:left; padding:10px 12px; cursor:pointer; border:1px solid #e2e8f0; background:#fff;">
+              <div style="font-size:12px; color:#64748b; font-weight:600;">📥 Sin participantes</div>
+              <div style="font-size:20px; font-weight:800; color:#b45309; margin-top:2px;" id="compSinParticipantes">0</div>
+              <div style="font-size:11px; color:#94a3b8;">Falta importar nómina</div>
+            </button>
+            <button type="button" class="card" onclick="filtrarCompletitudDashboard('asistencia')" id="btnComp_asistencia" style="text-align:left; padding:10px 12px; cursor:pointer; border:1px solid #e2e8f0; background:#fff;">
+              <div style="font-size:12px; color:#64748b; font-weight:600;">✅ Sin asistencia</div>
+              <div style="font-size:20px; font-weight:800; color:#1d4ed8; margin-top:2px;" id="compSinAsistencia">0</div>
+              <div style="font-size:11px; color:#94a3b8;">Con inscritos, 0 asistencias</div>
+            </button>
+            <button type="button" class="card" onclick="filtrarCompletitudDashboard('encuesta')" id="btnComp_encuesta" style="text-align:left; padding:10px 12px; cursor:pointer; border:1px solid #e2e8f0; background:#fff;">
+              <div style="font-size:12px; color:#64748b; font-weight:600;">⭐ Sin encuesta</div>
+              <div style="font-size:20px; font-weight:800; color:#7c3aed; margin-top:2px;" id="compSinEncuesta">0</div>
+              <div style="font-size:11px; color:#94a3b8;">Finalizadas sin satisfacción</div>
+            </button>
+            <button type="button" class="card" onclick="filtrarCompletitudDashboard('ficha')" id="btnComp_ficha" style="text-align:left; padding:10px 12px; cursor:pointer; border:1px solid #e2e8f0; background:#fff;">
+              <div style="font-size:12px; color:#64748b; font-weight:600;">📝 Ficha incompleta</div>
+              <div style="font-size:20px; font-weight:800; color:#475569; margin-top:2px;" id="compFichaIncompleta">0</div>
+              <div style="font-size:11px; color:#94a3b8;">Falta fecha, línea o relator</div>
+            </button>
+          </div>
+          <div id="compDetalleWrap" style="display:none; margin-top:12px; border-top:1px solid #e2e8f0; padding-top:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
+              <strong id="compDetalleTitulo" style="font-size:13px; color:#1e293b;">Detalle de pendientes</strong>
+              <button type="button" class="btn secondary compact" onclick="filtrarCompletitudDashboard(null)">Ocultar lista</button>
+            </div>
+            <div class="table-wrap" style="max-height:280px; overflow:auto;">
+              <table>
+                <thead>
+                  <tr><th>Código</th><th>Actividad</th><th>Fecha</th><th>Estado</th><th>Qué falta</th><th>Acción</th></tr>
+                </thead>
+                <tbody id="compTablaBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         <details class="card kpi-guide">
           <summary>¿Qué calcula cada indicador?</summary>
           <div class="kpi-guide-grid">

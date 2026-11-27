@@ -568,10 +568,121 @@ let DB = {personas:[], actividades:[], participaciones:[], intereses:[], demanda
     texto('kpiAsistencia', formatoPorcentaje(r.tasaAsistencia));
     texto('kpiCertificacion', formatoPorcentaje(r.tasaCertificacion));
     texto('kpiBrecha', r.brechaDemanda || 0);
+    if (typeof renderCompletitudDashboard === 'function') {
+      renderCompletitudDashboard(r.completitud);
+    }
     try {
       renderGraficos();
     } catch (eG) {
       console.warn('Advertencia al renderizar gráficos del Dashboard: ' + eG.message);
+    }
+  }
+
+  let FILTRO_COMPLETITUD_ACTUAL = null;
+  function renderCompletitudDashboard(comp) {
+    const c = comp || { totalPendientes: 0, sinParticipantes: 0, sinAsistencia: 0, sinEncuesta: 0, fichaIncompleta: 0, detalle: [] };
+    texto('compSinParticipantes', c.sinParticipantes || 0);
+    texto('compSinAsistencia', c.sinAsistencia || 0);
+    texto('compSinEncuesta', c.sinEncuesta || 0);
+    texto('compFichaIncompleta', c.fichaIncompleta || 0);
+    const badge = document.getElementById('compTotalBadge');
+    if (badge) {
+      const tot = Number(c.totalPendientes || 0);
+      badge.textContent = tot > 0 ? `${tot} actividad(es) con pendientes` : '✓ Todo al día';
+      badge.style.background = tot > 0 ? '#fef3c7' : '#dcfce7';
+      badge.style.color = tot > 0 ? '#92400e' : '#166534';
+    }
+    if (FILTRO_COMPLETITUD_ACTUAL) {
+      filtrarCompletitudDashboard(FILTRO_COMPLETITUD_ACTUAL, true);
+    }
+  }
+
+  function filtrarCompletitudDashboard(tipo, mantenerSiActivo) {
+    const wrap = document.getElementById('compDetalleWrap');
+    const tbody = document.getElementById('compTablaBody');
+    const titulo = document.getElementById('compDetalleTitulo');
+    if (!wrap || !tbody) return;
+
+    const tipos = ['participantes', 'asistencia', 'encuesta', 'ficha'];
+    if (!tipo || (!mantenerSiActivo && FILTRO_COMPLETITUD_ACTUAL === tipo)) {
+      FILTRO_COMPLETITUD_ACTUAL = null;
+      wrap.style.display = 'none';
+      tipos.forEach(t => {
+        const b = document.getElementById('btnComp_' + t);
+        if (b) b.style.borderColor = '#e2e8f0';
+      });
+      return;
+    }
+
+    FILTRO_COMPLETITUD_ACTUAL = tipo;
+    tipos.forEach(t => {
+      const b = document.getElementById('btnComp_' + t);
+      if (b) b.style.borderColor = (t === tipo) ? '#2563eb' : '#e2e8f0';
+    });
+
+    const etiquetas = {
+      participantes: 'Actividades sin participantes importados',
+      asistencia: 'Actividades con inscritos pero sin asistencia registrada',
+      encuesta: 'Actividades finalizadas sin encuesta de satisfacción',
+      ficha: 'Actividades con datos básicos incompletos (fecha, línea o relator)'
+    };
+    const lista = ((DB.resumen && DB.resumen.completitud && DB.resumen.completitud.detalle) || [])
+      .filter(item => Array.isArray(item.faltantes) && item.faltantes.indexOf(tipo) >= 0);
+
+    if (titulo) titulo.textContent = `${etiquetas[tipo] || 'Pendientes'} (${lista.length})`;
+
+    const nombresFaltantes = {
+      participantes: '<span class="badge" style="background:#fef3c7;color:#92400e;">Sin participantes</span>',
+      asistencia: '<span class="badge" style="background:#dbeafe;color:#1e40af;">Sin asistencia</span>',
+      encuesta: '<span class="badge" style="background:#ede9fe;color:#5b21b6;">Sin encuesta</span>',
+      ficha: '<span class="badge" style="background:#f1f5f9;color:#475569;">Ficha incompleta</span>'
+    };
+
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:14px;">✓ No hay actividades pendientes en esta categoría.</td></tr>';
+    } else {
+      tbody.innerHTML = lista.map(item => {
+        const idEsc = sigcEscapeHtml(item.id);
+        const badges = (item.faltantes || []).map(f => nombresFaltantes[f] || f).join(' ');
+        let btnAccion = `<button type="button" class="btn secondary compact" onclick="irACompletarActividad('${idEsc}', 'gestion')">Gestionar</button>`;
+        if (tipo === 'participantes') {
+          btnAccion = `<button type="button" class="btn compact" onclick="irACompletarActividad('${idEsc}', 'importaciones')">Importar</button>`;
+        } else if (tipo === 'ficha') {
+          btnAccion = `<button type="button" class="btn secondary compact" onclick="irACompletarActividad('${idEsc}', 'actividades')">Ver ficha</button>`;
+        }
+        return `<tr>
+          <td><strong>${idEsc}</strong></td>
+          <td>${sigcEscapeHtml(item.nombre || '—')}</td>
+          <td>${sigcEscapeHtml(fechaActividadVisible(item.fecha) || 'Sin fecha')}</td>
+          <td>${sigcEscapeHtml(item.estado || '—')}</td>
+          <td>${badges}</td>
+          <td>${btnAccion}</td>
+        </tr>`;
+      }).join('');
+    }
+    wrap.style.display = 'block';
+  }
+
+  function irACompletarActividad(idActividad, destino) {
+    if (destino === 'importaciones') {
+      cambiarVista('importaciones');
+      setTimeout(() => {
+        if (typeof seleccionarActividadGen === 'function') seleccionarActividadGen('Import', idActividad);
+      }, 150);
+    } else if (destino === 'gestion') {
+      cambiarVista('gestion');
+      setTimeout(() => {
+        if (typeof seleccionarActividadGestion === 'function') seleccionarActividadGestion(idActividad);
+      }, 150);
+    } else {
+      cambiarVista('actividades');
+      setTimeout(() => {
+        const inp = document.getElementById('buscarActividad');
+        if (inp) {
+          inp.value = idActividad;
+          if (typeof renderActividades === 'function') renderActividades();
+        }
+      }, 150);
     }
   }
   function cargarVistaBajoDemanda(vista) {
